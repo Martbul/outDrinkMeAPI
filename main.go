@@ -116,7 +116,7 @@ func main() {
 	r.HandleFunc("/webhooks/clerk", webhookHandler.HandleClerkWebhook).Methods("POST")
 
 	// API routes
-	api := r.PathPrefix("/api").Subrouter()
+	api := r.PathPrefix("/api/v1").Subrouter()
 
 	// Protected API routes (auth required)
 	protected := api.PathPrefix("").Subrouter()
