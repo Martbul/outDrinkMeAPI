@@ -12,7 +12,7 @@ import (
 	"net/http"
 	"os"
 
-	"outDrinkMeAPI/models"
+	"outDrinkMeAPI/internal/user"
 	"outDrinkMeAPI/services"
 )
 
@@ -155,7 +155,7 @@ func (h *WebhookHandler) handleUserCreated(ctx context.Context, data json.RawMes
 		imageURL = userData.ProfileImageURL
 	}
 
-	createReq := &models.CreateUserRequest{
+	createReq := &user.CreateUserRequest{
 		ClerkID:   userData.ID,
 		Email:     email,
 		Username:  username,
@@ -195,7 +195,7 @@ func (h *WebhookHandler) handleUserUpdated(ctx context.Context, data json.RawMes
 		imageURL = userData.ProfileImageURL
 	}
 
-	updateReq := &models.UpdateProfileRequest{
+	updateReq := &user.UpdateProfileRequest{
 		Username:  username,
 		FirstName: userData.FirstName,
 		LastName:  userData.LastName,

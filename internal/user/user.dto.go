@@ -1,19 +1,4 @@
-package models
-
-import "time"
-
-type User struct {
-	ID             string    `json:"id"`
-	ClerkID        string    `json:"clerkId"`
-	Email          string    `json:"email"`
-	Username       string    `json:"username"`
-	FirstName      string    `json:"firstName"`
-	LastName       string    `json:"lastName"`
-	ImageURL       string    `json:"imageUrl,omitempty"`
-	EmailVerified  bool      `json:"emailVerified"`
-	CreatedAt      time.Time `json:"createdAt"`
-	UpdatedAt      time.Time `json:"updatedAt"`
-}
+package user
 
 type CreateUserRequest struct {
 	ClerkID   string `json:"clerkId" validate:"required"`

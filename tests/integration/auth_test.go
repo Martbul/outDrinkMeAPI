@@ -13,8 +13,8 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"outDrinkMeAPI/handlers"
+	"outDrinkMeAPI/internal/user"
 	"outDrinkMeAPI/middleware"
-	"outDrinkMeAPI/models"
 	"outDrinkMeAPI/services"
 	"outDrinkMeAPI/tests/helpers"
 )
@@ -31,7 +31,7 @@ func TestGetProfile_Authenticated(t *testing.T) {
 	clerkID := "user_test_" + time.Now().Format("20060102150405")
 	ctx := context.Background()
 	
-	createReq := &models.CreateUserRequest{
+	createReq := &user.CreateUserRequest{
 		ClerkID:   clerkID,
 		Email:     "testauth@example.com",
 		Username:  "testauth",
@@ -62,7 +62,7 @@ func TestGetProfile_Authenticated(t *testing.T) {
 	// Assert
 	assert.Equal(t, http.StatusOK, rr.Code)
 
-	var response models.User
+	var response user.User
 	err = json.Unmarshal(rr.Body.Bytes(), &response)
 	require.NoError(t, err)
 
@@ -108,7 +108,7 @@ func TestUpdateProfile_Authenticated(t *testing.T) {
 	clerkID := "user_test_" + time.Now().Format("20060102150405")
 	ctx := context.Background()
 	
-	_, err := userService.CreateUser(ctx, &models.CreateUserRequest{
+	_, err := userService.CreateUser(ctx, &user.CreateUserRequest{
 		ClerkID:   clerkID,
 		Email:     "testupdate@example.com",
 		Username:  "testupdate",
@@ -134,7 +134,7 @@ func TestUpdateProfile_Authenticated(t *testing.T) {
 	// Assert
 	assert.Equal(t, http.StatusOK, rr.Code)
 
-	var response models.User
+	var response user.User
 	err = json.Unmarshal(rr.Body.Bytes(), &response)
 	require.NoError(t, err)
 
@@ -155,7 +155,7 @@ func TestDeleteAccount_Authenticated(t *testing.T) {
 	clerkID := "user_test_" + time.Now().Format("20060102150405")
 	ctx := context.Background()
 	
-	_, err := userService.CreateUser(ctx, &models.CreateUserRequest{
+	_, err := userService.CreateUser(ctx, &user.CreateUserRequest{
 		ClerkID:   clerkID,
 		Email:     "testdelete@example.com",
 		Username:  "testdelete",

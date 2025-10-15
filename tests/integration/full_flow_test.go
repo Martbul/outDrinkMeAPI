@@ -15,8 +15,8 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"outDrinkMeAPI/handlers"
+	modelUser "outDrinkMeAPI/internal/user"
 	"outDrinkMeAPI/middleware"
-	"outDrinkMeAPI/models"
 	"outDrinkMeAPI/services"
 	"outDrinkMeAPI/tests/helpers"
 )
@@ -38,7 +38,7 @@ func TestFullSignUpAndLoginFlow(t *testing.T) {
 
 	// Step 1: Simulate user signs up with Google via Clerk
 	t.Log("Step 1: User signs up with Google")
-	
+
 	createPayload := helpers.MockClerkWebhookPayload("user.created", clerkID)
 	req1 := httptest.NewRequest(http.MethodPost, "/webhooks/clerk", bytes.NewReader(createPayload))
 	rr1 := httptest.NewRecorder()
@@ -48,7 +48,7 @@ func TestFullSignUpAndLoginFlow(t *testing.T) {
 
 	// Step 2: Verify user exists in database
 	t.Log("Step 2: Verify user in database")
-	
+
 	ctx := context.Background()
 	user, err := userService.GetUserByClerkID(ctx, clerkID)
 	require.NoError(t, err)
@@ -57,7 +57,7 @@ func TestFullSignUpAndLoginFlow(t *testing.T) {
 
 	// Step 3: Simulate user logs in and gets profile
 	t.Log("Step 3: User gets profile")
-	
+
 	req2 := httptest.NewRequest(http.MethodGet, "/api/user", nil)
 	ctx = context.WithValue(req2.Context(), middleware.ClerkIDKey, clerkID)
 	req2 = req2.WithContext(ctx)
@@ -66,14 +66,14 @@ func TestFullSignUpAndLoginFlow(t *testing.T) {
 	userHandler.GetProfile(rr2, req2)
 	assert.Equal(t, http.StatusOK, rr2.Code)
 
-	var profile models.User
+	var profile modelUser.User
 	err = json.Unmarshal(rr2.Body.Bytes(), &profile)
 	require.NoError(t, err)
 	assert.Equal(t, user.Email, profile.Email)
 
 	// Step 4: User updates profile
 	t.Log("Step 4: User updates profile")
-	
+
 	updateData := `{"firstName": "NewFirst", "username": "newusername123"}`
 	req3 := httptest.NewRequest(http.MethodPut, "/api/user/profile", strings.NewReader(updateData))
 	req3.Header.Set("Content-Type", "application/json")
@@ -86,7 +86,7 @@ func TestFullSignUpAndLoginFlow(t *testing.T) {
 
 	// Step 5: Verify update
 	t.Log("Step 5: Verify profile update")
-	
+
 	updatedUser, err := userService.GetUserByClerkID(ctx, clerkID)
 	require.NoError(t, err)
 	assert.Equal(t, "NewFirst", updatedUser.FirstName)
@@ -94,10 +94,10 @@ func TestFullSignUpAndLoginFlow(t *testing.T) {
 
 	// Step 6: User logs out (no server action needed for Clerk)
 	// Step 7: User logs back in (same as step 3)
-	
+
 	// Step 8: User deletes account
 	t.Log("Step 6: User deletes account")
-	
+
 	req4 := httptest.NewRequest(http.MethodDelete, "/api/user/account", nil)
 	ctx = context.WithValue(req4.Context(), middleware.ClerkIDKey, clerkID)
 	req4 = req4.WithContext(ctx)

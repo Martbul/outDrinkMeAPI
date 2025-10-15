@@ -77,10 +77,10 @@ func init() {
 	userService = services.NewUserService(dbPool)
 
 	// Initialize database schema
-	if err := userService.InitSchema(ctx); err != nil {
-		log.Fatal("Failed to initialize schema:", err)
-	}
-	log.Println("Database schema initialized")
+	// if err := userService.InitSchema(ctx); err != nil {
+	// 	log.Fatal("Failed to initialize schema:", err)
+	// }
+	// log.Println("Database schema initialized")
 }
 
 func main() {
@@ -126,6 +126,21 @@ func main() {
 	protected.HandleFunc("/user", userHandler.GetProfile).Methods("GET")
 	protected.HandleFunc("/user/profile", userHandler.UpdateProfile).Methods("PUT")
 	protected.HandleFunc("/user/account", userHandler.DeleteAccount).Methods("DELETE")
+
+
+	//! to be created
+	protected.HandleFunc("/user/friends/leaderboard", userHandler.GetFriendsLeaderboard).Methods("GET")
+	protected.HandleFunc("/user/achievements", userHandler.GetAchievements).Methods("GET")
+	protected.HandleFunc("/user/add_drinking", userHandler.AddDrinking).Methods("PUT")
+	protected.HandleFunc("/user/stats/weekly/days_drank", userHandler.GetWeeklyDaysDrank).Methods("GET")
+	protected.HandleFunc("/user/stats/monthly/days_drank", userHandler.GetMonthlyDaysDrank).Methods("GET")
+	protected.HandleFunc("/user/stats/yearly/days_drank", userHandler.GetYearlyDaysDrank).Methods("GET")
+	protected.HandleFunc("/user/stats/alltime/drinks_had", userHandler.GetAllTimeDaysDrank).Methods("GET")
+	protected.HandleFunc("/user/calendar", userHandler.GetCalendar).Methods("GET")
+
+
+	//!Conver db tables in golang models and DTOs
+
 
 	// CORS configuration
 	corsHandler := gorilllaHandlers.CORS(
