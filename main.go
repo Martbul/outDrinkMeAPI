@@ -127,20 +127,20 @@ func main() {
 	protected.HandleFunc("/user/profile", userHandler.UpdateProfile).Methods("PUT")
 	protected.HandleFunc("/user/account", userHandler.DeleteAccount).Methods("DELETE")
 
-
 	//! to be created
-	protected.HandleFunc("/user/friends/leaderboard", userHandler.GetFriendsLeaderboard).Methods("GET")
+	protected.HandleFunc("/user/leaderboard/friends ", userHandler.GetFriendsLeaderboard).Methods("GET")
+	protected.HandleFunc("/user/leaderboard/global ", userHandler.GetFriendsLeaderboard).Methods("GET")
+	protected.HandleFunc("/user/friends ", userHandler.GetFriendsLeaderboard).Methods("GET")
 	protected.HandleFunc("/user/achievements", userHandler.GetAchievements).Methods("GET")
-	protected.HandleFunc("/user/add_drinking", userHandler.AddDrinking).Methods("PUT")
-	protected.HandleFunc("/user/stats/weekly/days_drank", userHandler.GetWeeklyDaysDrank).Methods("GET")
-	protected.HandleFunc("/user/stats/monthly/days_drank", userHandler.GetMonthlyDaysDrank).Methods("GET")
-	protected.HandleFunc("/user/stats/yearly/days_drank", userHandler.GetYearlyDaysDrank).Methods("GET")
-	protected.HandleFunc("/user/stats/alltime/drinks_had", userHandler.GetAllTimeDaysDrank).Methods("GET")
+	protected.HandleFunc("/user/drink", userHandler.AddDrinking).Methods("PUT")
+	protected.HandleFunc("/user/stats", userHandler.GetWeeklyDaysDrank).Methods("GET")
+	protected.HandleFunc("/user/stats/weekly", userHandler.GetWeeklyDaysDrank).Methods("GET")
+	protected.HandleFunc("/user/stats/monthly", userHandler.GetMonthlyDaysDrank).Methods("GET")
+	protected.HandleFunc("/user/stats/yearly", userHandler.GetYearlyDaysDrank).Methods("GET")
+	protected.HandleFunc("/user/stats/all-time", userHandler.GetAllTimeDaysDrank).Methods("GET")
 	protected.HandleFunc("/user/calendar", userHandler.GetCalendar).Methods("GET")
 
-
 	//!Conver db tables in golang models and DTOs
-
 
 	// CORS configuration
 	corsHandler := gorilllaHandlers.CORS(
