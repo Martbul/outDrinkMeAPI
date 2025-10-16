@@ -216,7 +216,7 @@ func (s *UserService) GetFriendsLeaderboard(ctx context.Context, clerkID string)
 	SELECT 
 		u.id as user_id,
 		u.username,
-		u.avatar_url,
+		u.image_url,
 		COALESCE(ws.days_drank, 0) as days_this_week,
 		RANK() OVER (ORDER BY COALESCE(ws.days_drank, 0) DESC) as rank,
 		COALESCE(s.current_streak, 0) as current_streak
