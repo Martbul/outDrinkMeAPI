@@ -128,8 +128,8 @@ func main() {
 	protected.HandleFunc("/user/account", userHandler.DeleteAccount).Methods("DELETE")
 
 	//! to be created
-	protected.HandleFunc("/user/leaderboard/friends ", userHandler.GetFriendsLeaderboard).Methods("GET")
-	protected.HandleFunc("/user/leaderboard/global ", userHandler.GetFriendsLeaderboard).Methods("GET")
+	protected.HandleFunc("/user/leaderboard/friends", userHandler.GetFriendsLeaderboard).Methods("GET")
+	protected.HandleFunc("/user/leaderboard/global", userHandler.GetFriendsLeaderboard).Methods("GET")
 	protected.HandleFunc("/user/friends ", userHandler.GetFriendsLeaderboard).Methods("GET")
 	protected.HandleFunc("/user/achievements", userHandler.GetAchievements).Methods("GET")
 	protected.HandleFunc("/user/drink", userHandler.AddDrinking).Methods("PUT")
