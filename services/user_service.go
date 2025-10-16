@@ -212,7 +212,7 @@ func (s *UserService) GetFriendsLeaderboard(ctx context.Context, clerkID string)
 		return nil, fmt.Errorf("user not found: %w", err)
 	}
 
-	query := `
+query := `
 	SELECT 
 		u.id as user_id,
 		u.username,
@@ -221,14 +221,17 @@ func (s *UserService) GetFriendsLeaderboard(ctx context.Context, clerkID string)
 		RANK() OVER (ORDER BY COALESCE(ws.days_drank, 0) DESC) as rank,
 		COALESCE(s.current_streak, 0) as current_streak
 	FROM users u
-	INNER JOIN friendships f ON (f.friend_id = u.id AND f.user_id = $1 AND f.status = 'accepted')
-	LEFT JOIN weekly_stats ws ON u.id = ws.user_id 
+	INNER JOIN friendships f 
+		ON (f.friend_id = u.id AND f.user_id = $1 AND f.status = 'accepted')
+	LEFT JOIN weekly_stats ws 
+		ON u.id = ws.user_id 
 		AND ws.week_start = DATE_TRUNC('week', CURRENT_DATE)::DATE
-	LEFT JOIN streaks s ON u.id = s.user_id
-	WHERE u.is_active = true
+	LEFT JOIN streaks s 
+		ON u.id = s.user_id
 	ORDER BY days_this_week DESC, current_streak DESC
 	LIMIT 50
-	`
+`
+
 
 	rows, err := s.db.Query(ctx, query, userID)
 	if err != nil {
