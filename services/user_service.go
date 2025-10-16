@@ -244,7 +244,7 @@ func (s *UserService) GetFriendsLeaderboard(ctx context.Context, clerkID string)
 		err := rows.Scan(
 			&entry.UserID,
 			&entry.Username,
-			&entry.AvatarURL,
+			&entry.ImageURL,
 			&entry.DaysThisWeek,
 			&entry.Rank,
 			&entry.CurrentStreak,
