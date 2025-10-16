@@ -5,7 +5,6 @@ import "github.com/google/uuid"
 type LeaderboardEntry struct {
 	UserID          uuid.UUID `json:"user_id" db:"user_id"`
 	Username        string    `json:"username" db:"username"`
-	DisplayName     *string   `json:"display_name" db:"display_name"`
 	AvatarURL       *string   `json:"avatar_url" db:"avatar_url"`
 	DaysThisWeek    int       `json:"days_this_week" db:"days_this_week"`
 	Rank            int       `json:"rank" db:"rank"`

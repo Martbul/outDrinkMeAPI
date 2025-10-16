@@ -216,7 +216,6 @@ func (s *UserService) GetFriendsLeaderboard(ctx context.Context, clerkID string)
 	SELECT 
 		u.id as user_id,
 		u.username,
-		u.display_name,
 		u.avatar_url,
 		COALESCE(ws.days_drank, 0) as days_this_week,
 		RANK() OVER (ORDER BY COALESCE(ws.days_drank, 0) DESC) as rank,
@@ -245,7 +244,6 @@ func (s *UserService) GetFriendsLeaderboard(ctx context.Context, clerkID string)
 		err := rows.Scan(
 			&entry.UserID,
 			&entry.Username,
-			&entry.DisplayName,
 			&entry.AvatarURL,
 			&entry.DaysThisWeek,
 			&entry.Rank,
