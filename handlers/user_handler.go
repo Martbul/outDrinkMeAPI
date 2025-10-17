@@ -96,13 +96,32 @@ func (h *UserHandler) GetFriendsLeaderboard(w http.ResponseWriter, r *http.Reque
 		return
 	}
 
-	leaderboard, err := h.userService.GetFriendsLeaderboard(ctx, clearkID)
+	friendsLeaderboard, err := h.userService.GetFriendsLeaderboard(ctx, clearkID)
 	if err != nil {
 		respondWithError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
 
-	respondWithJSON(w, http.StatusOK, leaderboard)
+	respondWithJSON(w, http.StatusOK, friendsLeaderboard)
+}
+
+func (h *UserHandler) GetGlobalLeaderboard(w http.ResponseWriter, r *http.Request) {
+	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
+	defer cancel()
+
+	clearkID, ok := middleware.GetClerkID(ctx)
+	if !ok {
+		respondWithError(w, http.StatusUnauthorized, "User not authenticated")
+		return
+	}
+
+	globalLeaderboard, err := h.userService.GetGlobalLeaderboard(ctx, clearkID)
+	if err != nil {
+		respondWithError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+
+	respondWithJSON(w, http.StatusOK, globalLeaderboard)
 }
 
 func (h *UserHandler) GetAchievements(w http.ResponseWriter, r *http.Request) {
