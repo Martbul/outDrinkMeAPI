@@ -178,7 +178,7 @@ func (s *UserService) UpdateProfileByClerkID(ctx context.Context, clerkID string
 
 func (s *UserService) DeleteUserByClerkID(ctx context.Context, clerkID string) error {
 	query := `DELETE FROM users WHERE clerk_id = $1`
-	
+
 	result, err := s.db.Exec(ctx, query, clerkID)
 	if err != nil {
 		return fmt.Errorf("failed to delete user: %w", err)
@@ -203,7 +203,7 @@ func (s *UserService) UpdateEmailVerification(ctx context.Context, clerkID strin
 }
 
 func (s *UserService) GetFriends(ctx context.Context, clerkID string) ([]*user.User, error) {
-    query := `
+	query := `
     SELECT DISTINCT
         u.id,
         u.clerk_id,
@@ -225,40 +225,40 @@ func (s *UserService) GetFriends(ctx context.Context, clerkID string) ([]*user.U
     AND u.clerk_id != $1
     ORDER BY u.username
     `
-    
-		rows, err := s.db.Query(ctx, query, clerkID)
 
-    if err != nil {
-        return nil, err
-    }
-    defer rows.Close()
-    
-    var friends []*user.User
-    for rows.Next() {
-        var u user.User
-        err := rows.Scan(
-            &u.ID,
-            &u.ClerkID,
-            &u.Email,
-            &u.Username,
-            &u.FirstName,
-            &u.LastName,
-            &u.ImageURL,
-            &u.EmailVerified,
-            &u.CreatedAt,
-            &u.UpdatedAt,
-        )
-        if err != nil {
-            return nil, err
-        }
-        friends = append(friends, &u)
-    }
-    
-    if err = rows.Err(); err != nil {
-        return nil, err
-    }
-    
-    return friends, nil
+	rows, err := s.db.Query(ctx, query, clerkID)
+
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var friends []*user.User
+	for rows.Next() {
+		var u user.User
+		err := rows.Scan(
+			&u.ID,
+			&u.ClerkID,
+			&u.Email,
+			&u.Username,
+			&u.FirstName,
+			&u.LastName,
+			&u.ImageURL,
+			&u.EmailVerified,
+			&u.CreatedAt,
+			&u.UpdatedAt,
+		)
+		if err != nil {
+			return nil, err
+		}
+		friends = append(friends, &u)
+	}
+
+	if err = rows.Err(); err != nil {
+		return nil, err
+	}
+
+	return friends, nil
 }
 
 func (s *UserService) GetFriendsLeaderboard(ctx context.Context, clerkID string) (*leaderboard.Leaderboard, error) {
@@ -269,7 +269,7 @@ func (s *UserService) GetFriendsLeaderboard(ctx context.Context, clerkID string)
 		return nil, fmt.Errorf("user not found: %w", err)
 	}
 
-query := `
+	query := `
 	SELECT 
 		u.id as user_id,
 		u.username,
@@ -288,7 +288,6 @@ query := `
 	ORDER BY days_this_week DESC, current_streak DESC
 	LIMIT 50
 `
-
 
 	rows, err := s.db.Query(ctx, query, userID)
 	if err != nil {
@@ -327,10 +326,6 @@ query := `
 	}, nil
 }
 
-
-
-
-
 func (s *UserService) GetGlobalLeaderboard(ctx context.Context, clerkID string) (*leaderboard.Leaderboard, error) {
 	// Get user ID from clerk_id
 	var userID uuid.UUID
@@ -339,7 +334,7 @@ func (s *UserService) GetGlobalLeaderboard(ctx context.Context, clerkID string) 
 		return nil, fmt.Errorf("user not found: %w", err)
 	}
 
-query := `
+	query := `
 	SELECT 
 		u.id AS user_id,
 		u.username,
@@ -356,8 +351,6 @@ query := `
 	ORDER BY days_this_week DESC, current_streak DESC
 	LIMIT 50
 `
-
-
 
 	rows, err := s.db.Query(ctx, query, userID)
 	if err != nil {
@@ -449,7 +442,6 @@ func (s *UserService) GetAchievements(ctx context.Context, clerkID string) ([]*a
 
 	return achievements, nil
 }
-
 
 func (s *UserService) AddDrinking(ctx context.Context, clerkID string, drankToday bool) error {
 	var userID uuid.UUID
@@ -630,7 +622,6 @@ func (s *UserService) GetCalendar(ctx context.Context, clerkID string, year int,
 		Days:  days,
 	}, nil
 }
-
 
 func (s *UserService) GetUserStats(ctx context.Context, clerkID string) (*stats.UserStats, error) {
 	var userID uuid.UUID
