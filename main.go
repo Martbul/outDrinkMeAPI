@@ -130,9 +130,9 @@ func main() {
 	//! to be created
 	protected.HandleFunc("/user/leaderboard/friends", userHandler.GetFriendsLeaderboard).Methods("GET")
 	protected.HandleFunc("/user/leaderboard/global", userHandler.GetGlobalLeaderboard).Methods("GET")
-	protected.HandleFunc("/user/friends ", userHandler.GetFriendsLeaderboard).Methods("GET") //!todo
+	protected.HandleFunc("/user/friends ", userHandler.GetFriends).Methods("GET") //!todo
 	protected.HandleFunc("/user/achievements", userHandler.GetAchievements).Methods("GET")
-	protected.HandleFunc("/user/drink", userHandler.AddDrinking).Methods("PUT")
+	protected.HandleFunc("/user/drink", userHandler.AddDrinking).Methods("POST")
 	protected.HandleFunc("/user/stats", userHandler.GetUserStats).Methods("GET")
 	protected.HandleFunc("/user/stats/weekly", userHandler.GetWeeklyDaysDrank).Methods("GET")
 	protected.HandleFunc("/user/stats/monthly", userHandler.GetMonthlyDaysDrank).Methods("GET")

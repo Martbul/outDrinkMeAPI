@@ -202,7 +202,64 @@ func (s *UserService) UpdateEmailVerification(ctx context.Context, clerkID strin
 	return err
 }
 
+func (s *UserService) GetFriends(ctx context.Context, clerkID string) ([]*user.User, error) {
+    query := `
+    SELECT DISTINCT
+        u.id,
+        u.clerk_id,
+        u.email,
+        u.username,
+        u.first_name,
+        u.last_name,
+        u.image_url,
+        u.email_verified,
+        u.created_at,
+        u.updated_at
+    FROM users u
+    INNER JOIN friendships f ON (
+        (f.user_id = u.id AND f.friend_id = (SELECT id FROM users WHERE clerk_id = $1))
+        OR
+        (f.friend_id = u.id AND f.user_id = (SELECT id FROM users WHERE clerk_id = $1))
+    )
+    WHERE f.status = 'accepted'
+    AND u.clerk_id != $1
+    ORDER BY u.username
+    `
+    
+		rows, err := s.db.Query(ctx, query, clerkID)
 
+    if err != nil {
+        return nil, err
+    }
+    defer rows.Close()
+    
+    var friends []*user.User
+    for rows.Next() {
+        var u user.User
+        err := rows.Scan(
+            &u.ID,
+            &u.ClerkID,
+            &u.Email,
+            &u.Username,
+            &u.FirstName,
+            &u.LastName,
+            &u.ImageURL,
+            &u.EmailVerified,
+            &u.CreatedAt,
+            &u.UpdatedAt,
+        )
+        if err != nil {
+            return nil, err
+        }
+        friends = append(friends, &u)
+    }
+    
+    if err = rows.Err(); err != nil {
+        return nil, err
+    }
+    
+    return friends, nil
+}
 
 func (s *UserService) GetFriendsLeaderboard(ctx context.Context, clerkID string) (*leaderboard.Leaderboard, error) {
 	// Get user ID from clerk_id
