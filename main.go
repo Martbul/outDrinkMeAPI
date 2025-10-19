@@ -126,8 +126,6 @@ func main() {
 	protected.HandleFunc("/user", userHandler.GetProfile).Methods("GET")
 	protected.HandleFunc("/user/profile", userHandler.UpdateProfile).Methods("PUT")
 	protected.HandleFunc("/user/account", userHandler.DeleteAccount).Methods("DELETE")
-
-	//! to be created
 	protected.HandleFunc("/user/leaderboard/friends", userHandler.GetFriendsLeaderboard).Methods("GET")
 	protected.HandleFunc("/user/leaderboard/global", userHandler.GetGlobalLeaderboard).Methods("GET")
 	protected.HandleFunc("/user/friends", userHandler.GetFriends).Methods("GET") 
@@ -140,8 +138,7 @@ func main() {
 	protected.HandleFunc("/user/stats/all-time", userHandler.GetAllTimeDaysDrank).Methods("GET")
 	protected.HandleFunc("/user/calendar", userHandler.GetCalendar).Methods("GET")
 
-	//!Conver db tables in golang models and DTOs
-
+	
 	// CORS configuration
 	corsHandler := gorilllaHandlers.CORS(
 		gorilllaHandlers.AllowedOrigins([]string{"*"}), // Configure for production

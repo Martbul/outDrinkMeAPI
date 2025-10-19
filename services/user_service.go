@@ -102,7 +102,7 @@ func (s *UserService) CreateUser(ctx context.Context, req *user.CreateUserReques
 
 func (s *UserService) GetUserByClerkID(ctx context.Context, clerkID string) (*user.User, error) {
 	query := `
-	SELECT id, clerk_id, email, username, first_name, last_name, image_url, email_verified, created_at, updated_at
+	SELECT id, clerk_id, email, username, first_name, last_name, image_url, email_verified, created_at, updated_at, gems, xp, all_days_drinking_count
 	FROM users
 	WHERE clerk_id = $1
 	`
@@ -119,6 +119,9 @@ func (s *UserService) GetUserByClerkID(ctx context.Context, clerkID string) (*us
 		&user.EmailVerified,
 		&user.CreatedAt,
 		&user.UpdatedAt,
+		&user.Gems,
+		&user.XP,
+		&user.AllDaysDrinkingCount,
 	)
 
 	if err != nil {
