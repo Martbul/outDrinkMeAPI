@@ -265,6 +265,33 @@ func (h *UserHandler) GetAllTimeDaysDrank(w http.ResponseWriter, r *http.Request
 	respondWithJSON(w, http.StatusOK, allTimeDaysDrank)
 }
 
+
+func (h *UserHandler) SearchUsers(w http.ResponseWriter, r *http.Request) {
+	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
+	defer cancel()
+
+	clearkID, ok := middleware.GetClerkID(ctx)
+	if !ok {
+		respondWithError(w, http.StatusUnauthorized, "User not authenticated")
+		return
+	}
+
+	query := r.URL.Query().Get("q")
+	if query == "" {
+		respondWithError(w, http.StatusBadRequest, "Search query parameter 'q' is required")
+		return
+	}
+
+	users, err := h.userService.SearchUsers(ctx, clearkID, query)
+	if err != nil {
+		respondWithError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+
+	respondWithJSON(w, http.StatusOK, users)
+
+}
+
 func (h *UserHandler) GetCalendar(w http.ResponseWriter, r *http.Request) {
 	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
 	defer cancel()

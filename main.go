@@ -137,6 +137,7 @@ func main() {
 	protected.HandleFunc("/user/stats/yearly", userHandler.GetYearlyDaysDrank).Methods("GET")
 	protected.HandleFunc("/user/stats/all-time", userHandler.GetAllTimeDaysDrank).Methods("GET")
 	protected.HandleFunc("/user/calendar", userHandler.GetCalendar).Methods("GET")
+	protected.HandleFunc("/user/search", userHandler.SearchUsers).Methods("GET")
 
 	
 	// CORS configuration

@@ -492,6 +492,80 @@ func (s *UserService) GetWeeklyDaysDrank(ctx context.Context, clerkID string) (*
 	return stat, nil
 }
 
+func (s *UserService) SearchUsers(ctx context.Context, clerkID string, query string) ([]*user.User, error) {
+	// Prepare the search pattern for ILIKE (case-insensitive search)
+	searchPattern := "%" + query + "%"
+
+	sqlQuery := `
+	SELECT 
+		id, 
+		clerk_id, 
+		email, 
+		username, 
+		first_name, 
+		last_name, 
+		image_url, 
+		email_verified, 
+		created_at, 
+		updated_at
+	FROM users
+	WHERE 
+		username ILIKE $1 OR
+		email ILIKE $1 OR
+		first_name ILIKE $1 OR
+		last_name ILIKE $1 OR
+		CONCAT(first_name, ' ', last_name) ILIKE $1
+	ORDER BY 
+		CASE 
+			WHEN username ILIKE $1 THEN 1
+			WHEN email ILIKE $1 THEN 2
+			WHEN first_name ILIKE $1 THEN 3
+			WHEN last_name ILIKE $1 THEN 4
+			ELSE 5
+		END,
+		username
+	LIMIT 50
+	`
+
+	rows, err := s.db.Query(ctx, sqlQuery, searchPattern)
+	if err != nil {
+		return nil, fmt.Errorf("failed to search users: %w", err)
+	}
+	defer rows.Close()
+
+	var users []*user.User
+	for rows.Next() {
+		u := &user.User{}
+		err := rows.Scan(
+			&u.ID,
+			&u.ClerkID,
+			&u.Email,
+			&u.Username,
+			&u.FirstName,
+			&u.LastName,
+			&u.ImageURL,
+			&u.EmailVerified,
+			&u.CreatedAt,
+			&u.UpdatedAt,
+		)
+		if err != nil {
+			return nil, fmt.Errorf("failed to scan user: %w", err)
+		}
+		users = append(users, u)
+	}
+
+	if err = rows.Err(); err != nil {
+		return nil, fmt.Errorf("error iterating rows: %w", err)
+	}
+
+	// Return empty slice instead of nil if no users found
+	if users == nil {
+		users = []*user.User{}
+	}
+
+	return users, nil
+}
+
 func (s *UserService) GetMonthlyDaysDrank(ctx context.Context, clerkID string) (*stats.DaysStat, error) {
 	var userID uuid.UUID
 	err := s.db.QueryRow(ctx, `SELECT id FROM users WHERE clerk_id = $1`, clerkID).Scan(&userID)
