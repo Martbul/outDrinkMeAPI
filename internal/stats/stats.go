@@ -17,5 +17,5 @@ type UserStats struct {
 	TotalWeeksWon     int  `json:"total_weeks_won"`
 	AchievementsCount int  `json:"achievements_count"`
 	FriendsCount      int  `json:"friends_count"`
-	AlcoholismCoefficient              int  `json:"alcoholism_coefficient"`
+	AlcoholismCoefficient              float64  `json:"alcoholism_coefficient"`
 }
