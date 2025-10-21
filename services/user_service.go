@@ -956,91 +956,12 @@ func (s *UserService) GetUserStats(ctx context.Context, clerkID string) (*stats.
         return nil, fmt.Errorf("failed to get user stats: %w", err)
     }
     
-    // Calculate Alcoholism coefficient using formula: currentStreak^2 + totalDays*0.3 + longestStreak*5
-    alcoholismQuery := `
-    WITH RECURSIVE all_user_streaks AS (
-        -- For each user, start with their most recent drinking day
-        SELECT DISTINCT ON (dd.user_id)
-            dd.user_id,
-            dd.date,
-            1 as streak_length
-        FROM daily_drinking dd
-        WHERE dd.drank_today = true
-            AND dd.date <= CURRENT_DATE
-            AND dd.user_id IN (SELECT id FROM users WHERE is_active = true)
-        ORDER BY dd.user_id, dd.date DESC
-        
-        UNION ALL
-        
-        -- Recursively check previous days
-        SELECT 
-            dd.user_id,
-            dd.date,
-            aus.streak_length + 1
-        FROM daily_drinking dd
-        INNER JOIN all_user_streaks aus ON dd.user_id = aus.user_id 
-            AND dd.date = aus.date - INTERVAL '1 day'
-        WHERE dd.drank_today = true
-    ),
-    current_streaks AS (
-        SELECT 
-            user_id,
-            MAX(streak_length) as current_streak
-        FROM all_user_streaks
-        GROUP BY user_id
-    ),
-    longest_streaks AS (
-        SELECT 
-            user_id,
-            MAX(streak_length) as longest_streak
-        FROM (
-            SELECT 
-                user_id,
-                COUNT(*) as streak_length
-            FROM (
-                SELECT 
-                    user_id,
-                    date,
-                    date - (ROW_NUMBER() OVER (PARTITION BY user_id ORDER BY date))::int AS grp
-                FROM daily_drinking
-                WHERE drank_today = true
-            ) sub
-            GROUP BY user_id, grp
-        ) streaks
-        GROUP BY user_id
-    ),
-    user_scores AS (
-        SELECT 
-            u.id,
-            COALESCE(cs.current_streak, 0) as current_streak,
-            COALESCE(ls.longest_streak, 0) as longest_streak,
-            COALESCE(COUNT(DISTINCT dd.date) FILTER (WHERE dd.drank_today = true), 0) as total_days,
-            (
-                POWER(COALESCE(cs.current_streak, 0)::numeric, 2) + 
-                (COALESCE(COUNT(DISTINCT dd.date) FILTER (WHERE dd.drank_today = true), 0) * 0.3) + 
-                (COALESCE(ls.longest_streak, 0) * 5)
-            ) as alcoholism_score
-        FROM users u
-        LEFT JOIN daily_drinking dd ON u.id = dd.user_id
-        LEFT JOIN current_streaks cs ON u.id = cs.user_id
-        LEFT JOIN longest_streaks ls ON u.id = ls.user_id
-        WHERE u.is_active = true
-        GROUP BY u.id, cs.current_streak, ls.longest_streak
-    )
-    SELECT rank FROM (
-        SELECT 
-            id,
-            RANK() OVER (ORDER BY alcoholism_score DESC) as rank
-        FROM user_scores
-    ) ranked
-    WHERE id = $1
-    `
+    // Calculate alcoholism coefficient: currentStreak^2 + totalDays*0.3 + achievements*5
+    alcoholismScore := float64(stats.CurrentStreak*stats.CurrentStreak) + 
+                       (float64(stats.TotalDaysDrank) * 0.3) + 
+                       (float64(stats.AchievementsCount) * 5)
     
-    err = s.db.QueryRow(ctx, alcoholismQuery, userID).Scan(&stats.AlcoholismCoefficient)
-    if err != nil {
-        //TODO: Set the default to 0 (-1 is only for testing)
-        stats.AlcoholismCoefficient = -1 // Default if no rank found
-    }
+    stats.AlcoholismCoefficient = alcoholismScore
     
     return stats, nil
 }
