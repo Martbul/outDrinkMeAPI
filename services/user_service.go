@@ -701,79 +701,230 @@ func (s *UserService) GetCalendar(ctx context.Context, clerkID string, year int,
 }
 
 func (s *UserService) GetUserStats(ctx context.Context, clerkID string) (*stats.UserStats, error) {
-	var userID uuid.UUID
-	err := s.db.QueryRow(ctx, `SELECT id FROM users WHERE clerk_id = $1`, clerkID).Scan(&userID)
-	if err != nil {
-		return nil, fmt.Errorf("user not found: %w", err)
-	}
+    var userID uuid.UUID
+    // Assuming s.db.QueryRow returns a type that supports Scan (e.g., pgx.Row)
+    err := s.db.QueryRow(ctx, "SELECT id FROM users WHERE clerk_id = $1", clerkID).Scan(&userID)
+    if err != nil {
+        return nil, fmt.Errorf("user not found: %w", err)
+    }
 
-	query := `
-	SELECT 
-		COALESCE(dd_today.drank_today, false) as today_status,
-		COALESCE(COUNT(DISTINCT dd_week.date) FILTER (WHERE dd_week.drank_today = true), 0) as days_this_week,
-		COALESCE(COUNT(DISTINCT dd_month.date) FILTER (WHERE dd_month.drank_today = true), 0) as days_this_month,
-		COALESCE(COUNT(DISTINCT dd_year.date) FILTER (WHERE dd_year.drank_today = true), 0) as days_this_year,
-		COALESCE(COUNT(DISTINCT dd_all.date) FILTER (WHERE dd_all.drank_today = true), 0) as total_days_drank,
-		COALESCE(s.current_streak, 0) as current_streak,
-		COALESCE(s.longest_streak, 0) as longest_streak,
-		COALESCE(SUM(ws.win_count), 0) as total_weeks_won,
-		COUNT(DISTINCT ua.achievement_id) as achievements_count,
-		COUNT(DISTINCT f.friend_id) FILTER (WHERE f.status = 'accepted') as friends_count
-	FROM users u
-	LEFT JOIN daily_drinking dd_today ON u.id = dd_today.user_id AND dd_today.date = CURRENT_DATE
-	LEFT JOIN daily_drinking dd_week ON u.id = dd_week.user_id 
-		AND dd_week.date >= DATE_TRUNC('week', CURRENT_DATE)
-		AND dd_week.date <= CURRENT_DATE
-	LEFT JOIN daily_drinking dd_month ON u.id = dd_month.user_id 
-		AND dd_month.date >= DATE_TRUNC('month', CURRENT_DATE)
-		AND dd_month.date <= CURRENT_DATE
-	LEFT JOIN daily_drinking dd_year ON u.id = dd_year.user_id 
-		AND dd_year.date >= DATE_TRUNC('year', CURRENT_DATE)
-		AND dd_year.date <= CURRENT_DATE
-	LEFT JOIN daily_drinking dd_all ON u.id = dd_all.user_id
-	LEFT JOIN streaks s ON u.id = s.user_id
-	LEFT JOIN weekly_stats ws ON u.id = ws.user_id
-	LEFT JOIN user_achievements ua ON u.id = ua.user_id
-	LEFT JOIN friendships f ON u.id = f.user_id
-	WHERE u.id = $1
-	GROUP BY u.id, dd_today.drank_today, s.current_streak, s.longest_streak
-	`
+    query := `
+    WITH SoberDays AS (
+        -- 1. Get all recorded days where the user was sober (drank_today = FALSE)
+        SELECT date
+        FROM daily_drinking
+        WHERE user_id = $1 AND drank_today = FALSE
+    ),
+    StreakGroups AS (
+        -- 2. Group consecutive sober days (islands method)
+        SELECT
+            date,
+            -- This difference only increases when a drinking day interrupts a sober streak, forming a unique group ID
+            date - (ROW_NUMBER() OVER (ORDER BY date) * INTERVAL '1 day') AS streak_group
+        FROM SoberDays
+    ),
+    StreaksSummary AS (
+        -- 3. Calculate length and bounds of all sobriety streaks
+        SELECT
+            COUNT(*)::NUMERIC AS length, -- Use NUMERIC for formula calculation later
+            MAX(date) AS last_day
+        FROM StreakGroups
+        GROUP BY streak_group
+    ),
+    StreakMetrics AS (
+        -- 4. Derive the final current and longest streaks
+        SELECT
+            -- Longest streak is the max length found
+            COALESCE(MAX(length), 0) AS longest_streak,
 
-	stats := &stats.UserStats{}
-	err = s.db.QueryRow(ctx, query, userID).Scan(
-		&stats.TodayStatus,
-		&stats.DaysThisWeek,
-		&stats.DaysThisMonth,
-		&stats.DaysThisYear,
-		&stats.TotalDaysDrank,
-		&stats.CurrentStreak,
-		&stats.LongestStreak,
-		&stats.TotalWeeksWon,
-		&stats.AchievementsCount,
-		&stats.FriendsCount,
-	)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get user stats: %w", err)
-	}
+            -- Current streak: The length of the streak ending today (if today is a sober day) or 0
+            COALESCE(
+                (
+                    SELECT length
+                    FROM StreaksSummary
+                    -- Check if the streak ends today AND today is a recorded sober day
+                    WHERE last_day = CURRENT_DATE
+                    AND EXISTS (SELECT 1 FROM daily_drinking WHERE user_id = $1 AND date = CURRENT_DATE AND drank_today = FALSE)
+                ),
+                0
+            ) AS current_streak
+    )
 
-	// Get rank
-	rankQuery := `
-	SELECT rank FROM (
-		SELECT 
-			u.id,
-			RANK() OVER (ORDER BY COALESCE(ws.days_drank, 0) DESC) as rank
-		FROM users u
-		LEFT JOIN weekly_stats ws ON u.id = ws.user_id
-			AND ws.week_start = DATE_TRUNC('week', CURRENT_DATE)::DATE
-		WHERE u.is_active = true
-	) ranked
-	WHERE id = $1
-	`
+    SELECT
+        -- Basic Stats
+        COALESCE(dd_today.drank_today, FALSE) AS today_status,
+        COALESCE(COUNT(DISTINCT dd_week.date) FILTER (WHERE dd_week.drank_today = TRUE), 0) AS days_this_week,
+        COALESCE(COUNT(DISTINCT dd_month.date) FILTER (WHERE dd_month.drank_today = TRUE), 0) AS days_this_month,
+        COALESCE(COUNT(DISTINCT dd_year.date) FILTER (WHERE dd_year.drank_today = TRUE), 0) AS days_this_year,
+        COALESCE(COUNT(DISTINCT dd_all.date) FILTER (WHERE dd_all.drank_today = TRUE), 0) AS total_days_drank,
+        
+        -- Calculated Streaks (Fix for always 0)
+        (SELECT current_streak FROM StreakMetrics) AS calculated_current_streak,
+        (SELECT longest_streak FROM StreakMetrics) AS calculated_longest_streak,
+        
+        -- Other Stats
+        COALESCE(SUM(ws.win_count), 0) AS total_weeks_won,
+        COUNT(DISTINCT ua.achievement_id) AS achievements_count,
+        COUNT(DISTINCT f.friend_id) FILTER (WHERE f.status = 'accepted') AS friends_count,
 
-	err = s.db.QueryRow(ctx, rankQuery, userID).Scan(&stats.Rank)
-	if err != nil {
-		stats.Rank = 0 // Default if no rank found
-	}
+        -- ALCOHOLISM COEFFICIENT (New Metric)
+        -- Formula: currStreak^2 + all days drank * 0.3 + longestStreak * 5
+        -- This uses the calculated streaks and total days drank from the main query's GROUP BY context.
+        (
+            ((SELECT current_streak FROM StreakMetrics) * (SELECT current_streak FROM StreakMetrics)) +
+            (COALESCE(COUNT(DISTINCT dd_all.date) FILTER (WHERE dd_all.drank_today = TRUE), 0)::NUMERIC * 0.3) +
+            ((SELECT longest_streak FROM StreakMetrics) * 5)
+        )::NUMERIC AS alcoholism_coefficient
 
-	return stats, nil
+    FROM users u
+    LEFT JOIN daily_drinking dd_today ON u.id = dd_today.user_id AND dd_today.date = CURRENT_DATE
+    LEFT JOIN daily_drinking dd_week ON u.id = dd_week.user_id 
+        AND dd_week.date >= DATE_TRUNC('week', CURRENT_DATE)
+        AND dd_week.date <= CURRENT_DATE
+    LEFT JOIN daily_drinking dd_month ON u.id = dd_month.user_id 
+        AND dd_month.date >= DATE_TRUNC('month', CURRENT_DATE)
+        AND dd_month.date <= CURRENT_DATE
+    LEFT JOIN daily_drinking dd_year ON u.id = dd_year.user_id 
+        AND dd_year.date >= DATE_TRUNC('year', CURRENT_DATE)
+        AND dd_year.date <= CURRENT_DATE
+    LEFT JOIN daily_drinking dd_all ON u.id = dd_all.user_id
+    -- Removed LEFT JOIN streaks s ON u.id = s.user_id as it is replaced by the CTE
+    LEFT JOIN weekly_stats ws ON u.id = ws.user_id
+    LEFT JOIN user_achievements ua ON u.id = ua.user_id
+    LEFT JOIN friendships f ON u.id = f.user_id
+    WHERE u.id = $1
+    GROUP BY u.id, dd_today.drank_today
+    `
+
+    // Define local variables to receive the data from the database.
+    // Streaks and coefficient must be scanned as float64 because of the NUMERIC type used in the SQL calculations.
+    var (
+        todayStatus        bool
+        daysThisWeek       int
+        daysThisMonth      int
+        daysThisYear       int
+        totalDaysDrank     int
+        currentStreakF     float64 
+        longestStreakF     float64 
+        totalWeeksWon      int
+        achievementsCount  int
+        friendsCount       int
+        alcoholismCoefficient float64 // New metric
+    )
+
+    stats := &stats.UserStats{}
+    err = s.db.QueryRow(ctx, query, userID).Scan(
+        &todayStatus,
+        &daysThisWeek,
+        &daysThisMonth,
+        &daysThisYear,
+        &totalDaysDrank,
+        &currentStreakF,
+        &longestStreakF,
+        &totalWeeksWon,
+        &achievementsCount,
+        &friendsCount,
+        &alcoholismCoefficient,
+    )
+
+    if err != nil {
+        return nil, fmt.Errorf("failed to get user stats: %w", err)
+    }
+
+    // Assign scanned values to the stats struct
+    stats.TodayStatus = todayStatus
+    stats.DaysThisWeek = daysThisWeek
+    stats.DaysThisMonth = daysThisMonth
+    stats.DaysThisYear = daysThisYear
+    stats.TotalDaysDrank = totalDaysDrank
+    // Cast the calculated float streak back to int for the struct fields
+    stats.CurrentStreak = int(currentStreakF)
+    stats.LongestStreak = int(longestStreakF)
+    stats.TotalWeeksWon = totalWeeksWon
+    stats.AchievementsCount = achievementsCount
+    stats.FriendsCount = friendsCount
+    // Assign the new alcoholism coefficient
+    stats.AlcoholismCoefficient = alcoholismCoefficient
+    
+    // The previous 'Get rank' block is now removed as the coefficient is calculated in the main query.
+    
+    return stats, nil
 }
+
+// func (s *UserService) GetUserStats(ctx context.Context, clerkID string) (*stats.UserStats, error) {
+// 	var userID uuid.UUID
+// 	err := s.db.QueryRow(ctx, `SELECT id FROM users WHERE clerk_id = $1`, clerkID).Scan(&userID)
+// 	if err != nil {
+// 		return nil, fmt.Errorf("user not found: %w", err)
+// 	}
+
+// 	query := `
+// 	SELECT 
+// 		COALESCE(dd_today.drank_today, false) as today_status,
+// 		COALESCE(COUNT(DISTINCT dd_week.date) FILTER (WHERE dd_week.drank_today = true), 0) as days_this_week,
+// 		COALESCE(COUNT(DISTINCT dd_month.date) FILTER (WHERE dd_month.drank_today = true), 0) as days_this_month,
+// 		COALESCE(COUNT(DISTINCT dd_year.date) FILTER (WHERE dd_year.drank_today = true), 0) as days_this_year,
+// 		COALESCE(COUNT(DISTINCT dd_all.date) FILTER (WHERE dd_all.drank_today = true), 0) as total_days_drank,
+// 		COALESCE(s.current_streak, 0) as current_streak,
+// 		COALESCE(s.longest_streak, 0) as longest_streak,
+// 		COALESCE(SUM(ws.win_count), 0) as total_weeks_won,
+// 		COUNT(DISTINCT ua.achievement_id) as achievements_count,
+// 		COUNT(DISTINCT f.friend_id) FILTER (WHERE f.status = 'accepted') as friends_count
+// 	FROM users u
+// 	LEFT JOIN daily_drinking dd_today ON u.id = dd_today.user_id AND dd_today.date = CURRENT_DATE
+// 	LEFT JOIN daily_drinking dd_week ON u.id = dd_week.user_id 
+// 		AND dd_week.date >= DATE_TRUNC('week', CURRENT_DATE)
+// 		AND dd_week.date <= CURRENT_DATE
+// 	LEFT JOIN daily_drinking dd_month ON u.id = dd_month.user_id 
+// 		AND dd_month.date >= DATE_TRUNC('month', CURRENT_DATE)
+// 		AND dd_month.date <= CURRENT_DATE
+// 	LEFT JOIN daily_drinking dd_year ON u.id = dd_year.user_id 
+// 		AND dd_year.date >= DATE_TRUNC('year', CURRENT_DATE)
+// 		AND dd_year.date <= CURRENT_DATE
+// 	LEFT JOIN daily_drinking dd_all ON u.id = dd_all.user_id
+// 	LEFT JOIN streaks s ON u.id = s.user_id
+// 	LEFT JOIN weekly_stats ws ON u.id = ws.user_id
+// 	LEFT JOIN user_achievements ua ON u.id = ua.user_id
+// 	LEFT JOIN friendships f ON u.id = f.user_id
+// 	WHERE u.id = $1
+// 	GROUP BY u.id, dd_today.drank_today, s.current_streak, s.longest_streak
+// 	`
+
+// 	stats := &stats.UserStats{}
+// 	err = s.db.QueryRow(ctx, query, userID).Scan(
+// 		&stats.TodayStatus,
+// 		&stats.DaysThisWeek,
+// 		&stats.DaysThisMonth,
+// 		&stats.DaysThisYear,
+// 		&stats.TotalDaysDrank,
+// 		&stats.CurrentStreak,
+// 		&stats.LongestStreak,
+// 		&stats.TotalWeeksWon,
+// 		&stats.AchievementsCount,
+// 		&stats.FriendsCount,
+// 	)
+// 	if err != nil {
+// 		return nil, fmt.Errorf("failed to get user stats: %w", err)
+// 	}
+
+// 	// Get rank
+// 	rankQuery := `
+// 	SELECT rank FROM (
+// 		SELECT 
+// 			u.id,
+// 			RANK() OVER (ORDER BY COALESCE(ws.days_drank, 0) DESC) as rank
+// 		FROM users u
+// 		LEFT JOIN weekly_stats ws ON u.id = ws.user_id
+// 			AND ws.week_start = DATE_TRUNC('week', CURRENT_DATE)::DATE
+// 		WHERE u.is_active = true
+// 	) ranked
+// 	WHERE id = $1
+// 	`
+
+// 	err = s.db.QueryRow(ctx, rankQuery, userID).Scan(&stats.Rank)
+// 	if err != nil {
+// 		stats.Rank = 0 // Default if no rank found
+// 	}
+
+// 	return stats, nil
+// }
