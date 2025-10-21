@@ -7,15 +7,15 @@ type DaysStat struct {
 }
 
 type UserStats struct {
-	TodayStatus       bool `json:"today_status"`
-	DaysThisWeek      int  `json:"days_this_week"`
-	DaysThisMonth     int  `json:"days_this_month"`
-	DaysThisYear      int  `json:"days_this_year"`
-	TotalDaysDrank    int  `json:"total_days_drank"`
-	CurrentStreak     int  `json:"current_streak"`
-	LongestStreak     int  `json:"longest_streak"`
-	TotalWeeksWon     int  `json:"total_weeks_won"`
-	AchievementsCount int  `json:"achievements_count"`
-	FriendsCount      int  `json:"friends_count"`
-	AlcoholismCoefficient              float64  `json:"alcoholism_coefficient"`
+	TodayStatus           bool    `json:"today_status"`
+	DaysThisWeek          int     `json:"days_this_week"`
+	DaysThisMonth         int     `json:"days_this_month"`
+	DaysThisYear          int     `json:"days_this_year"`
+	TotalDaysDrank        int     `json:"total_days_drank"`
+	CurrentStreak         int     `json:"current_streak"`
+	LongestStreak         int     `json:"longest_streak"`
+	TotalWeeksWon         int     `json:"total_weeks_won"`
+	AchievementsCount     int     `json:"achievements_count"`
+	FriendsCount          int     `json:"friends_count"`
+	AlcoholismCoefficient float64 `json:"alcoholism_coefficient"`
 }
