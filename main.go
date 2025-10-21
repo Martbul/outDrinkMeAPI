@@ -124,7 +124,7 @@ func main() {
 
 	// User routes
 	protected.HandleFunc("/user", userHandler.GetProfile).Methods("GET")
-	protected.HandleFunc("/user/profile", userHandler.UpdateProfile).Methods("PUT")
+	protected.HandleFunc("/user/update-profile", userHandler.UpdateProfile).Methods("PUT")
 	protected.HandleFunc("/user/account", userHandler.DeleteAccount).Methods("DELETE")
 	protected.HandleFunc("/user/leaderboard/friends", userHandler.GetFriendsLeaderboard).Methods("GET")
 	protected.HandleFunc("/user/leaderboard/global", userHandler.GetGlobalLeaderboard).Methods("GET")
