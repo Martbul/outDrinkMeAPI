@@ -957,9 +957,9 @@ func (s *UserService) GetUserStats(ctx context.Context, clerkID string) (*stats.
     }
     
     // Calculate alcoholism coefficient: currentStreak^2 + totalDays*0.3 + achievements*5
-    alcoholismScore := float64(stats.CurrentStreak*stats.CurrentStreak) + 
-                       (float64(stats.TotalDaysDrank) * 0.3) + 
-                       (float64(stats.AchievementsCount) * 5)
+    alcoholismScore := float64(stats.CurrentStreak*stats.CurrentStreak) * 0.3 + 
+                       (float64(stats.TotalDaysDrank) * 0.05) + 
+                       (float64(stats.AchievementsCount) * 1)
     
     stats.AlcoholismCoefficient = alcoholismScore
     
