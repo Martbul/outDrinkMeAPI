@@ -851,28 +851,40 @@ func (s *UserService) GetUserStats(ctx context.Context, clerkID string) (*stats.
     }
     
     query := `
-    WITH streak_calc AS (
+    WITH RECURSIVE streak_calc AS (
+        -- Start with today or the most recent drinking day
         SELECT 
             user_id,
-            COUNT(*) as current_streak
-        FROM (
-            SELECT 
-                user_id,
-                date,
-                date - (ROW_NUMBER() OVER (PARTITION BY user_id ORDER BY date))::int AS grp
-            FROM daily_drinking
-            WHERE user_id = $1 
-                AND drank_today = true
-                AND date <= CURRENT_DATE
-        ) sub
-        WHERE grp = (
-            SELECT date - (ROW_NUMBER() OVER (ORDER BY date))::int
-            FROM daily_drinking
-            WHERE user_id = $1 
-                AND drank_today = true
-                AND date = CURRENT_DATE
-            LIMIT 1
-        )
+            date,
+            1 as streak_length
+        FROM daily_drinking
+        WHERE user_id = $1 
+            AND drank_today = true
+            AND date = (
+                SELECT MAX(date) 
+                FROM daily_drinking 
+                WHERE user_id = $1 
+                    AND drank_today = true 
+                    AND date <= CURRENT_DATE
+            )
+        
+        UNION ALL
+        
+        -- Recursively check previous days
+        SELECT 
+            dd.user_id,
+            dd.date,
+            sc.streak_length + 1
+        FROM daily_drinking dd
+        INNER JOIN streak_calc sc ON dd.user_id = sc.user_id 
+            AND dd.date = sc.date - INTERVAL '1 day'
+        WHERE dd.drank_today = true
+    ),
+    current_streak_result AS (
+        SELECT 
+            user_id,
+            MAX(streak_length) as current_streak
+        FROM streak_calc
         GROUP BY user_id
     ),
     longest_streak_calc AS (
@@ -887,7 +899,7 @@ func (s *UserService) GetUserStats(ctx context.Context, clerkID string) (*stats.
                 SELECT 
                     user_id,
                     date,
-                    date - (ROW_NUMBER() OVER (PARTITION BY user_id ORDER BY date))::int AS grp
+                    date - (ROW_NUMBER() OVER (ORDER BY date))::int AS grp
                 FROM daily_drinking
                 WHERE user_id = $1 AND drank_today = true
             ) sub
@@ -918,7 +930,7 @@ func (s *UserService) GetUserStats(ctx context.Context, clerkID string) (*stats.
         AND dd_year.date >= DATE_TRUNC('year', CURRENT_DATE)
         AND dd_year.date <= CURRENT_DATE
     LEFT JOIN daily_drinking dd_all ON u.id = dd_all.user_id
-    LEFT JOIN streak_calc sc ON u.id = sc.user_id
+    LEFT JOIN current_streak_result sc ON u.id = sc.user_id
     LEFT JOIN longest_streak_calc lsc ON u.id = lsc.user_id
     LEFT JOIN weekly_stats ws ON u.id = ws.user_id
     LEFT JOIN user_achievements ua ON u.id = ua.user_id
@@ -944,65 +956,76 @@ func (s *UserService) GetUserStats(ctx context.Context, clerkID string) (*stats.
         return nil, fmt.Errorf("failed to get user stats: %w", err)
     }
     
-    // Calculate Alcoholism rank using formula: currentStreak^2 + totalDays*0.3 + longestStreak*5
+    // Calculate Alcoholism coefficient using formula: currentStreak^2 + totalDays*0.3 + longestStreak*5
     alcoholismQuery := `
-    WITH user_scores AS (
+    WITH RECURSIVE all_user_streaks AS (
+        -- For each user, start with their most recent drinking day
+        SELECT DISTINCT ON (dd.user_id)
+            dd.user_id,
+            dd.date,
+            1 as streak_length
+        FROM daily_drinking dd
+        WHERE dd.drank_today = true
+            AND dd.date <= CURRENT_DATE
+            AND dd.user_id IN (SELECT id FROM users WHERE is_active = true)
+        ORDER BY dd.user_id, dd.date DESC
+        
+        UNION ALL
+        
+        -- Recursively check previous days
         SELECT 
-            u.id,
-            COALESCE(sc.current_streak, 0) as current_streak,
-            COALESCE(lsc.longest_streak, 0) as longest_streak,
-            COALESCE(COUNT(DISTINCT dd.date) FILTER (WHERE dd.drank_today = true), 0) as total_days,
-            (
-                POWER(COALESCE(sc.current_streak, 0), 2) + 
-                (COALESCE(COUNT(DISTINCT dd.date) FILTER (WHERE dd.drank_today = true), 0) * 0.3) + 
-                (COALESCE(lsc.longest_streak, 0) * 5)
-            ) as alcoholism_score
-        FROM users u
-        LEFT JOIN daily_drinking dd ON u.id = dd.user_id
-        LEFT JOIN (
+            dd.user_id,
+            dd.date,
+            aus.streak_length + 1
+        FROM daily_drinking dd
+        INNER JOIN all_user_streaks aus ON dd.user_id = aus.user_id 
+            AND dd.date = aus.date - INTERVAL '1 day'
+        WHERE dd.drank_today = true
+    ),
+    current_streaks AS (
+        SELECT 
+            user_id,
+            MAX(streak_length) as current_streak
+        FROM all_user_streaks
+        GROUP BY user_id
+    ),
+    longest_streaks AS (
+        SELECT 
+            user_id,
+            MAX(streak_length) as longest_streak
+        FROM (
             SELECT 
                 user_id,
-                COUNT(*) as current_streak
+                COUNT(*) as streak_length
             FROM (
                 SELECT 
                     user_id,
                     date,
                     date - (ROW_NUMBER() OVER (PARTITION BY user_id ORDER BY date))::int AS grp
                 FROM daily_drinking
-                WHERE drank_today = true AND date <= CURRENT_DATE
+                WHERE drank_today = true
             ) sub
-            WHERE grp = (
-                SELECT date - (ROW_NUMBER() OVER (PARTITION BY user_id ORDER BY date))::int
-                FROM daily_drinking
-                WHERE user_id = sub.user_id 
-                    AND drank_today = true
-                    AND date = CURRENT_DATE
-                LIMIT 1
-            )
-            GROUP BY user_id
-        ) sc ON u.id = sc.user_id
-        LEFT JOIN (
-            SELECT 
-                user_id,
-                MAX(streak_length) as longest_streak
-            FROM (
-                SELECT 
-                    user_id,
-                    COUNT(*) as streak_length
-                FROM (
-                    SELECT 
-                        user_id,
-                        date,
-                        date - (ROW_NUMBER() OVER (PARTITION BY user_id ORDER BY date))::int AS grp
-                    FROM daily_drinking
-                    WHERE drank_today = true
-                ) sub
-                GROUP BY user_id, grp
-            ) streaks
-            GROUP BY user_id
-        ) lsc ON u.id = lsc.user_id
+            GROUP BY user_id, grp
+        ) streaks
+        GROUP BY user_id
+    ),
+    user_scores AS (
+        SELECT 
+            u.id,
+            COALESCE(cs.current_streak, 0) as current_streak,
+            COALESCE(ls.longest_streak, 0) as longest_streak,
+            COALESCE(COUNT(DISTINCT dd.date) FILTER (WHERE dd.drank_today = true), 0) as total_days,
+            (
+                POWER(COALESCE(cs.current_streak, 0)::numeric, 2) + 
+                (COALESCE(COUNT(DISTINCT dd.date) FILTER (WHERE dd.drank_today = true), 0) * 0.3) + 
+                (COALESCE(ls.longest_streak, 0) * 5)
+            ) as alcoholism_score
+        FROM users u
+        LEFT JOIN daily_drinking dd ON u.id = dd.user_id
+        LEFT JOIN current_streaks cs ON u.id = cs.user_id
+        LEFT JOIN longest_streaks ls ON u.id = ls.user_id
         WHERE u.is_active = true
-        GROUP BY u.id, sc.current_streak, lsc.longest_streak
+        GROUP BY u.id, cs.current_streak, ls.longest_streak
     )
     SELECT rank FROM (
         SELECT 
@@ -1015,7 +1038,7 @@ func (s *UserService) GetUserStats(ctx context.Context, clerkID string) (*stats.
     
     err = s.db.QueryRow(ctx, alcoholismQuery, userID).Scan(&stats.AlcoholismCoefficient)
     if err != nil {
-		//TODO: Set the default to 0 (-1 is only for testing)
+        //TODO: Set the default to 0 (-1 is only for testing)
         stats.AlcoholismCoefficient = -1 // Default if no rank found
     }
     
