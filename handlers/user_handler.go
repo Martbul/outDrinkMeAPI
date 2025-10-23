@@ -122,7 +122,7 @@ func (h *UserHandler) AddFriend(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if req.FriendId == "" {
-		respondWithError(w, http.StatusBadRequest, "friend_clerk_id is required")
+		respondWithError(w, http.StatusBadRequest, "friendId is required") // Updated message
 		return
 	}
 
@@ -145,7 +145,6 @@ func (h *UserHandler) AddFriend(w http.ResponseWriter, r *http.Request) {
 		"message": "Friend added successfully",
 	})
 }
-
 
 
 func (h *UserHandler) GetDiscovery(w http.ResponseWriter, r *http.Request) {

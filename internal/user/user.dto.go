@@ -17,7 +17,6 @@ type UpdateProfileRequest struct {
 	Gems      int    `json:"gems,omitempty"`
 }
 
-
 type AddFriend struct {
-	FriendId  string `json:"friendId,omitempty"`
+	FriendId string `json:"friendId,omitempty"`
 }
