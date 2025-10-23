@@ -133,7 +133,6 @@ func (s *UserService) GetUserByClerkID(ctx context.Context, clerkID string) (*us
 
 	return user, nil
 }
-
 func (s *UserService) UpdateProfileByClerkID(ctx context.Context, clerkID string, req *user.UpdateProfileRequest) (*user.User, error) {
 	query := `
 	UPDATE users
@@ -142,9 +141,10 @@ func (s *UserService) UpdateProfileByClerkID(ctx context.Context, clerkID string
 		first_name = COALESCE(NULLIF($3, ''), first_name),
 		last_name = COALESCE(NULLIF($4, ''), last_name),
 		image_url = COALESCE(NULLIF($5, ''), image_url),
+		gems = CASE WHEN $6 != 0 THEN $6 ELSE gems END,
 		updated_at = NOW()
 	WHERE clerk_id = $1
-	RETURNING id, clerk_id, email, username, first_name, last_name, image_url, email_verified, created_at, updated_at
+	RETURNING id, clerk_id, email, username, first_name, last_name, image_url, email_verified, gems, created_at, updated_at
 	`
 
 	user := &user.User{}
@@ -156,6 +156,7 @@ func (s *UserService) UpdateProfileByClerkID(ctx context.Context, clerkID string
 		req.FirstName,
 		req.LastName,
 		req.ImageURL,
+		req.Gems,
 	).Scan(
 		&user.ID,
 		&user.ClerkID,
@@ -165,6 +166,7 @@ func (s *UserService) UpdateProfileByClerkID(ctx context.Context, clerkID string
 		&user.LastName,
 		&user.ImageURL,
 		&user.EmailVerified,
+		&user.Gems,
 		&user.CreatedAt,
 		&user.UpdatedAt,
 	)

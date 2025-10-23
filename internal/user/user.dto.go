@@ -14,4 +14,5 @@ type UpdateProfileRequest struct {
 	FirstName string `json:"firstName,omitempty"`
 	LastName  string `json:"lastName,omitempty"`
 	ImageURL  string `json:"imageUrl,omitempty"`
+	Gems      int    `json:"gems,omitempty"`
 }
