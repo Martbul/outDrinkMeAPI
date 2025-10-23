@@ -97,7 +97,6 @@ func main() {
 
 	r := mux.NewRouter()
 
-	// Public routes (no auth required)
 	r.HandleFunc("/health", func(w http.ResponseWriter, r *http.Request) {
 		ctx, cancel := context.WithTimeout(r.Context(), 2*time.Second)
 		defer cancel()
@@ -114,10 +113,8 @@ func main() {
 		w.Write([]byte(`{"status": "healthy", "service": "outDrinkMe-api"}`))
 	}).Methods("GET")
 
-	// Webhook endpoint (no auth, verified by signature)
 	r.HandleFunc("/webhooks/clerk", webhookHandler.HandleClerkWebhook).Methods("POST")
 
-	// API routes
 	api := r.PathPrefix("/api/v1").Subrouter()
 
 	api.HandleFunc("/privacy-policy", docHandler.ServePrivacyPolicy).Methods("GET")
@@ -127,10 +124,9 @@ func main() {
 	protected := api.PathPrefix("").Subrouter()
 	protected.Use(middleware.ClerkAuthMiddleware)
 
-	// User routes
 	protected.HandleFunc("/user", userHandler.GetProfile).Methods("GET")
 	protected.HandleFunc("/user/update-profile", userHandler.UpdateProfile).Methods("PUT")
-	protected.HandleFunc("/user/account", userHandler.DeleteAccount).Methods("DELETE")
+	protected.HandleFunc("/user/delete-account", userHandler.DeleteAccount).Methods("DELETE")
 	protected.HandleFunc("/user/leaderboard/friends", userHandler.GetFriendsLeaderboard).Methods("GET")
 	protected.HandleFunc("/user/leaderboard/global", userHandler.GetGlobalLeaderboard).Methods("GET")
 	protected.HandleFunc("/user/friends", userHandler.GetFriends).Methods("GET")
