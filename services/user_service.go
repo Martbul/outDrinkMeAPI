@@ -24,30 +24,6 @@ func NewUserService(db *pgxpool.Pool) *UserService {
 	return &UserService{db: db}
 }
 
-// InitSchema creates the users table with Clerk integration
-// func (s *UserService) InitSchema(ctx context.Context) error {
-// 	query := `
-// 	CREATE TABLE IF NOT EXISTS users (
-// 		id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-// 		clerk_id VARCHAR(255) UNIQUE NOT NULL,
-// 		email VARCHAR(255) UNIQUE NOT NULL,
-// 		username VARCHAR(30) UNIQUE NOT NULL,
-// 		first_name VARCHAR(100) NOT NULL,
-// 		last_name VARCHAR(100) NOT NULL,
-// 		image_url TEXT,
-// 		email_verified BOOLEAN DEFAULT FALSE,
-// 		created_at TIMESTAMP NOT NULL DEFAULT NOW(),
-// 		updated_at TIMESTAMP NOT NULL DEFAULT NOW()
-// 	);
-
-// 	CREATE INDEX IF NOT EXISTS idx_users_email ON users(email);
-// 	CREATE INDEX IF NOT EXISTS idx_users_username ON users(username);
-// 	CREATE INDEX IF NOT EXISTS idx_users_clerk_id ON users(clerk_id);
-// 	`
-
-// 	_, err := s.db.Exec(ctx, query)
-// 	return err
-// }
 
 func (s *UserService) CreateUser(ctx context.Context, req *user.CreateUserRequest) (*user.User, error) {
 	user := &user.User{
@@ -266,7 +242,6 @@ func (s *UserService) GetFriends(ctx context.Context, clerkID string) ([]*user.U
 	return friends, nil
 }
 func (s *UserService) GetDiscovery(ctx context.Context, clerkID string) ([]*user.User, error) {
-	// Get current user ID
 	var userID uuid.UUID
 	err := s.db.QueryRow(ctx, `SELECT id FROM users WHERE clerk_id = $1`, clerkID).Scan(&userID)
 	if err != nil {
@@ -274,7 +249,7 @@ func (s *UserService) GetDiscovery(ctx context.Context, clerkID string) ([]*user
 	}
 
 	query := `
-	SELECT DISTINCT
+	SELECT
 		u.id,
 		u.clerk_id,
 		u.email,
@@ -332,13 +307,14 @@ func (s *UserService) GetDiscovery(ctx context.Context, clerkID string) ([]*user
 		return nil, fmt.Errorf("error iterating rows: %w", err)
 	}
 
-	// Return empty slice instead of nil if no users found
 	if users == nil {
 		users = []*user.User{}
 	}
 
 	return users, nil
 }
+
+
 func (s *UserService) GetFriendsLeaderboard(ctx context.Context, clerkID string) (*leaderboard.Leaderboard, error) {
 	// Get user ID from clerk_id
 	var userID uuid.UUID
@@ -775,129 +751,6 @@ func (s *UserService) GetCalendar(ctx context.Context, clerkID string, year int,
 	}, nil
 }
 
-
-// func (s *UserService) GetUserStats(ctx context.Context, clerkID string) (*stats.UserStats, error) {
-//     var userID uuid.UUID
-//     err := s.db.QueryRow(ctx, "SELECT id FROM users WHERE clerk_id = $1", clerkID).Scan(&userID)
-//     if err != nil {
-//         return nil, fmt.Errorf("user not found: %w", err)
-//     }
-    
-//     query := `
-//     WITH RECURSIVE streak_calc AS (
-//         -- Start with today or the most recent drinking day
-//         SELECT 
-//             user_id,
-//             date,
-//             1 as streak_length
-//         FROM daily_drinking
-//         WHERE user_id = $1 
-//             AND drank_today = true
-//             AND date = (
-//                 SELECT MAX(date) 
-//                 FROM daily_drinking 
-//                 WHERE user_id = $1 
-//                     AND drank_today = true 
-//                     AND date <= CURRENT_DATE
-//             )
-        
-//         UNION ALL
-        
-//         -- Recursively check previous days
-//         SELECT 
-//             dd.user_id,
-//             dd.date,
-//             sc.streak_length + 1
-//         FROM daily_drinking dd
-//         INNER JOIN streak_calc sc ON dd.user_id = sc.user_id 
-//             AND dd.date = sc.date - INTERVAL '1 day'
-//         WHERE dd.drank_today = true
-//     ),
-//     current_streak_result AS (
-//         SELECT 
-//             user_id,
-//             MAX(streak_length) as current_streak
-//         FROM streak_calc
-//         GROUP BY user_id
-//     ),
-//     longest_streak_calc AS (
-//         SELECT 
-//             user_id,
-//             MAX(streak_length) as longest_streak
-//         FROM (
-//             SELECT 
-//                 user_id,
-//                 COUNT(*) as streak_length
-//             FROM (
-//                 SELECT 
-//                     user_id,
-//                     date,
-//                     date - (ROW_NUMBER() OVER (ORDER BY date))::int AS grp
-//                 FROM daily_drinking
-//                 WHERE user_id = $1 AND drank_today = true
-//             ) sub
-//             GROUP BY user_id, grp
-//         ) streaks
-//         GROUP BY user_id
-//     )
-//     SELECT 
-//         COALESCE(dd_today.drank_today, false) as today_status,
-//         COALESCE(COUNT(DISTINCT dd_week.date) FILTER (WHERE dd_week.drank_today = true), 0) as days_this_week,
-//         COALESCE(COUNT(DISTINCT dd_month.date) FILTER (WHERE dd_month.drank_today = true), 0) as days_this_month,
-//         COALESCE(COUNT(DISTINCT dd_year.date) FILTER (WHERE dd_year.drank_today = true), 0) as days_this_year,
-//         COALESCE(COUNT(DISTINCT dd_all.date) FILTER (WHERE dd_all.drank_today = true), 0) as total_days_drank,
-//         COALESCE(sc.current_streak, 0) as current_streak,
-//         COALESCE(lsc.longest_streak, 0) as longest_streak,
-//         COALESCE(SUM(ws.win_count), 0) as total_weeks_won,
-//         COUNT(DISTINCT ua.achievement_id) as achievements_count,
-//         COUNT(DISTINCT f.friend_id) FILTER (WHERE f.status = 'accepted') as friends_count
-//     FROM users u
-//     LEFT JOIN daily_drinking dd_today ON u.id = dd_today.user_id AND dd_today.date = CURRENT_DATE
-//     LEFT JOIN daily_drinking dd_week ON u.id = dd_week.user_id 
-//         AND dd_week.date >= DATE_TRUNC('week', CURRENT_DATE)
-//         AND dd_week.date <= CURRENT_DATE
-//     LEFT JOIN daily_drinking dd_month ON u.id = dd_month.user_id 
-//         AND dd_month.date >= DATE_TRUNC('month', CURRENT_DATE)
-//         AND dd_month.date <= CURRENT_DATE
-//     LEFT JOIN daily_drinking dd_year ON u.id = dd_year.user_id 
-//         AND dd_year.date >= DATE_TRUNC('year', CURRENT_DATE)
-//         AND dd_year.date <= CURRENT_DATE
-//     LEFT JOIN daily_drinking dd_all ON u.id = dd_all.user_id
-//     LEFT JOIN current_streak_result sc ON u.id = sc.user_id
-//     LEFT JOIN longest_streak_calc lsc ON u.id = lsc.user_id
-//     LEFT JOIN weekly_stats ws ON u.id = ws.user_id
-//     LEFT JOIN user_achievements ua ON u.id = ua.user_id
-//     LEFT JOIN friendships f ON u.id = f.user_id
-//     WHERE u.id = $1
-//     GROUP BY u.id, dd_today.drank_today, sc.current_streak, lsc.longest_streak
-//     `
-    
-//     stats := &stats.UserStats{}
-//     err = s.db.QueryRow(ctx, query, userID).Scan(
-//         &stats.TodayStatus,
-//         &stats.DaysThisWeek,
-//         &stats.DaysThisMonth,
-//         &stats.DaysThisYear,
-//         &stats.TotalDaysDrank,
-//         &stats.CurrentStreak,
-//         &stats.LongestStreak,
-//         &stats.TotalWeeksWon,
-//         &stats.AchievementsCount,
-//         &stats.FriendsCount,
-//     )
-//     if err != nil {
-//         return nil, fmt.Errorf("failed to get user stats: %w", err)
-//     }
-    
-//     // Calculate alcoholism coefficient: currentStreak^2 + totalDays*0.3 + achievements*5
-//     alcoholismScore := float64(stats.CurrentStreak*stats.CurrentStreak) * 0.3 + 
-//                        (float64(stats.TotalDaysDrank) * 0.05) + 
-//                        (float64(stats.AchievementsCount) * 1)
-    
-//     stats.AlcoholismCoefficient = alcoholismScore
-    
-//     return stats, nil
-// }
 
 func (s *UserService) GetUserStats(ctx context.Context, clerkID string) (*stats.UserStats, error) {
     var userID uuid.UUID

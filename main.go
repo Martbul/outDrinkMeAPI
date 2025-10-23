@@ -22,6 +22,7 @@ import (
 var (
 	dbPool      *pgxpool.Pool
 	userService *services.UserService
+	docService  *services.DocService
 )
 
 func init() {
@@ -91,6 +92,7 @@ func main() {
 
 	// Initialize handlers
 	userHandler := handlers.NewUserHandler(userService)
+	docHandler := handlers.NewDocHandler(docService)
 	webhookHandler := handlers.NewWebhookHandler(userService)
 
 	r := mux.NewRouter()
@@ -118,6 +120,9 @@ func main() {
 	// API routes
 	api := r.PathPrefix("/api/v1").Subrouter()
 
+	api.HandleFunc("/privacy-policy", docHandler.ServePrivacyPolicy).Methods("GET")
+
+
 	// Protected API routes (auth required)
 	protected := api.PathPrefix("").Subrouter()
 	protected.Use(middleware.ClerkAuthMiddleware)
@@ -128,8 +133,8 @@ func main() {
 	protected.HandleFunc("/user/account", userHandler.DeleteAccount).Methods("DELETE")
 	protected.HandleFunc("/user/leaderboard/friends", userHandler.GetFriendsLeaderboard).Methods("GET")
 	protected.HandleFunc("/user/leaderboard/global", userHandler.GetGlobalLeaderboard).Methods("GET")
-	protected.HandleFunc("/user/friends", userHandler.GetFriends).Methods("GET") 
-	protected.HandleFunc("/user/discovery", userHandler.GetDiscovery).Methods("GET") 
+	protected.HandleFunc("/user/friends", userHandler.GetFriends).Methods("GET")
+	protected.HandleFunc("/user/discovery", userHandler.GetDiscovery).Methods("GET")
 	protected.HandleFunc("/user/achievements", userHandler.GetAchievements).Methods("GET")
 	protected.HandleFunc("/user/drink", userHandler.AddDrinking).Methods("POST")
 	protected.HandleFunc("/user/stats", userHandler.GetUserStats).Methods("GET")
@@ -140,7 +145,7 @@ func main() {
 	protected.HandleFunc("/user/calendar", userHandler.GetCalendar).Methods("GET")
 	protected.HandleFunc("/user/search", userHandler.SearchUsers).Methods("GET")
 
-	
+
 	// CORS configuration
 	corsHandler := gorilllaHandlers.CORS(
 		gorilllaHandlers.AllowedOrigins([]string{"*"}), // Configure for production
