@@ -8,6 +8,7 @@ import (
 	"outDrinkMeAPI/internal/user"
 	"outDrinkMeAPI/middleware"
 	"outDrinkMeAPI/services"
+	"strings"
 	"time"
 )
 
@@ -104,6 +105,48 @@ func (h *UserHandler) GetFriends(w http.ResponseWriter, r *http.Request) {
 
 	respondWithJSON(w, http.StatusOK, friends)
 }
+func (h *UserHandler) AddFriend(w http.ResponseWriter, r *http.Request) {
+	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
+	defer cancel()
+
+	clerkID, ok := middleware.GetClerkID(ctx)
+	if !ok {
+		respondWithError(w, http.StatusUnauthorized, "User not authenticated")
+		return
+	}
+
+	var req user.AddFriend
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		respondWithError(w, http.StatusBadRequest, "Invalid request body")
+		return
+	}
+
+	if req.FriendId == "" {
+		respondWithError(w, http.StatusBadRequest, "friend_clerk_id is required")
+		return
+	}
+
+	err := h.userService.AddFriend(ctx, clerkID, req.FriendId)
+	if err != nil {
+		// Handle specific error cases
+		errMsg := err.Error()
+		switch {
+		case errMsg == "cannot add yourself as a friend" || errMsg == "friendship already exists":
+			respondWithError(w, http.StatusBadRequest, errMsg)
+		case errMsg == "friend user not found" || strings.Contains(errMsg, "user not found"):
+			respondWithError(w, http.StatusNotFound, errMsg)
+		default:
+			respondWithError(w, http.StatusInternalServerError, "Failed to add friend")
+		}
+		return
+	}
+
+	respondWithJSON(w, http.StatusCreated, map[string]string{
+		"message": "Friend added successfully",
+	})
+}
+
+
 
 func (h *UserHandler) GetDiscovery(w http.ResponseWriter, r *http.Request) {
 	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)

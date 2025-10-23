@@ -314,6 +314,52 @@ func (s *UserService) GetDiscovery(ctx context.Context, clerkID string) ([]*user
 	return users, nil
 }
 
+func (s *UserService) AddFriend(ctx context.Context, clerkID string, friendClerkID string) error {
+	var userID uuid.UUID
+	err := s.db.QueryRow(ctx, `SELECT id FROM users WHERE clerk_id = $1`, clerkID).Scan(&userID)
+	if err != nil {
+		return fmt.Errorf("user not found: %w", err)
+	}
+
+	var friendID uuid.UUID
+	err = s.db.QueryRow(ctx, `SELECT id FROM users WHERE clerk_id = $1`, friendClerkID).Scan(&friendID)
+	if err != nil {
+		return fmt.Errorf("friend user not found: %w", err)
+	}
+
+	if userID == friendID {
+		return fmt.Errorf("cannot add yourself as a friend")
+	}
+
+	var exists bool
+	checkQuery := `
+		SELECT EXISTS(
+			SELECT 1 FROM friendships 
+			WHERE (user_id = $1 AND friend_id = $2) 
+			   OR (user_id = $2 AND friend_id = $1)
+		)
+	`
+	err = s.db.QueryRow(ctx, checkQuery, userID, friendID).Scan(&exists)
+	if err != nil {
+		return fmt.Errorf("failed to check existing friendship: %w", err)
+	}
+
+	if exists {
+		return fmt.Errorf("friendship already exists")
+	}
+
+	insertQuery := `
+		INSERT INTO friendships (user_id, friend_id, status, created_at, updated_at)
+		VALUES ($1, $2, 'accepted', NOW(), NOW())
+	`
+	
+	_, err = s.db.Exec(ctx, insertQuery, userID, friendID)
+	if err != nil {
+		return fmt.Errorf("failed to create friendship: %w", err)
+	}
+
+	return nil
+}
 
 func (s *UserService) GetFriendsLeaderboard(ctx context.Context, clerkID string) (*leaderboard.Leaderboard, error) {
 	// Get user ID from clerk_id
