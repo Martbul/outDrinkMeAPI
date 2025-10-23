@@ -105,6 +105,25 @@ func (h *UserHandler) GetFriends(w http.ResponseWriter, r *http.Request) {
 	respondWithJSON(w, http.StatusOK, friends)
 }
 
+func (h *UserHandler) GetDiscovery(w http.ResponseWriter, r *http.Request) {
+	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
+	defer cancel()
+
+	clearkID, ok := middleware.GetClerkID(ctx)
+	if !ok {
+		respondWithError(w, http.StatusUnauthorized, "User not authenticated")
+		return
+	}
+
+	friends, err := h.userService.GetDiscovery(ctx, clearkID)
+	if err != nil {
+		respondWithError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+
+	respondWithJSON(w, http.StatusOK, friends)
+}
+
 func (h *UserHandler) GetFriendsLeaderboard(w http.ResponseWriter, r *http.Request) {
 	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
 	defer cancel()

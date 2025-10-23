@@ -129,6 +129,7 @@ func main() {
 	protected.HandleFunc("/user/leaderboard/friends", userHandler.GetFriendsLeaderboard).Methods("GET")
 	protected.HandleFunc("/user/leaderboard/global", userHandler.GetGlobalLeaderboard).Methods("GET")
 	protected.HandleFunc("/user/friends", userHandler.GetFriends).Methods("GET") 
+	protected.HandleFunc("/user/discovery", userHandler.GetDiscovery).Methods("GET") 
 	protected.HandleFunc("/user/achievements", userHandler.GetAchievements).Methods("GET")
 	protected.HandleFunc("/user/drink", userHandler.AddDrinking).Methods("POST")
 	protected.HandleFunc("/user/stats", userHandler.GetUserStats).Methods("GET")

@@ -266,6 +266,91 @@ func (s *UserService) GetFriends(ctx context.Context, clerkID string) ([]*user.U
 	return friends, nil
 }
 
+func (s *UserService) GetDiscovery(ctx context.Context, clerkID string) ([]*user.User, error) {
+	// Get current user ID
+	var userID uuid.UUID
+	err := s.db.QueryRow(ctx, `SELECT id FROM users WHERE clerk_id = $1`, clerkID).Scan(&userID)
+	if err != nil {
+		return nil, fmt.Errorf("user not found: %w", err)
+	}
+
+	query := `
+	SELECT DISTINCT
+		u.id,
+		u.clerk_id,
+		u.email,
+		u.username,
+		u.first_name,
+		u.last_name,
+		u.image_url,
+		u.email_verified,
+		u.created_at,
+		u.updated_at
+	FROM users u
+	WHERE u.id != $1
+		AND u.id NOT IN (
+			-- Exclude existing friends
+			SELECT f.friend_id 
+			FROM friendships f 
+			WHERE f.user_id = $1 AND f.status = 'accepted'
+			UNION
+			SELECT f.user_id 
+			FROM friendships f 
+			WHERE f.friend_id = $1 AND f.status = 'accepted'
+		)
+		AND u.id NOT IN (
+			-- Exclude pending friend requests (optional)
+			SELECT fr.to_user_id 
+			FROM friend_requests fr 
+			WHERE fr.from_user_id = $1
+			UNION
+			SELECT fr.from_user_id 
+			FROM friend_requests fr 
+			WHERE fr.to_user_id = $1
+		)
+	ORDER BY RANDOM()
+	LIMIT 30
+	`
+
+	rows, err := s.db.Query(ctx, query, userID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to fetch discovery users: %w", err)
+	}
+	defer rows.Close()
+
+	var users []*user.User
+	for rows.Next() {
+		u := &user.User{}
+		err := rows.Scan(
+			&u.ID,
+			&u.ClerkID,
+			&u.Email,
+			&u.Username,
+			&u.FirstName,
+			&u.LastName,
+			&u.ImageURL,
+			&u.EmailVerified,
+			&u.CreatedAt,
+			&u.UpdatedAt,
+		)
+		if err != nil {
+			return nil, fmt.Errorf("failed to scan user: %w", err)
+		}
+		users = append(users, u)
+	}
+
+	if err = rows.Err(); err != nil {
+		return nil, fmt.Errorf("error iterating rows: %w", err)
+	}
+
+	// Return empty slice instead of nil if no users found
+	if users == nil {
+		users = []*user.User{}
+	}
+
+	return users, nil
+}
+
 func (s *UserService) GetFriendsLeaderboard(ctx context.Context, clerkID string) (*leaderboard.Leaderboard, error) {
 	// Get user ID from clerk_id
 	var userID uuid.UUID
