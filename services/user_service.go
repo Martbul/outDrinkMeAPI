@@ -265,7 +265,6 @@ func (s *UserService) GetFriends(ctx context.Context, clerkID string) ([]*user.U
 
 	return friends, nil
 }
-
 func (s *UserService) GetDiscovery(ctx context.Context, clerkID string) ([]*user.User, error) {
 	// Get current user ID
 	var userID uuid.UUID
@@ -297,16 +296,6 @@ func (s *UserService) GetDiscovery(ctx context.Context, clerkID string) ([]*user
 			SELECT f.user_id 
 			FROM friendships f 
 			WHERE f.friend_id = $1 AND f.status = 'accepted'
-		)
-		AND u.id NOT IN (
-			-- Exclude pending friend requests (optional)
-			SELECT fr.to_user_id 
-			FROM friend_requests fr 
-			WHERE fr.from_user_id = $1
-			UNION
-			SELECT fr.from_user_id 
-			FROM friend_requests fr 
-			WHERE fr.to_user_id = $1
 		)
 	ORDER BY RANDOM()
 	LIMIT 30
@@ -350,7 +339,6 @@ func (s *UserService) GetDiscovery(ctx context.Context, clerkID string) ([]*user
 
 	return users, nil
 }
-
 func (s *UserService) GetFriendsLeaderboard(ctx context.Context, clerkID string) (*leaderboard.Leaderboard, error) {
 	// Get user ID from clerk_id
 	var userID uuid.UUID
