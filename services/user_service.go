@@ -373,6 +373,46 @@ func (s *UserService) AddFriend(ctx context.Context, clerkID string, friendClerk
 	return nil
 }
 
+func (s *UserService) RemoveFriend(ctx context.Context, clerkID string, friendClerkID string) error {
+	// Get current user ID
+	var userID uuid.UUID
+	err := s.db.QueryRow(ctx, `SELECT id FROM users WHERE clerk_id = $1`, clerkID).Scan(&userID)
+	if err != nil {
+		log.Printf("RemoveFriend: Failed to find user with clerk_id %s: %v", clerkID, err)
+		return fmt.Errorf("user not found")
+	}
+
+	// Get friend user ID
+	var friendID uuid.UUID
+	err = s.db.QueryRow(ctx, `SELECT id FROM users WHERE clerk_id = $1`, friendClerkID).Scan(&friendID)
+	if err != nil {
+		log.Printf("RemoveFriend: Failed to find friend with clerk_id %s: %v", friendClerkID, err)
+		return fmt.Errorf("friend user not found")
+	}
+
+	// Delete the friendship (check both directions)
+	deleteQuery := `
+		DELETE FROM friendships 
+		WHERE (user_id = $1 AND friend_id = $2) 
+		   OR (user_id = $2 AND friend_id = $1)
+	`
+	
+	result, err := s.db.Exec(ctx, deleteQuery, userID, friendID)
+	if err != nil {
+		log.Printf("RemoveFriend: Failed to delete friendship: %v", err)
+		return fmt.Errorf("failed to remove friendship")
+	}
+
+	rowsAffected := result.RowsAffected()
+	if rowsAffected == 0 {
+		log.Printf("RemoveFriend: No friendship found between %s and %s", clerkID, friendClerkID)
+		return fmt.Errorf("friendship not found")
+	}
+
+	log.Printf("RemoveFriend: Successfully removed friendship between %s and %s", clerkID, friendClerkID)
+	return nil
+}
+
 func (s *UserService) GetFriendsLeaderboard(ctx context.Context, clerkID string) (*leaderboard.Leaderboard, error) {
 	// Get user ID from clerk_id
 	var userID uuid.UUID

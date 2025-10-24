@@ -131,6 +131,7 @@ func main() {
 	protected.HandleFunc("/user/leaderboard/global", userHandler.GetGlobalLeaderboard).Methods("GET")
 	protected.HandleFunc("/user/friends", userHandler.GetFriends).Methods("GET")
 	protected.HandleFunc("/user/friends", userHandler.AddFriend).Methods("POST")
+	protected.HandleFunc("/user/friends", userHandler.RemoveFriend).Methods("DELETE")
 	protected.HandleFunc("/user/discovery", userHandler.GetDiscovery).Methods("GET")
 	protected.HandleFunc("/user/achievements", userHandler.GetAchievements).Methods("GET")
 	protected.HandleFunc("/user/drink", userHandler.AddDrinking).Methods("POST")

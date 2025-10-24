@@ -152,6 +152,50 @@ func (h *UserHandler) AddFriend(w http.ResponseWriter, r *http.Request) {
 		"message": "Friend added successfully",
 	})
 }
+func (h *UserHandler) RemoveFriend(w http.ResponseWriter, r *http.Request) {
+	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
+	defer cancel()
+
+	clerkID, ok := middleware.GetClerkID(ctx)
+	if !ok {
+		respondWithError(w, http.StatusUnauthorized, "User not authenticated")
+		return
+	}
+
+	var req user.RemoveFriend
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		log.Printf("RemoveFriend Handler: Failed to decode request body: %v", err)
+		respondWithError(w, http.StatusBadRequest, "Invalid request body")
+		return
+	}
+
+	log.Printf("RemoveFriend Handler: Request from %s to remove friend %s", clerkID, req.FriendId)
+
+	if req.FriendId == "" {
+		respondWithError(w, http.StatusBadRequest, "friendId is required")
+		return
+	}
+
+	err := h.userService.RemoveFriend(ctx, clerkID, req.FriendId)
+	if err != nil {
+		log.Printf("RemoveFriend Handler: Service error: %v", err)
+		errMsg := err.Error()
+		switch {
+		case errMsg == "friendship not found":
+			respondWithError(w, http.StatusNotFound, errMsg)
+		case errMsg == "friend user not found" || strings.Contains(errMsg, "user not found"):
+			respondWithError(w, http.StatusNotFound, errMsg)
+		default:
+			respondWithError(w, http.StatusInternalServerError, "Failed to remove friend")
+		}
+		return
+	}
+
+	log.Printf("RemoveFriend Handler: Successfully removed friend")
+	respondWithJSON(w, http.StatusOK, map[string]string{
+		"message": "Friend removed successfully",
+	})
+}
 
 func (h *UserHandler) GetDiscovery(w http.ResponseWriter, r *http.Request) {
 	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
