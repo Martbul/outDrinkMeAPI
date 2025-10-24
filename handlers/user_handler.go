@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"log"
 	"net/http"
 	"outDrinkMeAPI/internal/user"
 	"outDrinkMeAPI/middleware"
@@ -105,6 +106,7 @@ func (h *UserHandler) GetFriends(w http.ResponseWriter, r *http.Request) {
 
 	respondWithJSON(w, http.StatusOK, friends)
 }
+
 func (h *UserHandler) AddFriend(w http.ResponseWriter, r *http.Request) {
 	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
 	defer cancel()
@@ -117,17 +119,21 @@ func (h *UserHandler) AddFriend(w http.ResponseWriter, r *http.Request) {
 
 	var req user.AddFriend
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		log.Printf("AddFriend Handler: Failed to decode request body: %v", err)
 		respondWithError(w, http.StatusBadRequest, "Invalid request body")
 		return
 	}
 
+	log.Printf("AddFriend Handler: Request from %s to add friend %s", clerkID, req.FriendId)
+
 	if req.FriendId == "" {
-		respondWithError(w, http.StatusBadRequest, "friendId is required") // Updated message
+		respondWithError(w, http.StatusBadRequest, "friendId is required")
 		return
 	}
 
 	err := h.userService.AddFriend(ctx, clerkID, req.FriendId)
 	if err != nil {
+		log.Printf("AddFriend Handler: Service error: %v", err)
 		// Handle specific error cases
 		errMsg := err.Error()
 		switch {
@@ -141,11 +147,11 @@ func (h *UserHandler) AddFriend(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	log.Printf("AddFriend Handler: Successfully added friend")
 	respondWithJSON(w, http.StatusCreated, map[string]string{
 		"message": "Friend added successfully",
 	})
 }
-
 
 func (h *UserHandler) GetDiscovery(w http.ResponseWriter, r *http.Request) {
 	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
