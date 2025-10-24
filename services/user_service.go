@@ -25,7 +25,6 @@ func NewUserService(db *pgxpool.Pool) *UserService {
 	return &UserService{db: db}
 }
 
-
 func (s *UserService) CreateUser(ctx context.Context, req *user.CreateUserRequest) (*user.User, error) {
 	user := &user.User{
 		ID:        uuid.New().String(),
@@ -110,6 +109,92 @@ func (s *UserService) GetUserByClerkID(ctx context.Context, clerkID string) (*us
 
 	return user, nil
 }
+
+func (s *UserService) FriendDiscoveryDisplayProfile(ctx context.Context, clerkID string, FriendDiscoveryId string) (*user.FriendDiscoveryDisplayProfileResponse, error) {
+
+	var currnetUserID uuid.UUID
+	err := s.db.QueryRow(ctx, `SELECT id FROM users WHERE clerk_id = $1`, clerkID).Scan(&currnetUserID)
+	if err != nil {
+		log.Printf("GetUserFullProfile: Failed to find requesting user: %v", err)
+		return nil, fmt.Errorf("user not authenticated")
+	}
+
+	// Parse target user UUID
+	friendDiscoveryUUID, err := uuid.Parse(FriendDiscoveryId)
+	if err != nil {
+		log.Printf("GetUserFullProfile: Invalid target user ID %s: %v", FriendDiscoveryId, err)
+		return nil, fmt.Errorf("invalid user id")
+	}
+
+
+	query := `
+	SELECT id, clerk_id, email, username, first_name, last_name, image_url, email_verified, created_at, updated_at, gems, xp, all_days_drinking_count
+	FROM users
+	WHERE clerk_id = $1
+	`
+
+	friendDiscoveryUserData := &user.User{}
+	err = s.db.QueryRow(ctx, query, FriendDiscoveryId).Scan(
+		&friendDiscoveryUserData.ID,
+		&friendDiscoveryUserData.ClerkID,
+		&friendDiscoveryUserData.Email,
+		&friendDiscoveryUserData.Username,
+		&friendDiscoveryUserData.FirstName,
+		&friendDiscoveryUserData.LastName,
+		&friendDiscoveryUserData.ImageURL,
+		&friendDiscoveryUserData.EmailVerified,
+		&friendDiscoveryUserData.CreatedAt,
+		&friendDiscoveryUserData.UpdatedAt,
+		&friendDiscoveryUserData.Gems,
+		&friendDiscoveryUserData.XP,
+		&friendDiscoveryUserData.AllDaysDrinkingCount,
+	)
+
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil, fmt.Errorf("user not found")
+		}
+		return nil, fmt.Errorf("failed to get user: %w", err)
+	}
+
+	friendDiscoveryStats, err := s.GetUserStats(ctx, FriendDiscoveryId)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get userStats: %w", err)
+	}
+
+	friendDiscoveryAchievements, err := s.GetAchievements(ctx, FriendDiscoveryId)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get user achievements: %w", err)
+	}
+
+	// Check if they are friends
+	var isFriend bool
+	friendCheckQuery := `
+		SELECT EXISTS(
+			SELECT 1 FROM friendships
+			WHERE ((user_id = $1 AND friend_id = $2) OR (user_id = $2 AND friend_id = $1))
+			AND status = 'accepted'
+		)
+	`
+	s.db.QueryRow(ctx, friendCheckQuery, currnetUserID, friendDiscoveryUUID).Scan(&isFriend)
+
+
+
+	log.Println(friendDiscoveryUserData)
+	log.Println(friendDiscoveryStats)
+	log.Println(friendDiscoveryAchievements)
+	log.Println(isFriend)
+
+	response := &user.FriendDiscoveryDisplayProfileResponse{
+		User:         friendDiscoveryUserData,
+		Stats:        friendDiscoveryStats,
+		Achievements: friendDiscoveryAchievements,
+		IsFriend:     isFriend,
+	}
+
+	return response, nil
+}
+
 func (s *UserService) UpdateProfileByClerkID(ctx context.Context, clerkID string, req *user.UpdateProfileRequest) (*user.User, error) {
 	query := `
 	UPDATE users
@@ -242,6 +327,7 @@ func (s *UserService) GetFriends(ctx context.Context, clerkID string) ([]*user.U
 
 	return friends, nil
 }
+
 func (s *UserService) GetDiscovery(ctx context.Context, clerkID string) ([]*user.User, error) {
 	var userID uuid.UUID
 	err := s.db.QueryRow(ctx, `SELECT id FROM users WHERE clerk_id = $1`, clerkID).Scan(&userID)
@@ -362,7 +448,7 @@ func (s *UserService) AddFriend(ctx context.Context, clerkID string, friendClerk
 		INSERT INTO friendships (user_id, friend_id, status, created_at)
 		VALUES ($1, $2, 'accepted', NOW())
 	`
-	
+
 	_, err = s.db.Exec(ctx, insertQuery, userID, friendID)
 	if err != nil {
 		log.Printf("AddFriend: Failed to insert friendship: %v", err)
@@ -372,6 +458,274 @@ func (s *UserService) AddFriend(ctx context.Context, clerkID string, friendClerk
 	log.Printf("AddFriend: Successfully created friendship between %s and %s", clerkID, friendClerkID)
 	return nil
 }
+
+// func (s *UserService) GetUserFullProfile(ctx context.Context, requestingClerkID string, targetUserID string) (*UserProfileResponse, error) {
+// 	// Verify requesting user exists
+// 	var requestingUserID uuid.UUID
+// 	err := s.db.QueryRow(ctx, `SELECT id FROM users WHERE clerk_id = $1`, requestingClerkID).Scan(&requestingUserID)
+// 	if err != nil {
+// 		log.Printf("GetUserFullProfile: Failed to find requesting user: %v", err)
+// 		return nil, fmt.Errorf("user not authenticated")
+// 	}
+
+// 	// Parse target user UUID
+// 	targetUUID, err := uuid.Parse(targetUserID)
+// 	if err != nil {
+// 		log.Printf("GetUserFullProfile: Invalid target user ID %s: %v", targetUserID, err)
+// 		return nil, fmt.Errorf("invalid user id")
+// 	}
+
+// 	// Get target user's profile
+// 	userQuery := `
+// 		SELECT id, clerk_id, email, username, first_name, last_name, image_url,
+// 		       email_verified, created_at, updated_at, gems, xp, all_days_drinking_count
+// 		FROM users
+// 		WHERE id = $1
+// 	`
+
+// 	targetUser := &user.User{}
+// 	err = s.db.QueryRow(ctx, userQuery, targetUUID).Scan(
+// 		&targetUser.ID,
+// 		&targetUser.ClerkID,
+// 		&targetUser.Email,
+// 		&targetUser.Username,
+// 		&targetUser.FirstName,
+// 		&targetUser.LastName,
+// 		&targetUser.ImageURL,
+// 		&targetUser.EmailVerified,
+// 		&targetUser.CreatedAt,
+// 		&targetUser.UpdatedAt,
+// 		&targetUser.Gems,
+// 		&targetUser.XP,
+// 		&targetUser.AllDaysDrinkingCount,
+// 	)
+
+// 	if err != nil {
+// 		if errors.Is(err, pgx.ErrNoRows) {
+// 			return nil, fmt.Errorf("user not found")
+// 		}
+// 		return nil, fmt.Errorf("failed to get user: %w", err)
+// 	}
+
+// 	// Check if they are friends
+// 	var isFriend bool
+// 	friendCheckQuery := `
+// 		SELECT EXISTS(
+// 			SELECT 1 FROM friendships
+// 			WHERE ((user_id = $1 AND friend_id = $2) OR (user_id = $2 AND friend_id = $1))
+// 			AND status = 'accepted'
+// 		)
+// 	`
+// 	s.db.QueryRow(ctx, friendCheckQuery, requestingUserID, targetUUID).Scan(&isFriend)
+
+// 	// Get today's status
+// 	var todayStatus bool
+// 	todayQuery := `
+// 		SELECT EXISTS(
+// 			SELECT 1 FROM drinking_calendar
+// 			WHERE user_id = $1 AND date = CURRENT_DATE AND drank = true
+// 		)
+// 	`
+// 	s.db.QueryRow(ctx, todayQuery, targetUUID).Scan(&todayStatus)
+
+// 	// Get days this week
+// 	var daysThisWeek int
+// 	weekQuery := `
+// 		SELECT COALESCE(COUNT(*), 0)
+// 		FROM drinking_calendar
+// 		WHERE user_id = $1
+// 		AND date >= date_trunc('week', CURRENT_DATE)
+// 		AND date < date_trunc('week', CURRENT_DATE) + INTERVAL '7 days'
+// 		AND drank = true
+// 	`
+// 	s.db.QueryRow(ctx, weekQuery, targetUUID).Scan(&daysThisWeek)
+
+// 	// Get days this month
+// 	var daysThisMonth int
+// 	monthQuery := `
+// 		SELECT COALESCE(COUNT(*), 0)
+// 		FROM drinking_calendar
+// 		WHERE user_id = $1
+// 		AND date >= date_trunc('month', CURRENT_DATE)
+// 		AND date < date_trunc('month', CURRENT_DATE) + INTERVAL '1 month'
+// 		AND drank = true
+// 	`
+// 	s.db.QueryRow(ctx, monthQuery, targetUUID).Scan(&daysThisMonth)
+
+// 	// Get days this year
+// 	var daysThisYear int
+// 	yearQuery := `
+// 		SELECT COALESCE(COUNT(*), 0)
+// 		FROM drinking_calendar
+// 		WHERE user_id = $1
+// 		AND date >= date_trunc('year', CURRENT_DATE)
+// 		AND date < date_trunc('year', CURRENT_DATE) + INTERVAL '1 year'
+// 		AND drank = true
+// 	`
+// 	s.db.QueryRow(ctx, yearQuery, targetUUID).Scan(&daysThisYear)
+
+// 	// Get total days drank
+// 	var totalDaysDrank int
+// 	s.db.QueryRow(ctx, `SELECT COALESCE(all_days_drinking_count, 0) FROM users WHERE id = $1`, targetUUID).Scan(&totalDaysDrank)
+
+// 	// Calculate current streak
+// 	currentStreak := s.calculateStreak(ctx, targetUUID, true)
+
+// 	// Calculate longest streak
+// 	longestStreak := s.calculateLongestStreak(ctx, targetUUID)
+
+// 	// Get total weeks won
+// 	var totalWeeksWon int
+// 	weeksWonQuery := `
+// 		SELECT COALESCE(SUM(win_count), 0)
+// 		FROM weekly_stats
+// 		WHERE user_id = $1
+// 	`
+// 	s.db.QueryRow(ctx, weeksWonQuery, targetUUID).Scan(&totalWeeksWon)
+
+// 	// Get achievements count
+// 	var achievementsCount int
+// 	achievementsQuery := `
+// 		SELECT COALESCE(COUNT(*), 0)
+// 		FROM user_achievements
+// 		WHERE user_id = $1
+// 	`
+// 	s.db.QueryRow(ctx, achievementsQuery, targetUUID).Scan(&achievementsCount)
+
+// 	// Get friends count
+// 	var friendsCount int
+// 	friendsQuery := `
+// 		SELECT COALESCE(COUNT(*), 0)
+// 		FROM friendships
+// 		WHERE (user_id = $1 OR friend_id = $1) AND status = 'accepted'
+// 	`
+// 	s.db.QueryRow(ctx, friendsQuery, targetUUID).Scan(&friendsCount)
+
+// 	// Calculate alcoholism coefficient
+// 	var alcoholismCoefficient float64
+// 	if totalDaysDrank > 0 {
+// 		var accountAgeDays int
+// 		ageQuery := `
+// 			SELECT EXTRACT(DAY FROM CURRENT_DATE - created_at::date)
+// 			FROM users
+// 			WHERE id = $1
+// 		`
+// 		s.db.QueryRow(ctx, ageQuery, targetUUID).Scan(&accountAgeDays)
+
+// 		if accountAgeDays > 0 {
+// 			alcoholismCoefficient = float64(totalDaysDrank) / float64(accountAgeDays) * 100
+// 		}
+// 	}
+
+// 	// Get rank
+// 	var rank int
+// 	rankQuery := `
+// 		WITH ranked_users AS (
+// 			SELECT id, ROW_NUMBER() OVER (ORDER BY all_days_drinking_count DESC, xp DESC) as rank
+// 			FROM users
+// 		)
+// 		SELECT rank FROM ranked_users WHERE id = $1
+// 	`
+// 	s.db.QueryRow(ctx, rankQuery, targetUUID).Scan(&rank)
+
+// 	// Build UserStats
+// 	userStats := &stats.UserStats{
+// 		TodayStatus:           todayStatus,
+// 		DaysThisWeek:          daysThisWeek,
+// 		DaysThisMonth:         daysThisMonth,
+// 		DaysThisYear:          daysThisYear,
+// 		TotalDaysDrank:        totalDaysDrank,
+// 		CurrentStreak:         currentStreak,
+// 		LongestStreak:         longestStreak,
+// 		TotalWeeksWon:         totalWeeksWon,
+// 		AchievementsCount:     achievementsCount,
+// 		FriendsCount:          friendsCount,
+// 		AlcoholismCoefficient: alcoholismCoefficient,
+// 		Rank:                  rank,
+// 	}
+
+// 	// Get current week stats
+// 	weeklyStats := &weekly_stats.WeeklyStats{}
+// 	weeklyStatsQuery := `
+// 		SELECT id, user_id, week_start, week_end, days_drank, total_days, win_count, created_at, updated_at
+// 		FROM weekly_stats
+// 		WHERE user_id = $1
+// 		AND week_start = date_trunc('week', CURRENT_DATE)
+// 		LIMIT 1
+// 	`
+// 	err = s.db.QueryRow(ctx, weeklyStatsQuery, targetUUID).Scan(
+// 		&weeklyStats.ID,
+// 		&weeklyStats.UserID,
+// 		&weeklyStats.WeekStart,
+// 		&weeklyStats.WeekEnd,
+// 		&weeklyStats.DaysDrank,
+// 		&weeklyStats.TotalDays,
+// 		&weeklyStats.WinCount,
+// 		&weeklyStats.CreatedAt,
+// 		&weeklyStats.UpdatedAt,
+// 	)
+// 	if err != nil && !errors.Is(err, pgx.ErrNoRows) {
+// 		log.Printf("GetUserFullProfile: Failed to get weekly stats: %v", err)
+// 		// Continue without weekly stats
+// 		weeklyStats = nil
+// 	}
+
+// 	// Get achievements
+// 	achievementsListQuery := `
+// 		SELECT
+// 			a.id,
+// 			a.name,
+// 			a.description,
+// 			a.icon,
+// 			a.criteria_type,
+// 			a.criteria_value,
+// 			a.created_at,
+// 			CASE WHEN ua.id IS NOT NULL THEN true ELSE false END as unlocked,
+// 			ua.unlocked_at
+// 		FROM achievements a
+// 		LEFT JOIN user_achievements ua ON a.id = ua.achievement_id AND ua.user_id = $1
+// 		ORDER BY a.criteria_value ASC, a.created_at ASC
+// 	`
+
+// 	rows, err := s.db.Query(ctx, achievementsListQuery, targetUUID)
+// 	if err != nil {
+// 		log.Printf("GetUserFullProfile: Failed to fetch achievements: %v", err)
+// 		return nil, fmt.Errorf("failed to fetch achievements")
+// 	}
+// 	defer rows.Close()
+
+// 	var achievementsList []achievement.AchievementWithStatus
+// 	for rows.Next() {
+// 		var a achievement.AchievementWithStatus
+// 		err := rows.Scan(
+// 			&a.ID,
+// 			&a.Name,
+// 			&a.Description,
+// 			&a.Icon,
+// 			&a.CriteriaType,
+// 			&a.CriteriaValue,
+// 			&a.CreatedAt,
+// 			&a.Unlocked,
+// 			&a.UnlockedAt,
+// 		)
+// 		if err != nil {
+// 			log.Printf("GetUserFullProfile: Failed to scan achievement: %v", err)
+// 			continue
+// 		}
+// 		achievementsList = append(achievementsList, a)
+// 	}
+
+// 	response := &user.UserProfileResponse{
+// 		User:         targetUser,
+// 		Stats:        userStats,
+// 		WeeklyStats:  weeklyStats,
+// 		Achievements: achievementsList,
+// 		IsFriend:     isFriend,
+// 	}
+
+// 	log.Printf("GetUserFullProfile: Successfully fetched full profile for user %s", targetUserID)
+// 	return response, nil
+// }
 
 func (s *UserService) RemoveFriend(ctx context.Context, clerkID string, friendClerkID string) error {
 	// Get current user ID
@@ -396,7 +750,7 @@ func (s *UserService) RemoveFriend(ctx context.Context, clerkID string, friendCl
 		WHERE (user_id = $1 AND friend_id = $2) 
 		   OR (user_id = $2 AND friend_id = $1)
 	`
-	
+
 	result, err := s.db.Exec(ctx, deleteQuery, userID, friendID)
 	if err != nil {
 		log.Printf("RemoveFriend: Failed to delete friendship: %v", err)
@@ -849,15 +1203,14 @@ func (s *UserService) GetCalendar(ctx context.Context, clerkID string, year int,
 	}, nil
 }
 
-
 func (s *UserService) GetUserStats(ctx context.Context, clerkID string) (*stats.UserStats, error) {
-    var userID uuid.UUID
-    err := s.db.QueryRow(ctx, "SELECT id FROM users WHERE clerk_id = $1", clerkID).Scan(&userID)
-    if err != nil {
-        return nil, fmt.Errorf("user not found: %w", err)
-    }
-    
-    query := `
+	var userID uuid.UUID
+	err := s.db.QueryRow(ctx, "SELECT id FROM users WHERE clerk_id = $1", clerkID).Scan(&userID)
+	if err != nil {
+		return nil, fmt.Errorf("user not found: %w", err)
+	}
+
+	query := `
     WITH RECURSIVE streak_calc AS (
         -- Start with today or the most recent drinking day
         SELECT 
@@ -945,33 +1298,33 @@ func (s *UserService) GetUserStats(ctx context.Context, clerkID string) (*stats.
     WHERE u.id = $1
     GROUP BY u.id, dd_today.drank_today, sc.current_streak, lsc.longest_streak
     `
-    
-    stats := &stats.UserStats{}
-    err = s.db.QueryRow(ctx, query, userID).Scan(
-        &stats.TodayStatus,
-        &stats.DaysThisWeek,
-        &stats.DaysThisMonth,
-        &stats.DaysThisYear,
-        &stats.TotalDaysDrank,
-        &stats.CurrentStreak,
-        &stats.LongestStreak,
-        &stats.TotalWeeksWon,
-        &stats.AchievementsCount,
-        &stats.FriendsCount,
-    )
-    if err != nil {
-        return nil, fmt.Errorf("failed to get user stats: %w", err)
-    }
-    
-    // Calculate alcoholism coefficient: currentStreak^2 + totalDays*0.3 + achievements*5
-    alcoholismScore := float64(stats.CurrentStreak*stats.CurrentStreak) * 0.3 + 
-                       (float64(stats.TotalDaysDrank) * 0.05) + 
-                       (float64(stats.AchievementsCount) * 1)
-    
-    stats.AlcoholismCoefficient = alcoholismScore
-    
-    // Calculate rank based on AlcoholismCoefficient
-    rankQuery := `
+
+	stats := &stats.UserStats{}
+	err = s.db.QueryRow(ctx, query, userID).Scan(
+		&stats.TodayStatus,
+		&stats.DaysThisWeek,
+		&stats.DaysThisMonth,
+		&stats.DaysThisYear,
+		&stats.TotalDaysDrank,
+		&stats.CurrentStreak,
+		&stats.LongestStreak,
+		&stats.TotalWeeksWon,
+		&stats.AchievementsCount,
+		&stats.FriendsCount,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get user stats: %w", err)
+	}
+
+	// Calculate alcoholism coefficient: currentStreak^2 + totalDays*0.3 + achievements*5
+	alcoholismScore := float64(stats.CurrentStreak*stats.CurrentStreak)*0.3 +
+		(float64(stats.TotalDaysDrank) * 0.05) +
+		(float64(stats.AchievementsCount) * 1)
+
+	stats.AlcoholismCoefficient = alcoholismScore
+
+	// Calculate rank based on AlcoholismCoefficient
+	rankQuery := `
     WITH user_scores AS (
         SELECT 
             u.id,
@@ -1025,11 +1378,11 @@ func (s *UserService) GetUserStats(ctx context.Context, clerkID string) (*stats.
     FROM ranked_users
     WHERE id = $1
     `
-    
-    err = s.db.QueryRow(ctx, rankQuery, userID).Scan(&stats.Rank)
-    if err != nil {
-        return nil, fmt.Errorf("failed to calculate rank: %w", err)
-    }
-    
-    return stats, nil
+
+	err = s.db.QueryRow(ctx, rankQuery, userID).Scan(&stats.Rank)
+	if err != nil {
+		return nil, fmt.Errorf("failed to calculate rank: %w", err)
+	}
+
+	return stats, nil
 }

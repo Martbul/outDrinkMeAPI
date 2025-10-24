@@ -43,6 +43,44 @@ func (h *UserHandler) GetProfile(w http.ResponseWriter, r *http.Request) {
 	respondWithJSON(w, http.StatusOK, user)
 }
 
+
+
+func (h *UserHandler) FriendDiscoveryDisplayProfile(w http.ResponseWriter, r *http.Request) {
+	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
+	defer cancel()
+
+	clerkID, ok := middleware.GetClerkID(ctx)
+	if !ok {
+		respondWithError(w, http.StatusUnauthorized, "User not authenticated")
+		return
+	}
+
+	var req user.FriendDeiscoveryProfileRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		log.Printf("AddFriend Handler: Failed to decode request body: %v", err)
+		respondWithError(w, http.StatusBadRequest, "Invalid request body")
+		return
+	}
+
+	log.Printf("FriendDiscoveryId Handler: Request from %s to discover profile %s", clerkID, req.FriendDiscoveryId)
+
+	if req.FriendDiscoveryId == "" {
+		respondWithError(w, http.StatusBadRequest, "friendId is required")
+		return
+	}
+
+
+	friendDiscoveryDisplayProfile, err := h.userService.FriendDiscoveryDisplayProfile(ctx, clerkID ,req.FriendDiscoveryId)
+	if err != nil {
+		respondWithError(w, http.StatusNotFound, "User not found")
+		return
+	}
+
+	respondWithJSON(w, http.StatusOK, friendDiscoveryDisplayProfile)
+}
+
+
+
 func (h *UserHandler) UpdateProfile(w http.ResponseWriter, r *http.Request) {
 	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
 	defer cancel()
@@ -152,6 +190,45 @@ func (h *UserHandler) AddFriend(w http.ResponseWriter, r *http.Request) {
 		"message": "Friend added successfully",
 	})
 }
+
+
+// func (h *UserHandler) GetUserFullProfile(w http.ResponseWriter, r *http.Request) {
+// 	ctx, cancel := context.WithTimeout(r.Context(), 10*time.Second)
+// 	defer cancel()
+
+// 	clerkID, ok := middleware.GetClerkID(ctx)
+// 	if !ok {
+// 		respondWithError(w, http.StatusUnauthorized, "User not authenticated")
+// 		return
+// 	}
+
+// 	userID := r.URL.Query().Get("userId")
+// 	if userID == "" {
+// 		respondWithError(w, http.StatusBadRequest, "userId query parameter is required")
+// 		return
+// 	}
+
+// 	log.Printf("GetUserFullProfile Handler: Request from %s for user %s", clerkID, userID)
+
+// 	profile, err := h.userService.GetUserFullProfile(ctx, clerkID, userID)
+// 	if err != nil {
+// 		log.Printf("GetUserFullProfile Handler: Service error: %v", err)
+// 		errMsg := err.Error()
+// 		switch {
+// 		case errMsg == "user not found":
+// 			respondWithError(w, http.StatusNotFound, errMsg)
+// 		case errMsg == "invalid user id":
+// 			respondWithError(w, http.StatusBadRequest, errMsg)
+// 		default:
+// 			respondWithError(w, http.StatusInternalServerError, "Failed to fetch user profile")
+// 		}
+// 		return
+// 	}
+
+// 	respondWithJSON(w, http.StatusOK, profile)
+// }
+
+
 func (h *UserHandler) RemoveFriend(w http.ResponseWriter, r *http.Request) {
 	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
 	defer cancel()

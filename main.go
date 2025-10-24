@@ -125,6 +125,7 @@ func main() {
 	protected.Use(middleware.ClerkAuthMiddleware)
 
 	protected.HandleFunc("/user", userHandler.GetProfile).Methods("GET")
+	protected.HandleFunc("/user/friend-discovery/display-profile", userHandler.FriendDiscoveryDisplayProfile).Methods("GET")
 	protected.HandleFunc("/user/update-profile", userHandler.UpdateProfile).Methods("PUT")
 	protected.HandleFunc("/user/delete-account", userHandler.DeleteAccount).Methods("DELETE")
 	protected.HandleFunc("/user/leaderboard/friends", userHandler.GetFriendsLeaderboard).Methods("GET")
