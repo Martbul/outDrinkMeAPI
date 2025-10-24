@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log"
 	"outDrinkMeAPI/internal/achievement"
 	"outDrinkMeAPI/internal/calendar"
 	"outDrinkMeAPI/internal/leaderboard"
@@ -313,24 +314,30 @@ func (s *UserService) GetDiscovery(ctx context.Context, clerkID string) ([]*user
 
 	return users, nil
 }
-
 func (s *UserService) AddFriend(ctx context.Context, clerkID string, friendClerkID string) error {
+	// Get current user ID
 	var userID uuid.UUID
 	err := s.db.QueryRow(ctx, `SELECT id FROM users WHERE clerk_id = $1`, clerkID).Scan(&userID)
 	if err != nil {
-		return fmt.Errorf("user not found: %w", err)
+		log.Printf("AddFriend: Failed to find user with clerk_id %s: %v", clerkID, err)
+		return fmt.Errorf("user not found")
 	}
 
+	// Get friend user ID
 	var friendID uuid.UUID
 	err = s.db.QueryRow(ctx, `SELECT id FROM users WHERE clerk_id = $1`, friendClerkID).Scan(&friendID)
 	if err != nil {
-		return fmt.Errorf("friend user not found: %w", err)
+		log.Printf("AddFriend: Failed to find friend with clerk_id %s: %v", friendClerkID, err)
+		return fmt.Errorf("friend user not found")
 	}
 
+	// Prevent adding yourself as a friend
 	if userID == friendID {
+		log.Printf("AddFriend: User %s attempted to add themselves", clerkID)
 		return fmt.Errorf("cannot add yourself as a friend")
 	}
 
+	// Check if friendship already exists (in either direction)
 	var exists bool
 	checkQuery := `
 		SELECT EXISTS(
@@ -341,23 +348,28 @@ func (s *UserService) AddFriend(ctx context.Context, clerkID string, friendClerk
 	`
 	err = s.db.QueryRow(ctx, checkQuery, userID, friendID).Scan(&exists)
 	if err != nil {
-		return fmt.Errorf("failed to check existing friendship: %w", err)
+		log.Printf("AddFriend: Failed to check existing friendship: %v", err)
+		return fmt.Errorf("failed to check existing friendship")
 	}
 
 	if exists {
+		log.Printf("AddFriend: Friendship already exists between %s and %s", clerkID, friendClerkID)
 		return fmt.Errorf("friendship already exists")
 	}
 
+	// Insert the friendship (without updated_at)
 	insertQuery := `
-		INSERT INTO friendships (user_id, friend_id, status, created_at, updated_at)
-		VALUES ($1, $2, 'accepted', NOW(), NOW())
+		INSERT INTO friendships (user_id, friend_id, status, created_at)
+		VALUES ($1, $2, 'accepted', NOW())
 	`
 	
 	_, err = s.db.Exec(ctx, insertQuery, userID, friendID)
 	if err != nil {
-		return fmt.Errorf("failed to create friendship: %w", err)
+		log.Printf("AddFriend: Failed to insert friendship: %v", err)
+		return fmt.Errorf("failed to create friendship")
 	}
 
+	log.Printf("AddFriend: Successfully created friendship between %s and %s", clerkID, friendClerkID)
 	return nil
 }
 
