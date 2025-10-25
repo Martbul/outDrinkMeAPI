@@ -109,17 +109,18 @@ func (s *UserService) GetUserByClerkID(ctx context.Context, clerkID string) (*us
 
 	return user, nil
 }
+
 func (s *UserService) FriendDiscoveryDisplayProfile(ctx context.Context, clerkID string, FriendDiscoveryId string) (*user.FriendDiscoveryDisplayProfileResponse, error) {
     var currnetUserID uuid.UUID
     err := s.db.QueryRow(ctx, `SELECT id FROM users WHERE clerk_id = $1`, clerkID).Scan(&currnetUserID)
     if err != nil {
-        log.Printf("GetUserFullProfile: Failed to find requesting user: %v", err)
+        log.Printf("FriendDiscoveryDisplayProfile: Failed to find requesting user: %v", err)
         return nil, fmt.Errorf("user not authenticated")
     }
     
     friendDiscoveryUUID, err := uuid.Parse(FriendDiscoveryId)
     if err != nil {
-        log.Printf("GetUserFullProfile: Invalid target user ID %s: %v", FriendDiscoveryId, err)
+        log.Printf("FriendDiscoveryDisplayProfile: Invalid target user ID %s: %v", FriendDiscoveryId, err)
         return nil, fmt.Errorf("invalid user id")
     }
     
@@ -146,45 +147,54 @@ func (s *UserService) FriendDiscoveryDisplayProfile(ctx context.Context, clerkID
     )
     if err != nil {
         if errors.Is(err, pgx.ErrNoRows) {
+            log.Printf("FriendDiscoveryDisplayProfile: User not found for UUID: %s", friendDiscoveryUUID)
             return nil, fmt.Errorf("user not found")
         }
+        log.Printf("FriendDiscoveryDisplayProfile: Failed to get user: %v", err)
         return nil, fmt.Errorf("failed to get user: %w", err)
     }
-
-	friendDiscoveryStats, err := s.GetUserStats(ctx, FriendDiscoveryId)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get userStats: %w", err)
-	}
-
-	friendDiscoveryAchievements, err := s.GetAchievements(ctx, FriendDiscoveryId)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get user achievements: %w", err)
-	}
-
-	// Check if they are friends
-	var isFriend bool
-	friendCheckQuery := `
-		SELECT EXISTS(
-			SELECT 1 FROM friendships
-			WHERE ((user_id = $1 AND friend_id = $2) OR (user_id = $2 AND friend_id = $1))
-			AND status = 'accepted'
-		)
-	`
-	s.db.QueryRow(ctx, friendCheckQuery, currnetUserID, friendDiscoveryUUID).Scan(&isFriend)
-
-	log.Println(friendDiscoveryUserData)
-	log.Println(friendDiscoveryStats)
-	log.Println(friendDiscoveryAchievements)
-	log.Println(isFriend)
-
-	response := &user.FriendDiscoveryDisplayProfileResponse{
-		User:         friendDiscoveryUserData,
-		Stats:        friendDiscoveryStats,
-		Achievements: friendDiscoveryAchievements,
-		IsFriend:     isFriend,
-	}
-
-	return response, nil
+    
+    // Use the clerk_id from the retrieved user data
+    friendDiscoveryStats, err := s.GetUserStats(ctx, friendDiscoveryUserData.ClerkID)
+    if err != nil {
+        log.Printf("FriendDiscoveryDisplayProfile: Failed to get userStats: %v", err)
+        return nil, fmt.Errorf("failed to get userStats: %w", err)
+    }
+    
+    friendDiscoveryAchievements, err := s.GetAchievements(ctx, friendDiscoveryUserData.ClerkID)
+    if err != nil {
+        log.Printf("FriendDiscoveryDisplayProfile: Failed to get user achievements: %v", err)
+        return nil, fmt.Errorf("failed to get user achievements: %w", err)
+    }
+    
+    // Check if they are friends
+    var isFriend bool
+    friendCheckQuery := `
+        SELECT EXISTS(
+            SELECT 1 FROM friendships
+            WHERE ((user_id = $1 AND friend_id = $2) OR (user_id = $2 AND friend_id = $1))
+            AND status = 'accepted'
+        )
+    `
+    err = s.db.QueryRow(ctx, friendCheckQuery, currnetUserID, friendDiscoveryUUID).Scan(&isFriend)
+    if err != nil {
+        log.Printf("FriendDiscoveryDisplayProfile: Failed to check friendship: %v", err)
+        // Don't fail the whole request, just set isFriend to false
+        isFriend = false
+    }
+    
+    log.Println("Friend Discovery User Data:", friendDiscoveryUserData)
+    log.Println("Friend Discovery Stats:", friendDiscoveryStats)
+    log.Println("Friend Discovery Achievements:", friendDiscoveryAchievements)
+    log.Println("Is Friend:", isFriend)
+    
+    response := &user.FriendDiscoveryDisplayProfileResponse{
+        User:         friendDiscoveryUserData,
+        Stats:        friendDiscoveryStats,
+        Achievements: friendDiscoveryAchievements,
+        IsFriend:     isFriend,
+    }
+    return response, nil
 }
 
 func (s *UserService) UpdateProfileByClerkID(ctx context.Context, clerkID string, req *user.UpdateProfileRequest) (*user.User, error) {
