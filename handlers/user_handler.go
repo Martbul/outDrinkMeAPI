@@ -188,21 +188,16 @@ func (h *UserHandler) RemoveFriend(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	var req user.RemoveFriend
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		log.Printf("RemoveFriend Handler: Failed to decode request body: %v", err)
-		respondWithError(w, http.StatusBadRequest, "Invalid request body")
+	friendId := r.URL.Query().Get("friendId")
+	if friendId == "" {
+		respondWithError(w, http.StatusBadRequest, "Search query parameter 'friendId' is required")
 		return
 	}
 
-	log.Printf("RemoveFriend Handler: Request from %s to remove friend %s", clerkID, req.FriendId)
+	log.Printf("friendId Handler: Request from %s to remove user from friend list %s", clerkID, friendId)
 
-	if req.FriendId == "" {
-		respondWithError(w, http.StatusBadRequest, "friendId is required")
-		return
-	}
 
-	err := h.userService.RemoveFriend(ctx, clerkID, req.FriendId)
+	err := h.userService.RemoveFriend(ctx, clerkID, friendId)
 	if err != nil {
 		log.Printf("RemoveFriend Handler: Service error: %v", err)
 		errMsg := err.Error()

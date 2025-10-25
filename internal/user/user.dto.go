@@ -26,9 +26,7 @@ type AddFriend struct {
 	FriendId string `json:"friendId,omitempty"`
 }
 
-type RemoveFriend struct {
-	FriendId string `json:"friendId"`
-}
+
 
 type FriendDeiscoveryProfileRequest struct {
 	FriendDiscoveryId string `json:"friendDiscoveryId,omitempty"`
