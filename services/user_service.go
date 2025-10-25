@@ -109,53 +109,47 @@ func (s *UserService) GetUserByClerkID(ctx context.Context, clerkID string) (*us
 
 	return user, nil
 }
-
 func (s *UserService) FriendDiscoveryDisplayProfile(ctx context.Context, clerkID string, FriendDiscoveryId string) (*user.FriendDiscoveryDisplayProfileResponse, error) {
-
-	var currnetUserID uuid.UUID
-	err := s.db.QueryRow(ctx, `SELECT id FROM users WHERE clerk_id = $1`, clerkID).Scan(&currnetUserID)
-	if err != nil {
-		log.Printf("GetUserFullProfile: Failed to find requesting user: %v", err)
-		return nil, fmt.Errorf("user not authenticated")
-	}
-
-	// Parse target user UUID
-	friendDiscoveryUUID, err := uuid.Parse(FriendDiscoveryId)
-	if err != nil {
-		log.Printf("GetUserFullProfile: Invalid target user ID %s: %v", FriendDiscoveryId, err)
-		return nil, fmt.Errorf("invalid user id")
-	}
-
-
-	query := `
-	SELECT id, clerk_id, email, username, first_name, last_name, image_url, email_verified, created_at, updated_at, gems, xp, all_days_drinking_count
-	FROM users
-	WHERE clerk_id = $1
-	`
-
-	friendDiscoveryUserData := &user.User{}
-	err = s.db.QueryRow(ctx, query, FriendDiscoveryId).Scan(
-		&friendDiscoveryUserData.ID,
-		&friendDiscoveryUserData.ClerkID,
-		&friendDiscoveryUserData.Email,
-		&friendDiscoveryUserData.Username,
-		&friendDiscoveryUserData.FirstName,
-		&friendDiscoveryUserData.LastName,
-		&friendDiscoveryUserData.ImageURL,
-		&friendDiscoveryUserData.EmailVerified,
-		&friendDiscoveryUserData.CreatedAt,
-		&friendDiscoveryUserData.UpdatedAt,
-		&friendDiscoveryUserData.Gems,
-		&friendDiscoveryUserData.XP,
-		&friendDiscoveryUserData.AllDaysDrinkingCount,
-	)
-
-	if err != nil {
-		if errors.Is(err, pgx.ErrNoRows) {
-			return nil, fmt.Errorf("user not found")
-		}
-		return nil, fmt.Errorf("failed to get user: %w", err)
-	}
+    var currnetUserID uuid.UUID
+    err := s.db.QueryRow(ctx, `SELECT id FROM users WHERE clerk_id = $1`, clerkID).Scan(&currnetUserID)
+    if err != nil {
+        log.Printf("GetUserFullProfile: Failed to find requesting user: %v", err)
+        return nil, fmt.Errorf("user not authenticated")
+    }
+    
+    friendDiscoveryUUID, err := uuid.Parse(FriendDiscoveryId)
+    if err != nil {
+        log.Printf("GetUserFullProfile: Invalid target user ID %s: %v", FriendDiscoveryId, err)
+        return nil, fmt.Errorf("invalid user id")
+    }
+    
+    query := `
+    SELECT id, clerk_id, email, username, first_name, last_name, image_url, email_verified, created_at, updated_at, gems, xp, all_days_drinking_count
+    FROM users
+    WHERE id = $1
+    `
+    friendDiscoveryUserData := &user.User{}
+    err = s.db.QueryRow(ctx, query, friendDiscoveryUUID).Scan(
+        &friendDiscoveryUserData.ID,
+        &friendDiscoveryUserData.ClerkID,
+        &friendDiscoveryUserData.Email,
+        &friendDiscoveryUserData.Username,
+        &friendDiscoveryUserData.FirstName,
+        &friendDiscoveryUserData.LastName,
+        &friendDiscoveryUserData.ImageURL,
+        &friendDiscoveryUserData.EmailVerified,
+        &friendDiscoveryUserData.CreatedAt,
+        &friendDiscoveryUserData.UpdatedAt,
+        &friendDiscoveryUserData.Gems,
+        &friendDiscoveryUserData.XP,
+        &friendDiscoveryUserData.AllDaysDrinkingCount,
+    )
+    if err != nil {
+        if errors.Is(err, pgx.ErrNoRows) {
+            return nil, fmt.Errorf("user not found")
+        }
+        return nil, fmt.Errorf("failed to get user: %w", err)
+    }
 
 	friendDiscoveryStats, err := s.GetUserStats(ctx, FriendDiscoveryId)
 	if err != nil {
@@ -177,8 +171,6 @@ func (s *UserService) FriendDiscoveryDisplayProfile(ctx context.Context, clerkID
 		)
 	`
 	s.db.QueryRow(ctx, friendCheckQuery, currnetUserID, friendDiscoveryUUID).Scan(&isFriend)
-
-
 
 	log.Println(friendDiscoveryUserData)
 	log.Println(friendDiscoveryStats)
