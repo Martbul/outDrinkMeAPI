@@ -55,22 +55,17 @@ func (h *UserHandler) FriendDiscoveryDisplayProfile(w http.ResponseWriter, r *ht
 		return
 	}
 
-	var req user.FriendDeiscoveryProfileRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		log.Printf("AddFriend Handler: Failed to decode request body: %v", err)
-		respondWithError(w, http.StatusBadRequest, "Invalid request body")
+
+	friendDiscoveryId := r.URL.Query().Get("friendDiscoveryId")
+	if friendDiscoveryId == "" {
+		respondWithError(w, http.StatusBadRequest, "Search query parameter 'friendDiscoveryId' is required")
 		return
 	}
-
-	log.Printf("FriendDiscoveryId Handler: Request from %s to discover profile %s", clerkID, req.FriendDiscoveryId)
-
-	if req.FriendDiscoveryId == "" {
-		respondWithError(w, http.StatusBadRequest, "friendId is required")
-		return
-	}
+	
+	log.Printf("FriendDiscoveryId Handler: Request from %s to discover profile %s", clerkID, friendDiscoveryId)
 
 
-	friendDiscoveryDisplayProfile, err := h.userService.FriendDiscoveryDisplayProfile(ctx, clerkID ,req.FriendDiscoveryId)
+	friendDiscoveryDisplayProfile, err := h.userService.FriendDiscoveryDisplayProfile(ctx, clerkID ,friendDiscoveryId)
 	if err != nil {
 		respondWithError(w, http.StatusNotFound, "User not found")
 		return
