@@ -118,6 +118,7 @@ func main() {
 	api := r.PathPrefix("/api/v1").Subrouter()
 
 	api.HandleFunc("/privacy-policy", docHandler.ServePrivacyPolicy).Methods("GET")
+	api.HandleFunc("/terms-of-services", docHandler.ServeTermsOfServices).Methods("GET")
 
 
 	// Protected API routes (auth required)
