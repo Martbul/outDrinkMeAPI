@@ -43,8 +43,6 @@ func (h *UserHandler) GetProfile(w http.ResponseWriter, r *http.Request) {
 	respondWithJSON(w, http.StatusOK, user)
 }
 
-
-
 func (h *UserHandler) FriendDiscoveryDisplayProfile(w http.ResponseWriter, r *http.Request) {
 	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
 	defer cancel()
@@ -55,26 +53,22 @@ func (h *UserHandler) FriendDiscoveryDisplayProfile(w http.ResponseWriter, r *ht
 		return
 	}
 
-
 	friendDiscoveryId := r.URL.Query().Get("friendDiscoveryId")
 	if friendDiscoveryId == "" {
 		respondWithError(w, http.StatusBadRequest, "Search query parameter 'friendDiscoveryId' is required")
 		return
 	}
-	
+
 	log.Printf("FriendDiscoveryId Handler: Request from %s to discover profile %s", clerkID, friendDiscoveryId)
 
-
-	friendDiscoveryDisplayProfile, err := h.userService.FriendDiscoveryDisplayProfile(ctx, clerkID ,friendDiscoveryId)
+	friendDiscoveryDisplayProfile, err := h.userService.FriendDiscoveryDisplayProfile(ctx, clerkID, friendDiscoveryId)
 	if err != nil {
-		respondWithError(w, http.StatusNotFound, "User not found")
+		respondWithError(w, http.StatusInternalServerError, "Error in getting data for firiend-discovery")
 		return
 	}
 
 	respondWithJSON(w, http.StatusOK, friendDiscoveryDisplayProfile)
 }
-
-
 
 func (h *UserHandler) UpdateProfile(w http.ResponseWriter, r *http.Request) {
 	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
@@ -127,7 +121,7 @@ func (h *UserHandler) GetFriends(w http.ResponseWriter, r *http.Request) {
 
 	clearkID, ok := middleware.GetClerkID(ctx)
 	if !ok {
-		respondWithError(w, http.StatusUnauthorized, "User not authenticated")
+		respondWithError(w, http.StatusInternalServerError, "Errow while gettin friends")
 		return
 	}
 
@@ -186,44 +180,6 @@ func (h *UserHandler) AddFriend(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-
-// func (h *UserHandler) GetUserFullProfile(w http.ResponseWriter, r *http.Request) {
-// 	ctx, cancel := context.WithTimeout(r.Context(), 10*time.Second)
-// 	defer cancel()
-
-// 	clerkID, ok := middleware.GetClerkID(ctx)
-// 	if !ok {
-// 		respondWithError(w, http.StatusUnauthorized, "User not authenticated")
-// 		return
-// 	}
-
-// 	userID := r.URL.Query().Get("userId")
-// 	if userID == "" {
-// 		respondWithError(w, http.StatusBadRequest, "userId query parameter is required")
-// 		return
-// 	}
-
-// 	log.Printf("GetUserFullProfile Handler: Request from %s for user %s", clerkID, userID)
-
-// 	profile, err := h.userService.GetUserFullProfile(ctx, clerkID, userID)
-// 	if err != nil {
-// 		log.Printf("GetUserFullProfile Handler: Service error: %v", err)
-// 		errMsg := err.Error()
-// 		switch {
-// 		case errMsg == "user not found":
-// 			respondWithError(w, http.StatusNotFound, errMsg)
-// 		case errMsg == "invalid user id":
-// 			respondWithError(w, http.StatusBadRequest, errMsg)
-// 		default:
-// 			respondWithError(w, http.StatusInternalServerError, "Failed to fetch user profile")
-// 		}
-// 		return
-// 	}
-
-// 	respondWithJSON(w, http.StatusOK, profile)
-// }
-
-
 func (h *UserHandler) RemoveFriend(w http.ResponseWriter, r *http.Request) {
 	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
 	defer cancel()
@@ -275,7 +231,7 @@ func (h *UserHandler) GetDiscovery(w http.ResponseWriter, r *http.Request) {
 
 	clearkID, ok := middleware.GetClerkID(ctx)
 	if !ok {
-		respondWithError(w, http.StatusUnauthorized, "User not authenticated")
+		respondWithError(w, http.StatusInternalServerError, "Error while getting discovery users")
 		return
 	}
 
@@ -294,7 +250,7 @@ func (h *UserHandler) GetFriendsLeaderboard(w http.ResponseWriter, r *http.Reque
 
 	clearkID, ok := middleware.GetClerkID(ctx)
 	if !ok {
-		respondWithError(w, http.StatusUnauthorized, "User not authenticated")
+		respondWithError(w, http.StatusInternalServerError, "Error while getting friends leaderboard")
 		return
 	}
 
@@ -313,7 +269,7 @@ func (h *UserHandler) GetGlobalLeaderboard(w http.ResponseWriter, r *http.Reques
 
 	clearkID, ok := middleware.GetClerkID(ctx)
 	if !ok {
-		respondWithError(w, http.StatusUnauthorized, "User not authenticated")
+		respondWithError(w, http.StatusInternalServerError, "Error while getting global leaderboard")
 		return
 	}
 
@@ -332,7 +288,7 @@ func (h *UserHandler) GetAchievements(w http.ResponseWriter, r *http.Request) {
 
 	clearkID, ok := middleware.GetClerkID(ctx)
 	if !ok {
-		respondWithError(w, http.StatusUnauthorized, "User not authenticated")
+		respondWithError(w, http.StatusInternalServerError, "Error while getting user's achievements")
 		return
 	}
 
@@ -351,7 +307,7 @@ func (h *UserHandler) AddDrinking(w http.ResponseWriter, r *http.Request) {
 
 	clearkID, ok := middleware.GetClerkID(ctx)
 	if !ok {
-		respondWithError(w, http.StatusUnauthorized, "User not authenticated")
+		respondWithError(w, http.StatusInternalServerError, "Error while adding drinking")
 		return
 	}
 
@@ -378,7 +334,7 @@ func (h *UserHandler) GetWeeklyDaysDrank(w http.ResponseWriter, r *http.Request)
 
 	clearkID, ok := middleware.GetClerkID(ctx)
 	if !ok {
-		respondWithError(w, http.StatusUnauthorized, "User not authenticated")
+		respondWithError(w, http.StatusInternalServerError, "Error while getting weekly days drank")
 		return
 	}
 
@@ -397,7 +353,7 @@ func (h *UserHandler) GetMonthlyDaysDrank(w http.ResponseWriter, r *http.Request
 
 	clearkID, ok := middleware.GetClerkID(ctx)
 	if !ok {
-		respondWithError(w, http.StatusUnauthorized, "User not authenticated")
+		respondWithError(w, http.StatusInternalServerError, "Error while getting monthly days drank")
 		return
 	}
 
@@ -416,7 +372,7 @@ func (h *UserHandler) GetYearlyDaysDrank(w http.ResponseWriter, r *http.Request)
 
 	clearkID, ok := middleware.GetClerkID(ctx)
 	if !ok {
-		respondWithError(w, http.StatusUnauthorized, "User not authenticated")
+		respondWithError(w, http.StatusInternalServerError, "Error while getting yearly days drank")
 		return
 	}
 
@@ -435,7 +391,7 @@ func (h *UserHandler) GetAllTimeDaysDrank(w http.ResponseWriter, r *http.Request
 
 	clearkID, ok := middleware.GetClerkID(ctx)
 	if !ok {
-		respondWithError(w, http.StatusUnauthorized, "User not authenticated")
+		respondWithError(w, http.StatusInternalServerError, "Error while getting all time days drank")
 		return
 	}
 
@@ -448,14 +404,13 @@ func (h *UserHandler) GetAllTimeDaysDrank(w http.ResponseWriter, r *http.Request
 	respondWithJSON(w, http.StatusOK, allTimeDaysDrank)
 }
 
-
 func (h *UserHandler) SearchUsers(w http.ResponseWriter, r *http.Request) {
 	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
 	defer cancel()
 
 	clearkID, ok := middleware.GetClerkID(ctx)
 	if !ok {
-		respondWithError(w, http.StatusUnauthorized, "User not authenticated")
+		respondWithError(w, http.StatusInternalServerError, "Error while searching users")
 		return
 	}
 
@@ -481,7 +436,7 @@ func (h *UserHandler) GetCalendar(w http.ResponseWriter, r *http.Request) {
 
 	clearkID, ok := middleware.GetClerkID(ctx)
 	if !ok {
-		respondWithError(w, http.StatusUnauthorized, "User not authenticated")
+		respondWithError(w, http.StatusInternalServerError, "Error while getting calendar")
 		return
 	}
 
