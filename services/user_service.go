@@ -997,7 +997,6 @@ func (s *UserService) GetWeeklyDaysDrank(ctx context.Context, clerkID string) (*
 
 	return stat, nil
 }
-
 func (s *UserService) SearchUsers(ctx context.Context, clerkID string, query string) ([]*user.User, error) {
 	// Clean and prepare the query
 	cleanQuery := strings.TrimSpace(query)
@@ -1016,95 +1015,61 @@ func (s *UserService) SearchUsers(ctx context.Context, clerkID string, query str
 		email_verified, 
 		created_at, 
 		updated_at,
-		-- Calculate similarity score (0-100%)
-		GREATEST(
-			-- Exact match (100%)
-			CASE 
-				WHEN LOWER(username) = LOWER($2) THEN 100
-				WHEN LOWER(email) = LOWER($2) THEN 100
-				WHEN LOWER(first_name) = LOWER($2) THEN 95
-				WHEN LOWER(last_name) = LOWER($2) THEN 95
-				WHEN LOWER(CONCAT(COALESCE(first_name, ''), ' ', COALESCE(last_name, ''))) = LOWER($2) THEN 100
-				ELSE 0
-			END,
-			-- Starts with match (80-90%)
-			CASE 
-				WHEN LOWER(username) LIKE LOWER($3) THEN 90
-				WHEN LOWER(first_name) LIKE LOWER($3) THEN 85
-				WHEN LOWER(last_name) LIKE LOWER($3) THEN 85
-				WHEN LOWER(CONCAT(COALESCE(first_name, ''), ' ', COALESCE(last_name, ''))) LIKE LOWER($3) THEN 88
-				ELSE 0
-			END,
-			-- Contains match (50-70%)
-			CASE 
-				WHEN LOWER(username) LIKE LOWER($1) THEN 70
-				WHEN LOWER(first_name) LIKE LOWER($1) THEN 60
-				WHEN LOWER(last_name) LIKE LOWER($1) THEN 60
-				WHEN LOWER(CONCAT(COALESCE(first_name, ''), ' ', COALESCE(last_name, ''))) LIKE LOWER($1) THEN 65
-				WHEN LOWER(email) LIKE LOWER($1) THEN 50
-				ELSE 0
-			END,
-			-- Levenshtein distance-based scoring (custom implementation)
-			-- More similar = higher score
-			CASE 
-				WHEN LENGTH($2) > 0 THEN
-					GREATEST(
-						100 - (LENGTH(username) - LENGTH($2)) * 5,
-						100 - (LENGTH(COALESCE(first_name, '')) - LENGTH($2)) * 5,
-						100 - (LENGTH(COALESCE(last_name, '')) - LENGTH($2)) * 5,
-						0
-					)
-				ELSE 0
-			END
-		) AS similarity_score
-	FROM users
-	WHERE 
-		(
-			username ILIKE $1 OR
-			email ILIKE $1 OR
-			first_name ILIKE $1 OR
-			last_name ILIKE $1 OR
-			CONCAT(COALESCE(first_name, ''), ' ', COALESCE(last_name, '')) ILIKE $1
-		)
-		-- Exclude the searching user
-		AND clerk_id != $4
-	HAVING 
-		-- Only return results with at least 30% similarity
-		GREATEST(
-			CASE 
-				WHEN LOWER(username) = LOWER($2) THEN 100
-				WHEN LOWER(email) = LOWER($2) THEN 100
-				WHEN LOWER(first_name) = LOWER($2) THEN 95
-				WHEN LOWER(last_name) = LOWER($2) THEN 95
-				WHEN LOWER(CONCAT(COALESCE(first_name, ''), ' ', COALESCE(last_name, ''))) = LOWER($2) THEN 100
-				ELSE 0
-			END,
-			CASE 
-				WHEN LOWER(username) LIKE LOWER($3) THEN 90
-				WHEN LOWER(first_name) LIKE LOWER($3) THEN 85
-				WHEN LOWER(last_name) LIKE LOWER($3) THEN 85
-				WHEN LOWER(CONCAT(COALESCE(first_name, ''), ' ', COALESCE(last_name, ''))) LIKE LOWER($3) THEN 88
-				ELSE 0
-			END,
-			CASE 
-				WHEN LOWER(username) LIKE LOWER($1) THEN 70
-				WHEN LOWER(first_name) LIKE LOWER($1) THEN 60
-				WHEN LOWER(last_name) LIKE LOWER($1) THEN 60
-				WHEN LOWER(CONCAT(COALESCE(first_name, ''), ' ', COALESCE(last_name, ''))) LIKE LOWER($1) THEN 65
-				WHEN LOWER(email) LIKE LOWER($1) THEN 50
-				ELSE 0
-			END,
-			CASE 
-				WHEN LENGTH($2) > 0 THEN
-					GREATEST(
-						100 - (LENGTH(username) - LENGTH($2)) * 5,
-						100 - (LENGTH(COALESCE(first_name, '')) - LENGTH($2)) * 5,
-						100 - (LENGTH(COALESCE(last_name, '')) - LENGTH($2)) * 5,
-						0
-					)
-				ELSE 0
-			END
-		) >= 30
+		similarity_score
+	FROM (
+		SELECT 
+			id, 
+			clerk_id, 
+			email, 
+			username, 
+			first_name, 
+			last_name, 
+			image_url, 
+			email_verified, 
+			created_at, 
+			updated_at,
+			-- Calculate similarity score (0-100%)
+			GREATEST(
+				-- Exact match (100%)
+				CASE 
+					WHEN LOWER(username) = LOWER($2) THEN 100
+					WHEN LOWER(email) = LOWER($2) THEN 100
+					WHEN LOWER(first_name) = LOWER($2) THEN 95
+					WHEN LOWER(last_name) = LOWER($2) THEN 95
+					WHEN LOWER(CONCAT(COALESCE(first_name, ''), ' ', COALESCE(last_name, ''))) = LOWER($2) THEN 100
+					ELSE 0
+				END,
+				-- Starts with match (80-90%)
+				CASE 
+					WHEN LOWER(username) LIKE LOWER($3) THEN 90
+					WHEN LOWER(first_name) LIKE LOWER($3) THEN 85
+					WHEN LOWER(last_name) LIKE LOWER($3) THEN 85
+					WHEN LOWER(CONCAT(COALESCE(first_name, ''), ' ', COALESCE(last_name, ''))) LIKE LOWER($3) THEN 88
+					ELSE 0
+				END,
+				-- Contains match (50-70%)
+				CASE 
+					WHEN LOWER(username) LIKE LOWER($1) THEN 70
+					WHEN LOWER(first_name) LIKE LOWER($1) THEN 60
+					WHEN LOWER(last_name) LIKE LOWER($1) THEN 60
+					WHEN LOWER(CONCAT(COALESCE(first_name, ''), ' ', COALESCE(last_name, ''))) LIKE LOWER($1) THEN 65
+					WHEN LOWER(email) LIKE LOWER($1) THEN 50
+					ELSE 0
+				END
+			) AS similarity_score
+		FROM users
+		WHERE 
+			(
+				username ILIKE $1 OR
+				email ILIKE $1 OR
+				first_name ILIKE $1 OR
+				last_name ILIKE $1 OR
+				CONCAT(COALESCE(first_name, ''), ' ', COALESCE(last_name, '')) ILIKE $1
+			)
+			-- Exclude the searching user
+			AND clerk_id != $4
+	) AS scored_users
+	WHERE similarity_score >= 30
 	ORDER BY 
 		similarity_score DESC,
 		username
