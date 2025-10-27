@@ -10,6 +10,7 @@ import (
 	"outDrinkMeAPI/internal/leaderboard"
 	"outDrinkMeAPI/internal/stats"
 	"outDrinkMeAPI/internal/user"
+	"strings"
 	"time"
 
 	"github.com/google/uuid"
@@ -996,11 +997,14 @@ func (s *UserService) GetWeeklyDaysDrank(ctx context.Context, clerkID string) (*
 
 	return stat, nil
 }
-
 func (s *UserService) SearchUsers(ctx context.Context, clerkID string, query string) ([]*user.User, error) {
-	// Prepare the search pattern for ILIKE (case-insensitive search)
-	searchPattern := "%" + query + "%"
-
+	// First, ensure pg_trgm extension is enabled (run this once in your migration)
+	// CREATE EXTENSION IF NOT EXISTS pg_trgm;
+	
+	// Clean and prepare the query
+	cleanQuery := strings.TrimSpace(query)
+	searchPattern := "%" + cleanQuery + "%"
+	
 	sqlQuery := `
 	SELECT 
 		id, 
@@ -1012,27 +1016,68 @@ func (s *UserService) SearchUsers(ctx context.Context, clerkID string, query str
 		image_url, 
 		email_verified, 
 		created_at, 
-		updated_at
+		updated_at,
+		-- Calculate similarity score (0-100%)
+		GREATEST(
+			-- Exact match bonus
+			CASE 
+				WHEN LOWER(username) = LOWER($2) THEN 100
+				WHEN LOWER(email) = LOWER($2) THEN 100
+				WHEN LOWER(first_name) = LOWER($2) THEN 95
+				WHEN LOWER(last_name) = LOWER($2) THEN 95
+				WHEN LOWER(CONCAT(first_name, ' ', last_name)) = LOWER($2) THEN 100
+				ELSE 0
+			END,
+			-- Starts with bonus
+			CASE 
+				WHEN LOWER(username) LIKE LOWER($2) || '%' THEN 90
+				WHEN LOWER(first_name) LIKE LOWER($2) || '%' THEN 85
+				WHEN LOWER(last_name) LIKE LOWER($2) || '%' THEN 85
+				ELSE 0
+			END,
+			-- Trigram similarity (PostgreSQL pg_trgm extension)
+			GREATEST(
+				similarity(username, $2) * 100,
+				similarity(COALESCE(first_name, ''), $2) * 100,
+				similarity(COALESCE(last_name, ''), $2) * 100,
+				similarity(CONCAT(COALESCE(first_name, ''), ' ', COALESCE(last_name, '')), $2) * 100,
+				similarity(COALESCE(email, ''), $2) * 60  -- Lower weight for email
+			),
+			-- Contains match (lower score)
+			CASE 
+				WHEN username ILIKE $1 THEN 50
+				WHEN first_name ILIKE $1 THEN 45
+				WHEN last_name ILIKE $1 THEN 45
+				WHEN CONCAT(first_name, ' ', last_name) ILIKE $1 THEN 55
+				WHEN email ILIKE $1 THEN 40
+				ELSE 0
+			END
+		) AS similarity_score
 	FROM users
 	WHERE 
-		username ILIKE $1 OR
-		email ILIKE $1 OR
-		first_name ILIKE $1 OR
-		last_name ILIKE $1 OR
-		CONCAT(first_name, ' ', last_name) ILIKE $1
+		-- Basic filter to reduce initial dataset
+		(
+			username ILIKE $1 OR
+			email ILIKE $1 OR
+			first_name ILIKE $1 OR
+			last_name ILIKE $1 OR
+			CONCAT(first_name, ' ', last_name) ILIKE $1 OR
+			-- Trigram similarity threshold (adjust as needed, 0.1 = 10% similar)
+			similarity(username, $2) > 0.1 OR
+			similarity(COALESCE(first_name, ''), $2) > 0.1 OR
+			similarity(COALESCE(last_name, ''), $2) > 0.1 OR
+			similarity(CONCAT(COALESCE(first_name, ''), ' ', COALESCE(last_name, '')), $2) > 0.1
+		)
+		-- Optionally exclude the searching user
+		AND clerk_id != $3
 	ORDER BY 
-		CASE 
-			WHEN username ILIKE $1 THEN 1
-			WHEN email ILIKE $1 THEN 2
-			WHEN first_name ILIKE $1 THEN 3
-			WHEN last_name ILIKE $1 THEN 4
-			ELSE 5
-		END,
+		similarity_score DESC,
+		-- Secondary sort by username for ties
 		username
 	LIMIT 50
 	`
 
-	rows, err := s.db.Query(ctx, sqlQuery, searchPattern)
+	rows, err := s.db.Query(ctx, sqlQuery, searchPattern, cleanQuery, clerkID)
 	if err != nil {
 		return nil, fmt.Errorf("failed to search users: %w", err)
 	}
@@ -1041,6 +1086,8 @@ func (s *UserService) SearchUsers(ctx context.Context, clerkID string, query str
 	var users []*user.User
 	for rows.Next() {
 		u := &user.User{}
+		var similarityScore float64
+		
 		err := rows.Scan(
 			&u.ID,
 			&u.ClerkID,
@@ -1052,10 +1099,16 @@ func (s *UserService) SearchUsers(ctx context.Context, clerkID string, query str
 			&u.EmailVerified,
 			&u.CreatedAt,
 			&u.UpdatedAt,
+			&similarityScore,
 		)
 		if err != nil {
 			return nil, fmt.Errorf("failed to scan user: %w", err)
 		}
+		
+		// Optional: You can store the similarity score in the user struct
+		// if you want to display it in the UI
+		// u.SimilarityScore = similarityScore
+		
 		users = append(users, u)
 	}
 
