@@ -196,7 +196,6 @@ func (h *UserHandler) RemoveFriend(w http.ResponseWriter, r *http.Request) {
 
 	log.Printf("friendId Handler: Request from %s to remove user from friend list %s", clerkID, friendId)
 
-
 	err := h.userService.RemoveFriend(ctx, clerkID, friendId)
 	if err != nil {
 		log.Printf("RemoveFriend Handler: Service error: %v", err)
@@ -477,6 +476,54 @@ func (h *UserHandler) GetUserStats(w http.ResponseWriter, r *http.Request) {
 	}
 
 	respondWithJSON(w, http.StatusOK, stats)
+}
+
+
+
+func (h *UserHandler) DeleteAccountPage(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	fmt.Fprintf(w, `
+       <!DOCTYPE html>
+<html lang="bg">
+<head>
+    <meta charset="UTF-8">
+    <title>Изтриване на профил</title>
+</head>
+<body>
+    <h1>Изтриване на профил</h1>
+    <p>За да изтриете профила си:</p>
+    <ol>
+        <li>Отворете приложението</li>
+        <li>Отидете в Профил</li> 
+		         <li>Натиснете "Edit profile"</li>
+        <li>Натиснете "Изтрий профил"</li>
+    </ol>
+    <p>Или изпратете имейл на: martbul01@gmail.com</p>
+</body>
+</html>
+    `)
+}
+func (h *UserHandler) UpdateAccountPage(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	fmt.Fprintf(w, `
+       <!DOCTYPE html>
+<html lang="bg">
+<head>
+    <meta charset="UTF-8">
+    <title>Изтриване на данни от профил</title>
+</head>
+<body>
+    <h1>Изтриване на данни от профил</h1>
+    <p>За да изтриете данни от профила си:</p>
+    <ol>
+        <li>Отворете приложението</li>
+        <li>Отидете в Профил</li>
+        <li>Натиснете "Edit profile"</li>
+    </ol>
+    <p>Или изпратете имейл на: martbul01@gmail.com</p>
+</body>
+</html>
+    `)
 }
 
 // Helper functions
