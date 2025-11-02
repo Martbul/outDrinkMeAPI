@@ -1192,10 +1192,10 @@ type DailyDrinkingPost struct {
 	Date             time.Time
 	DrankToday       bool
 	LoggedAt         time.Time
-	ImageURL         *string // nullable
-	LocationText     *string // nullable
-	MentionedBuddies *string // nullable
-	SourceType       string  // "friend" or "other"
+	ImageURL         *string
+	LocationText     *string
+	MentionedBuddies []string 
+	SourceType       string
 }
 func (s *UserService) GetYourMix(ctx context.Context, clerkID string) ([]DailyDrinkingPost, error) {
 	log.Println("getting feed")
