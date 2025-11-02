@@ -403,6 +403,7 @@ func (s *UserService) GetDiscovery(ctx context.Context, clerkID string) ([]*user
 
 	return users, nil
 }
+
 func (s *UserService) AddFriend(ctx context.Context, clerkID string, friendClerkID string) error {
 	// Get current user ID
 	var userID uuid.UUID
@@ -1196,7 +1197,6 @@ type DailyDrinkingPost struct {
 	MentionedBuddies *string // nullable
 	SourceType       string  // "friend" or "other"
 }
-
 func (s *UserService) GetYourMix(ctx context.Context, clerkID string) ([]DailyDrinkingPost, error) {
 	log.Println("getting feed")
 
@@ -1220,14 +1220,16 @@ func (s *UserService) GetYourMix(ctx context.Context, clerkID string) ([]DailyDr
 			dd.mentioned_buddies,
 			'friend' as source_type
 		FROM daily_drinking dd
-		INNER JOIN friendships f ON (
-			(f.user_id = $1 AND f.friend_id = dd.user_id)
-			OR
-			(f.friend_id = $1 AND f.user_id = dd.user_id)
-		)
 		WHERE dd.user_id != $1
 			AND dd.logged_at >= NOW() - INTERVAL '5 days'
-			AND f.status = 'accepted'
+			AND dd.user_id IN (
+				-- Get all friends (bidirectional)
+				SELECT friend_id FROM friendships 
+				WHERE user_id = $1 AND status = 'accepted'
+				UNION
+				SELECT user_id FROM friendships 
+				WHERE friend_id = $1 AND status = 'accepted'
+			)
 		ORDER BY dd.logged_at DESC
 		LIMIT 30
 	),
@@ -1252,7 +1254,7 @@ func (s *UserService) GetYourMix(ctx context.Context, clerkID string) ([]DailyDr
 		WHERE dd.user_id != $1
 			AND dd.logged_at >= NOW() - INTERVAL '5 days'
 			AND dd.user_id NOT IN (
-				-- Exclude friends
+				-- Exclude friends (bidirectional)
 				SELECT friend_id FROM friendships 
 				WHERE user_id = $1 AND status = 'accepted'
 				UNION
@@ -1260,7 +1262,7 @@ func (s *UserService) GetYourMix(ctx context.Context, clerkID string) ([]DailyDr
 				WHERE friend_id = $1 AND status = 'accepted'
 			)
 		ORDER BY dd.logged_at DESC
-		LIMIT (50 - (SELECT cnt FROM friend_count))
+		LIMIT GREATEST(20, 50 - (SELECT cnt FROM friend_count))
 	)
 	-- Combine and return final feed
 	SELECT 
