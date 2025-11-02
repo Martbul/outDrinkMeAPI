@@ -1189,6 +1189,7 @@ func (s *UserService) GetUserStats(ctx context.Context, clerkID string) (*stats.
 type DailyDrinkingPost struct {
 	ID               uuid.UUID
 	UserID           uuid.UUID
+	UserImageURL     *string   // Add this field
 	Date             time.Time
 	DrankToday       bool
 	LoggedAt         time.Time
@@ -1213,6 +1214,7 @@ func (s *UserService) GetYourMix(ctx context.Context, clerkID string) ([]DailyDr
 		SELECT 
 			dd.id,
 			dd.user_id,
+			u.image_url,
 			dd.date,
 			dd.drank_today,
 			dd.logged_at,
@@ -1221,6 +1223,7 @@ func (s *UserService) GetYourMix(ctx context.Context, clerkID string) ([]DailyDr
 			dd.mentioned_buddies,
 			'friend' as source_type
 		FROM daily_drinking dd
+		JOIN users u ON u.id = dd.user_id
 		WHERE dd.user_id != $1
 			AND dd.logged_at >= NOW() - INTERVAL '5 days'
 			AND dd.image_url IS NOT NULL
@@ -1246,6 +1249,7 @@ func (s *UserService) GetYourMix(ctx context.Context, clerkID string) ([]DailyDr
 		SELECT 
 			dd.id,
 			dd.user_id,
+			u.image_url,
 			dd.date,
 			dd.drank_today,
 			dd.logged_at,
@@ -1254,6 +1258,7 @@ func (s *UserService) GetYourMix(ctx context.Context, clerkID string) ([]DailyDr
 			dd.mentioned_buddies,
 			'other' as source_type
 		FROM daily_drinking dd
+		JOIN users u ON u.id = dd.user_id
 		WHERE dd.user_id != $1
 			AND dd.logged_at >= NOW() - INTERVAL '5 days'
 			AND dd.image_url IS NOT NULL
@@ -1273,6 +1278,7 @@ func (s *UserService) GetYourMix(ctx context.Context, clerkID string) ([]DailyDr
 	SELECT 
 		id,
 		user_id,
+		image_url,
 		date,
 		drank_today,
 		logged_at,
@@ -1303,10 +1309,11 @@ func (s *UserService) GetYourMix(ctx context.Context, clerkID string) ([]DailyDr
 		err := rows.Scan(
 			&post.ID,
 			&post.UserID,
+			&post.UserImageURL,  // This scans u.image_url (user's profile pic)
 			&post.Date,
 			&post.DrankToday,
 			&post.LoggedAt,
-			&post.ImageURL,
+			&post.ImageURL,      // This scans dd.image_url (post image)
 			&post.LocationText,
 			&post.MentionedBuddies,
 			&post.SourceType,
