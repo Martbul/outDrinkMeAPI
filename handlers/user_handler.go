@@ -304,7 +304,10 @@ func (h *UserHandler) AddDrinking(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var req struct {
-		DrankToday bool `json:"drank_today"`
+		DrankToday       bool         `json:"drank_today"`
+		ImageUrl         *string       `json:"image_url"`
+		LocationText     *string       `json:"location_text"`
+		MentionedBuddies []*user.User `json:"mentioned_buddies"`
 	}
 
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
@@ -312,7 +315,7 @@ func (h *UserHandler) AddDrinking(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := h.userService.AddDrinking(ctx, clearkID, req.DrankToday); err != nil {
+	if err := h.userService.AddDrinking(ctx, clearkID, req.DrankToday, req.ImageUrl, req.LocationText, req.MentionedBuddies); err != nil {
 		respondWithError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
@@ -476,6 +479,25 @@ func (h *UserHandler) GetUserStats(w http.ResponseWriter, r *http.Request) {
 	}
 
 	respondWithJSON(w, http.StatusOK, stats)
+}
+
+func (h *UserHandler) GetYourMix(w http.ResponseWriter, r *http.Request) {
+	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
+	defer cancel()
+
+	clearkID, ok := middleware.GetClerkID(ctx)
+	if !ok {
+		respondWithError(w, http.StatusUnauthorized, "User not authenticated")
+		return
+	}
+
+	yourMixData, err := h.userService.GetYourMix(ctx, clearkID)
+	if err != nil {
+		respondWithError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+
+	respondWithJSON(w, http.StatusOK, yourMixData)
 }
 
 
