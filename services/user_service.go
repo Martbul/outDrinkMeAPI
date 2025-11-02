@@ -684,7 +684,6 @@ func (s *UserService) GetAchievements(ctx context.Context, clerkID string) ([]*a
 	return achievements, nil
 }
 
-
 func (s *UserService) AddDrinking(ctx context.Context, clerkID string, drankToday bool, imageUrl *string, locationText *string, mentionedBuddies []*user.User) error {
 	var userID uuid.UUID
 	err := s.db.QueryRow(ctx, `SELECT id FROM users WHERE clerk_id = $1`, clerkID).Scan(&userID)
@@ -1186,22 +1185,20 @@ func (s *UserService) GetUserStats(ctx context.Context, clerkID string) (*stats.
 	return stats, nil
 }
 
-
 type DailyDrinkingPost struct {
-    ID               uuid.UUID
-    UserID           uuid.UUID
-    Date             time.Time
-    DrankToday       bool
-    LoggedAt         time.Time
-    ImageURL         *string  // nullable
-    LocationText     *string  // nullable
-    MentionedBuddies *string  // nullable
-    SourceType       string   // "friend" or "other"
+	ID               uuid.UUID
+	UserID           uuid.UUID
+	Date             time.Time
+	DrankToday       bool
+	LoggedAt         time.Time
+	ImageURL         *string // nullable
+	LocationText     *string // nullable
+	MentionedBuddies *string // nullable
+	SourceType       string  // "friend" or "other"
 }
 
-
-
 func (s *UserService) GetYourMix(ctx context.Context, clerkID string) ([]DailyDrinkingPost, error) {
+	log.Println("getting feed")
 
 	var userID uuid.UUID
 	err := s.db.QueryRow(ctx, "SELECT id FROM users WHERE clerk_id = $1", clerkID).Scan(&userID)
@@ -1287,6 +1284,8 @@ func (s *UserService) GetYourMix(ctx context.Context, clerkID string) ([]DailyDr
 
 	rows, err := s.db.Query(ctx, query, userID)
 	if err != nil {
+		log.Println("failed to get feed")
+
 		return nil, fmt.Errorf("failed to get feed: %w", err)
 	}
 	defer rows.Close()
@@ -1306,14 +1305,19 @@ func (s *UserService) GetYourMix(ctx context.Context, clerkID string) ([]DailyDr
 			&post.SourceType,
 		)
 		if err != nil {
+			log.Println("failed to scan post")
+
 			return nil, fmt.Errorf("failed to scan post: %w", err)
 		}
 		posts = append(posts, post)
 	}
 
 	if err = rows.Err(); err != nil {
+		log.Println("error iterating posts")
+
 		return nil, fmt.Errorf("error iterating posts: %w", err)
 	}
+	log.Println(posts)
 
 	return posts, nil
 }

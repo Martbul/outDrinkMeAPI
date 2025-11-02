@@ -305,8 +305,8 @@ func (h *UserHandler) AddDrinking(w http.ResponseWriter, r *http.Request) {
 
 	var req struct {
 		DrankToday       bool         `json:"drank_today"`
-		ImageUrl         *string       `json:"image_url"`
-		LocationText     *string       `json:"location_text"`
+		ImageUrl         *string      `json:"image_url"`
+		LocationText     *string      `json:"location_text"`
 		MentionedBuddies []*user.User `json:"mentioned_buddies"`
 	}
 
@@ -497,10 +497,10 @@ func (h *UserHandler) GetYourMix(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	log.Println(yourMixData)
+
 	respondWithJSON(w, http.StatusOK, yourMixData)
 }
-
-
 
 func (h *UserHandler) DeleteAccountPage(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
