@@ -723,6 +723,28 @@ func (s *UserService) AddDrinking(ctx context.Context, clerkID string, drankToda
 	return nil
 }
 
+
+func (s *UserService) AddDrunkThought(ctx context.Context, clerkID string, drunkThought string) error {
+    var userID uuid.UUID
+    err := s.db.QueryRow(ctx, `SELECT id FROM users WHERE clerk_id = $1`, clerkID).Scan(&userID)
+    if err != nil {
+        return fmt.Errorf("user not found: %w", err)
+    }
+    query := `
+        INSERT INTO daily_drinking (user_id, date, drunk_thought)
+        VALUES ($1, CURRENT_DATE, $2)
+        ON CONFLICT (user_id, date) 
+        DO UPDATE SET 
+            drunk_thought = $2
+    `
+    _, err = s.db.Exec(ctx, query, userID, drunkThought)
+    if err != nil {
+        return fmt.Errorf("failed to log drunk thought: %w", err)
+    }
+    return nil
+}
+
+
 func (s *UserService) GetWeeklyDaysDrank(ctx context.Context, clerkID string) (*stats.DaysStat, error) {
 	var userID uuid.UUID
 	err := s.db.QueryRow(ctx, `SELECT id FROM users WHERE clerk_id = $1`, clerkID).Scan(&userID)
