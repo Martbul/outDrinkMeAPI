@@ -685,21 +685,37 @@ func (s *UserService) GetAchievements(ctx context.Context, clerkID string) ([]*a
 }
 
 
-func (s *UserService) AddDrinking(ctx context.Context, clerkID string, drankToday bool, ImageUrl *string, LocationText *string, MentionedBuddies []*user.User) error {
+func (s *UserService) AddDrinking(ctx context.Context, clerkID string, drankToday bool, imageUrl *string, locationText *string, mentionedBuddies []*user.User) error {
 	var userID uuid.UUID
 	err := s.db.QueryRow(ctx, `SELECT id FROM users WHERE clerk_id = $1`, clerkID).Scan(&userID)
 	if err != nil {
 		return fmt.Errorf("user not found: %w", err)
 	}
 
+	// Extract clerk_ids from mentionedBuddies
+	var clerkIDs []string
+	if mentionedBuddies != nil {
+		clerkIDs = make([]string, 0, len(mentionedBuddies))
+		for _, buddy := range mentionedBuddies {
+			if buddy != nil {
+				clerkIDs = append(clerkIDs, buddy.ClerkID)
+			}
+		}
+	}
+
 	query := `
-	INSERT INTO daily_drinking (user_id, date, drank_today, logged_at)
-	VALUES ($1, CURRENT_DATE, $2, NOW())
-	ON CONFLICT (user_id, date) 
-	DO UPDATE SET drank_today = $2, logged_at = NOW()
+		INSERT INTO daily_drinking (user_id, date, drank_today, logged_at, image_url, location_text, mentioned_buddies)
+		VALUES ($1, CURRENT_DATE, $2, NOW(), $3, $4, $5)
+		ON CONFLICT (user_id, date) 
+		DO UPDATE SET 
+			drank_today = $2, 
+			logged_at = NOW(), 
+			image_url = $3, 
+			location_text = $4, 
+			mentioned_buddies = $5
 	`
 
-	_, err = s.db.Exec(ctx, query, userID, drankToday)
+	_, err = s.db.Exec(ctx, query, userID, drankToday, imageUrl, locationText, clerkIDs)
 	if err != nil {
 		return fmt.Errorf("failed to log drinking: %w", err)
 	}
