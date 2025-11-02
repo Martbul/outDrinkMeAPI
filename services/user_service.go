@@ -1198,7 +1198,6 @@ type DailyDrinkingPost struct {
 	MentionedBuddies []string 
 	SourceType       string
 }
-
 func (s *UserService) GetYourMix(ctx context.Context, clerkID string) ([]DailyDrinkingPost, error) {
 	log.Println("getting feed")
 
@@ -1214,14 +1213,14 @@ func (s *UserService) GetYourMix(ctx context.Context, clerkID string) ([]DailyDr
 		SELECT 
 			dd.id,
 			dd.user_id,
-			u.image_url,
+			u.image_url AS user_image_url,
 			dd.date,
 			dd.drank_today,
 			dd.logged_at,
-			dd.image_url,
+			dd.image_url AS post_image_url,
 			dd.location_text,
 			dd.mentioned_buddies,
-			'friend' as source_type
+			'friend' AS source_type
 		FROM daily_drinking dd
 		JOIN users u ON u.id = dd.user_id
 		WHERE dd.user_id != $1
@@ -1249,14 +1248,14 @@ func (s *UserService) GetYourMix(ctx context.Context, clerkID string) ([]DailyDr
 		SELECT 
 			dd.id,
 			dd.user_id,
-			u.image_url,
+			u.image_url AS user_image_url,
 			dd.date,
 			dd.drank_today,
 			dd.logged_at,
-			dd.image_url,
+			dd.image_url AS post_image_url,
 			dd.location_text,
 			dd.mentioned_buddies,
-			'other' as source_type
+			'other' AS source_type
 		FROM daily_drinking dd
 		JOIN users u ON u.id = dd.user_id
 		WHERE dd.user_id != $1
@@ -1278,11 +1277,11 @@ func (s *UserService) GetYourMix(ctx context.Context, clerkID string) ([]DailyDr
 	SELECT 
 		id,
 		user_id,
-		image_url,
+		user_image_url,
 		date,
 		drank_today,
 		logged_at,
-		image_url,
+		post_image_url,
 		location_text,
 		mentioned_buddies,
 		source_type
@@ -1309,11 +1308,11 @@ func (s *UserService) GetYourMix(ctx context.Context, clerkID string) ([]DailyDr
 		err := rows.Scan(
 			&post.ID,
 			&post.UserID,
-			&post.UserImageURL,  // This scans u.image_url (user's profile pic)
+			&post.UserImageURL,
 			&post.Date,
 			&post.DrankToday,
 			&post.LoggedAt,
-			&post.ImageURL,      // This scans dd.image_url (post image)
+			&post.ImageURL,
 			&post.LocationText,
 			&post.MentionedBuddies,
 			&post.SourceType,
