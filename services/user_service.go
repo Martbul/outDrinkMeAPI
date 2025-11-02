@@ -1197,6 +1197,7 @@ type DailyDrinkingPost struct {
 	MentionedBuddies []string 
 	SourceType       string
 }
+
 func (s *UserService) GetYourMix(ctx context.Context, clerkID string) ([]DailyDrinkingPost, error) {
 	log.Println("getting feed")
 
@@ -1222,6 +1223,8 @@ func (s *UserService) GetYourMix(ctx context.Context, clerkID string) ([]DailyDr
 		FROM daily_drinking dd
 		WHERE dd.user_id != $1
 			AND dd.logged_at >= NOW() - INTERVAL '5 days'
+			AND dd.image_url IS NOT NULL
+			AND dd.image_url != ''
 			AND dd.user_id IN (
 				-- Get all friends (bidirectional)
 				SELECT friend_id FROM friendships 
@@ -1253,6 +1256,8 @@ func (s *UserService) GetYourMix(ctx context.Context, clerkID string) ([]DailyDr
 		FROM daily_drinking dd
 		WHERE dd.user_id != $1
 			AND dd.logged_at >= NOW() - INTERVAL '5 days'
+			AND dd.image_url IS NOT NULL
+			AND dd.image_url != ''
 			AND dd.user_id NOT IN (
 				-- Exclude friends (bidirectional)
 				SELECT friend_id FROM friendships 
