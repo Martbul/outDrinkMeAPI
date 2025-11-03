@@ -302,6 +302,25 @@ func (h *UserHandler) AddDrinking(w http.ResponseWriter, r *http.Request) {
 		respondWithError(w, http.StatusInternalServerError, "Error while adding drinking")
 		return
 	}
+	//!sss
+
+	dateStr := r.URL.Query().Get("date")
+
+	var (
+		date time.Time
+		err  error
+	)
+	if dateStr != "" {
+		// Parse user-specified date
+		date, err = time.Parse("2006-01-02", dateStr)
+		if err != nil {
+			respondWithError(w, http.StatusBadRequest, "Invalid date format. Use YYYY-MM-DD")
+			return
+		}
+	} else {
+		// Default to today's date
+		date = time.Now().Truncate(24 * time.Hour)
+	}
 
 	var req struct {
 		DrankToday       bool         `json:"drank_today"`
@@ -315,7 +334,7 @@ func (h *UserHandler) AddDrinking(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := h.userService.AddDrinking(ctx, clearkID, req.DrankToday, req.ImageUrl, req.LocationText, req.MentionedBuddies); err != nil {
+	if err := h.userService.AddDrinking(ctx, clearkID, req.DrankToday, req.ImageUrl, req.LocationText, req.MentionedBuddies,date); err != nil {
 		respondWithError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
@@ -543,10 +562,9 @@ func (h *UserHandler) GetDrunkThought(w http.ResponseWriter, r *http.Request) {
 	response := map[string]interface{}{
 		"drunk_thought": drunkThought,
 	}
-	
+
 	respondWithJSON(w, http.StatusOK, response)
 }
-
 
 func (h *UserHandler) AddDrunkThought(w http.ResponseWriter, r *http.Request) {
 	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
