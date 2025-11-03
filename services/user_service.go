@@ -684,44 +684,35 @@ func (s *UserService) GetAchievements(ctx context.Context, clerkID string) ([]*a
 
 	return achievements, nil
 }
+func (s *UserService) AddDrinking(ctx context.Context, clerkID string, drankToday bool, imageUrl *string, locationText *string, clerkIDs []string, date time.Time) error {
+    var userID uuid.UUID
+    err := s.db.QueryRow(ctx, `SELECT id FROM users WHERE clerk_id = $1`, clerkID).Scan(&userID)
+    if err != nil {
+        return fmt.Errorf("user not found: %w", err)
+    }
 
-func (s *UserService) AddDrinking(ctx context.Context, clerkID string, drankToday bool, imageUrl *string, locationText *string, mentionedBuddies []*user.User, date time.Time) error {
-	var userID uuid.UUID
-	err := s.db.QueryRow(ctx, `SELECT id FROM users WHERE clerk_id = $1`, clerkID).Scan(&userID)
-	if err != nil {
-		return fmt.Errorf("user not found: %w", err)
-	}
+    query := `
+        INSERT INTO daily_drinking (user_id, date, drank_today, logged_at, image_url, location_text, mentioned_buddies)
+        VALUES ($1, $2, $3, NOW(), $4, $5, $6)
+        ON CONFLICT (user_id, date) 
+        DO UPDATE SET 
+            drank_today = $3, 
+            logged_at = NOW(), 
+            image_url = $4, 
+            location_text = $5, 
+            mentioned_buddies = $6
+    `
 
-	// Extract clerk_ids from mentionedBuddies
-	var clerkIDs []string
-	if mentionedBuddies != nil {
-		clerkIDs = make([]string, 0, len(mentionedBuddies))
-		for _, buddy := range mentionedBuddies {
-			if buddy != nil {
-				clerkIDs = append(clerkIDs, buddy.ClerkID)
-			}
-		}
-	}
+    _, err = s.db.Exec(ctx, query, userID, date, drankToday, imageUrl, locationText, clerkIDs)
+    if err != nil {
+        return fmt.Errorf("failed to log drinking: %w", err)
+    }
 
-	query := `
-		INSERT INTO daily_drinking (user_id, date, drank_today, logged_at, image_url, location_text, mentioned_buddies)
-		VALUES ($1, $2, $3, NOW(), $4, $5, $6)
-		ON CONFLICT (user_id, date) 
-		DO UPDATE SET 
-			drank_today = $3, 
-			logged_at = NOW(), 
-			image_url = $4, 
-			location_text = $5, 
-			mentioned_buddies = $6
-	`
-
-	_, err = s.db.Exec(ctx, query, userID, date, drankToday, imageUrl, locationText, clerkIDs)
-	if err != nil {
-		return fmt.Errorf("failed to log drinking: %w", err)
-	}
-
-	return nil
+    return nil
 }
+
+
+
 func (s *UserService) GetDrunkThought(ctx context.Context, clerkID string, date time.Time) (*string, error) {
 	var userID uuid.UUID
 	err := s.db.QueryRow(ctx, `SELECT id FROM users WHERE clerk_id = $1`, clerkID).Scan(&userID)
