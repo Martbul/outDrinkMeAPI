@@ -1211,22 +1211,22 @@ func (s *UserService) GetUserStats(ctx context.Context, clerkID string) (*stats.
 	return stats, nil
 }
 type DailyDrinkingPost struct {
-	ID               uuid.UUID
-	UserID           uuid.UUID
+	ID               string
+	UserID           string
 	UserImageURL     *string
 	Date             time.Time
 	DrankToday       bool
 	LoggedAt         time.Time
 	ImageURL         *string
 	LocationText     *string
-	MentionedBuddies []user.User  // Changed from []string
+	MentionedBuddies []user.User
 	SourceType       string
 }
 
 func (s *UserService) GetYourMix(ctx context.Context, clerkID string) ([]DailyDrinkingPost, error) {
 	log.Println("getting feed")
 
-	var userID uuid.UUID
+	var userID string
 	err := s.db.QueryRow(ctx, "SELECT id FROM users WHERE clerk_id = $1", clerkID).Scan(&userID)
 	if err != nil {
 		return nil, fmt.Errorf("user not found: %w", err)
@@ -1329,7 +1329,7 @@ func (s *UserService) GetYourMix(ctx context.Context, clerkID string) ([]DailyDr
 	var posts []DailyDrinkingPost
 	for rows.Next() {
 		var post DailyDrinkingPost
-		var mentionedBuddyIDs []string  // Scan as string array first
+		var mentionedBuddyIDs []string  // Scan as string array
 		
 		err := rows.Scan(
 			&post.ID,
@@ -1340,7 +1340,7 @@ func (s *UserService) GetYourMix(ctx context.Context, clerkID string) ([]DailyDr
 			&post.LoggedAt,
 			&post.ImageURL,
 			&post.LocationText,
-			&mentionedBuddyIDs,  // Scan the UUIDs as strings
+			&mentionedBuddyIDs,
 			&post.SourceType,
 		)
 		if err != nil {
@@ -1372,7 +1372,7 @@ func (s *UserService) GetYourMix(ctx context.Context, clerkID string) ([]DailyDr
 	return posts, nil
 }
 
-// Helper function to fetch users by their IDs (not Clerk IDs)
+// Helper function to fetch users by their IDs (now expects string IDs)
 func (s *UserService) getUsersByIDs(ctx context.Context, userIDs []string) ([]user.User, error) {
 	if len(userIDs) == 0 {
 		return []user.User{}, nil
