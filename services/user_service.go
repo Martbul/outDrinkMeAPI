@@ -1389,19 +1389,30 @@ func (s *UserService) GetYourMix(ctx context.Context, clerkID string) ([]DailyDr
 	return posts, nil
 }
 
-// Helper function to fetch users by their IDs (now expects string IDs)
-func (s *UserService) getUsersByIDs(ctx context.Context, userIDs []string) ([]user.User, error) {
-	if len(userIDs) == 0 {
+func (s *UserService) getUsersByIDs(ctx context.Context, clerkIDs []string) ([]user.User, error) {
+	if len(clerkIDs) == 0 {
 		return []user.User{}, nil
 	}
 
 	query := `
-		SELECT id, clerk_id, email, username, first_name, last_name, image_url, email_verified, created_at, updated_at, gems, xp, all_days_drinking_count
+		SELECT 
+			id,
+			clerk_id,
+			username,
+			email,
+			first_name,
+			last_name,
+			image_url,
+			created_at,
+			updated_at,
+			gems,
+			xp,
+			all_days_drinking_count
 		FROM users
-		WHERE id = ANY($1)
+		WHERE clerk_id = ANY($1)
 	`
 
-	rows, err := s.db.Query(ctx, query, userIDs)
+	rows, err := s.db.Query(ctx, query, clerkIDs)
 	if err != nil {
 		return nil, fmt.Errorf("failed to query users: %w", err)
 	}
@@ -1413,12 +1424,11 @@ func (s *UserService) getUsersByIDs(ctx context.Context, userIDs []string) ([]us
 		err := rows.Scan(
 			&u.ID,
 			&u.ClerkID,
-			&u.Email,
 			&u.Username,
+			&u.Email,
 			&u.FirstName,
 			&u.LastName,
 			&u.ImageURL,
-			&u.EmailVerified,
 			&u.CreatedAt,
 			&u.UpdatedAt,
 			&u.Gems,
