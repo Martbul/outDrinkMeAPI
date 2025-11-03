@@ -723,7 +723,32 @@ func (s *UserService) AddDrinking(ctx context.Context, clerkID string, drankToda
 	return nil
 }
 
-// Service
+
+func (s *UserService) GetDrunkThought(ctx context.Context, clerkID string) (*string, error) {
+	var userID uuid.UUID
+	err := s.db.QueryRow(ctx, `SELECT id FROM users WHERE clerk_id = $1`, clerkID).Scan(&userID)
+	if err != nil {
+		return nil, fmt.Errorf("user not found: %w", err)
+	}
+
+	var drunkThought *string
+	query := `
+		SELECT drunk_thought
+		FROM daily_drinking
+		WHERE user_id = $1 AND date = CURRENT_DATE
+	`
+	err = s.db.QueryRow(ctx, query, userID).Scan(&drunkThought)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			// No entry for today, return nil (no thought)
+			return nil, nil
+		}
+		return nil, fmt.Errorf("failed to get drunk thought: %w", err)
+	}
+
+	return drunkThought, nil
+}
+
 func (s *UserService) AddDrunkThought(ctx context.Context, clerkID string, drunkThought string) (*string, error) {
 	var userID uuid.UUID
 	err := s.db.QueryRow(ctx, `SELECT id FROM users WHERE clerk_id = $1`, clerkID).Scan(&userID)
@@ -747,6 +772,9 @@ func (s *UserService) AddDrunkThought(ctx context.Context, clerkID string, drunk
 
 	return &savedThought, nil
 }
+
+
+
 
 func (s *UserService) GetWeeklyDaysDrank(ctx context.Context, clerkID string) (*stats.DaysStat, error) {
 	var userID uuid.UUID

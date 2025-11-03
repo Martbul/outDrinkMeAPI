@@ -502,7 +502,29 @@ func (h *UserHandler) GetYourMix(w http.ResponseWriter, r *http.Request) {
 	respondWithJSON(w, http.StatusOK, yourMixData)
 }
 
-// Handler
+
+func (h *UserHandler) GetDrunkThought(w http.ResponseWriter, r *http.Request) {
+	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
+	defer cancel()
+
+	clearkID, ok := middleware.GetClerkID(ctx)
+	if !ok {
+		respondWithError(w, http.StatusUnauthorized, "User not authenticated")
+		return
+	}
+
+	yourDrunkThoughtToday, err := h.userService.GetDrunkThought(ctx, clearkID)
+	if err != nil {
+		respondWithError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+
+	log.Println(yourDrunkThoughtToday)
+
+	respondWithJSON(w, http.StatusOK, yourDrunkThoughtToday)
+}
+
+
 func (h *UserHandler) AddDrunkThought(w http.ResponseWriter, r *http.Request) {
     ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
     defer cancel()
@@ -556,6 +578,7 @@ func (h *UserHandler) DeleteAccountPage(w http.ResponseWriter, r *http.Request) 
 </html>
     `)
 }
+
 func (h *UserHandler) UpdateAccountPage(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	fmt.Fprintf(w, `
