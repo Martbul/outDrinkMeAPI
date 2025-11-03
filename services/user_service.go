@@ -722,9 +722,7 @@ func (s *UserService) AddDrinking(ctx context.Context, clerkID string, drankToda
 
 	return nil
 }
-
-
-func (s *UserService) GetDrunkThought(ctx context.Context, clerkID string) (*string, error) {
+func (s *UserService) GetDrunkThought(ctx context.Context, clerkID string, date time.Time) (*string, error) {
 	var userID uuid.UUID
 	err := s.db.QueryRow(ctx, `SELECT id FROM users WHERE clerk_id = $1`, clerkID).Scan(&userID)
 	if err != nil {
@@ -732,15 +730,17 @@ func (s *UserService) GetDrunkThought(ctx context.Context, clerkID string) (*str
 	}
 
 	var drunkThought *string
+
 	query := `
 		SELECT drunk_thought
 		FROM daily_drinking
-		WHERE user_id = $1 AND date = CURRENT_DATE
+		WHERE user_id = $1 AND date = $2
 	`
-	err = s.db.QueryRow(ctx, query, userID).Scan(&drunkThought)
+
+	err = s.db.QueryRow(ctx, query, userID, date).Scan(&drunkThought)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
-			// No entry for today, return nil (no thought)
+			// No entry for that date
 			return nil, nil
 		}
 		return nil, fmt.Errorf("failed to get drunk thought: %w", err)
@@ -772,9 +772,6 @@ func (s *UserService) AddDrunkThought(ctx context.Context, clerkID string, drunk
 
 	return &savedThought, nil
 }
-
-
-
 
 func (s *UserService) GetWeeklyDaysDrank(ctx context.Context, clerkID string) (*stats.DaysStat, error) {
 	var userID uuid.UUID
@@ -1238,6 +1235,7 @@ func (s *UserService) GetUserStats(ctx context.Context, clerkID string) (*stats.
 
 	return stats, nil
 }
+
 type DailyDrinkingPost struct {
 	ID               string
 	UserID           string
@@ -1357,8 +1355,8 @@ func (s *UserService) GetYourMix(ctx context.Context, clerkID string) ([]DailyDr
 	var posts []DailyDrinkingPost
 	for rows.Next() {
 		var post DailyDrinkingPost
-		var mentionedBuddyIDs []string  // Scan as string array
-		
+		var mentionedBuddyIDs []string // Scan as string array
+
 		err := rows.Scan(
 			&post.ID,
 			&post.UserID,
