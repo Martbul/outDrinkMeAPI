@@ -723,19 +723,16 @@ func (s *UserService) AddDrinking(ctx context.Context, clerkID string, drankToda
 	return nil
 }
 
-
-
-
 // Service
 func (s *UserService) AddDrunkThought(ctx context.Context, clerkID string, drunkThought string) (*string, error) {
-    var userID uuid.UUID
-    err := s.db.QueryRow(ctx, `SELECT id FROM users WHERE clerk_id = $1`, clerkID).Scan(&userID)
-    if err != nil {
-        return nil, fmt.Errorf("user not found: %w", err)
-    }
-    
-    var savedThought string
-    query := `
+	var userID uuid.UUID
+	err := s.db.QueryRow(ctx, `SELECT id FROM users WHERE clerk_id = $1`, clerkID).Scan(&userID)
+	if err != nil {
+		return nil, fmt.Errorf("user not found: %w", err)
+	}
+
+	var savedThought string
+	query := `
         INSERT INTO daily_drinking (user_id, date, drunk_thought)
         VALUES ($1, CURRENT_DATE, $2)
         ON CONFLICT (user_id, date) 
@@ -743,14 +740,13 @@ func (s *UserService) AddDrunkThought(ctx context.Context, clerkID string, drunk
             drunk_thought = $2
         RETURNING drunk_thought
     `
-    err = s.db.QueryRow(ctx, query, userID, drunkThought).Scan(&savedThought)
-    if err != nil {
-        return nil, fmt.Errorf("failed to log drunk thought: %w", err)
-    }
-    
-    return &savedThought, nil
-}
+	err = s.db.QueryRow(ctx, query, userID, drunkThought).Scan(&savedThought)
+	if err != nil {
+		return nil, fmt.Errorf("failed to log drunk thought: %w", err)
+	}
 
+	return &savedThought, nil
+}
 
 func (s *UserService) GetWeeklyDaysDrank(ctx context.Context, clerkID string) (*stats.DaysStat, error) {
 	var userID uuid.UUID
@@ -1214,19 +1210,19 @@ func (s *UserService) GetUserStats(ctx context.Context, clerkID string) (*stats.
 
 	return stats, nil
 }
-
 type DailyDrinkingPost struct {
 	ID               uuid.UUID
 	UserID           uuid.UUID
-	UserImageURL     *string   // Add this field
+	UserImageURL     *string
 	Date             time.Time
 	DrankToday       bool
 	LoggedAt         time.Time
 	ImageURL         *string
 	LocationText     *string
-	MentionedBuddies []string 
+	MentionedBuddies []user.User  // Changed from []string
 	SourceType       string
 }
+
 func (s *UserService) GetYourMix(ctx context.Context, clerkID string) ([]DailyDrinkingPost, error) {
 	log.Println("getting feed")
 
@@ -1326,7 +1322,6 @@ func (s *UserService) GetYourMix(ctx context.Context, clerkID string) ([]DailyDr
 	rows, err := s.db.Query(ctx, query, userID)
 	if err != nil {
 		log.Println("failed to get feed")
-
 		return nil, fmt.Errorf("failed to get feed: %w", err)
 	}
 	defer rows.Close()
@@ -1334,6 +1329,8 @@ func (s *UserService) GetYourMix(ctx context.Context, clerkID string) ([]DailyDr
 	var posts []DailyDrinkingPost
 	for rows.Next() {
 		var post DailyDrinkingPost
+		var mentionedBuddyIDs []string  // Scan as string array first
+		
 		err := rows.Scan(
 			&post.ID,
 			&post.UserID,
@@ -1343,23 +1340,83 @@ func (s *UserService) GetYourMix(ctx context.Context, clerkID string) ([]DailyDr
 			&post.LoggedAt,
 			&post.ImageURL,
 			&post.LocationText,
-			&post.MentionedBuddies,
+			&mentionedBuddyIDs,  // Scan the UUIDs as strings
 			&post.SourceType,
 		)
 		if err != nil {
 			log.Println("failed to scan post")
-
 			return nil, fmt.Errorf("failed to scan post: %w", err)
 		}
+
+		// Fetch the full user objects for mentioned buddies
+		if len(mentionedBuddyIDs) > 0 {
+			post.MentionedBuddies, err = s.getUsersByIDs(ctx, mentionedBuddyIDs)
+			if err != nil {
+				log.Printf("failed to fetch mentioned buddies for post %s: %v", post.ID, err)
+				// Continue without buddies rather than failing
+				post.MentionedBuddies = []user.User{}
+			}
+		} else {
+			post.MentionedBuddies = []user.User{}
+		}
+
 		posts = append(posts, post)
 	}
 
 	if err = rows.Err(); err != nil {
 		log.Println("error iterating posts")
-
 		return nil, fmt.Errorf("error iterating posts: %w", err)
 	}
 	log.Println(posts)
 
 	return posts, nil
+}
+
+// Helper function to fetch users by their IDs (not Clerk IDs)
+func (s *UserService) getUsersByIDs(ctx context.Context, userIDs []string) ([]user.User, error) {
+	if len(userIDs) == 0 {
+		return []user.User{}, nil
+	}
+
+	query := `
+		SELECT id, clerk_id, email, username, first_name, last_name, image_url, email_verified, created_at, updated_at, gems, xp, all_days_drinking_count
+		FROM users
+		WHERE id = ANY($1)
+	`
+
+	rows, err := s.db.Query(ctx, query, userIDs)
+	if err != nil {
+		return nil, fmt.Errorf("failed to query users: %w", err)
+	}
+	defer rows.Close()
+
+	var users []user.User
+	for rows.Next() {
+		var u user.User
+		err := rows.Scan(
+			&u.ID,
+			&u.ClerkID,
+			&u.Email,
+			&u.Username,
+			&u.FirstName,
+			&u.LastName,
+			&u.ImageURL,
+			&u.EmailVerified,
+			&u.CreatedAt,
+			&u.UpdatedAt,
+			&u.Gems,
+			&u.XP,
+			&u.AllDaysDrinkingCount,
+		)
+		if err != nil {
+			return nil, fmt.Errorf("failed to scan user: %w", err)
+		}
+		users = append(users, u)
+	}
+
+	if err = rows.Err(); err != nil {
+		return nil, fmt.Errorf("error iterating users: %w", err)
+	}
+
+	return users, nil
 }
