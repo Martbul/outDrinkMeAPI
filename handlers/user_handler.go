@@ -294,30 +294,64 @@ func (h *UserHandler) GetAchievements(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *UserHandler) AddDrinking(w http.ResponseWriter, r *http.Request) {
-	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
-	defer cancel()
+    ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
+    defer cancel()
 
-	clearkID, ok := middleware.GetClerkID(ctx)
-	if !ok {
-		respondWithError(w, http.StatusInternalServerError, "Error while adding drinking")
-		return
-	}
+    clearkID, ok := middleware.GetClerkID(ctx)
+    if !ok {
+        respondWithError(w, http.StatusInternalServerError, "Error while adding drinking")
+        return
+    }
 
-	var req struct {
-		DrankToday bool `json:"drank_today"`
-	}
+    dateStr := r.URL.Query().Get("date")
 
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		http.Error(w, "invalid request body", http.StatusBadRequest)
-		return
-	}
+    var (
+        date time.Time
+        err  error
+    )
+    if dateStr != "" {
+        date, err = time.Parse("2006-01-02", dateStr)
+        if err != nil {
+            respondWithError(w, http.StatusBadRequest, "Invalid date format. Use YYYY-MM-DD")
+            return
+        }
+    } else {
+        date = time.Now().Truncate(24 * time.Hour)
+    }
 
-	if err := h.userService.AddDrinking(ctx, clearkID, req.DrankToday); err != nil {
-		respondWithError(w, http.StatusInternalServerError, err.Error())
-		return
-	}
+    // Create a simpler struct that just captures the clerk IDs
+    var req struct {
+        DrankToday       bool   `json:"drank_today"`
+        ImageUrl         *string `json:"image_url"`
+        LocationText     *string `json:"location_text"`
+        MentionedBuddies []struct {
+            ClerkID string `json:"clerkId"` // Match the camelCase from frontend
+        } `json:"mentioned_buddies"`
+    }
 
-	respondWithJSON(w, http.StatusOK, map[string]string{"message": "Drinking activity added successfully"})
+    if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+        http.Error(w, "invalid request body", http.StatusBadRequest)
+        return
+    }
+
+    // Extract just the clerk IDs
+    var clerkIDs []string
+    if len(req.MentionedBuddies) > 0 {
+        clerkIDs = make([]string, 0, len(req.MentionedBuddies))
+        for _, buddy := range req.MentionedBuddies {
+            if buddy.ClerkID != "" {
+                clerkIDs = append(clerkIDs, buddy.ClerkID)
+            }
+        }
+    }
+
+    // Update the service method signature to accept []string instead of []*user.User
+    if err := h.userService.AddDrinking(ctx, clearkID, req.DrankToday, req.ImageUrl, req.LocationText, clerkIDs, date); err != nil {
+        respondWithError(w, http.StatusInternalServerError, err.Error())
+        return
+    }
+
+    respondWithJSON(w, http.StatusOK, map[string]string{"message": "Drinking activity added successfully"})
 }
 
 func (h *UserHandler) GetWeeklyDaysDrank(w http.ResponseWriter, r *http.Request) {
@@ -478,7 +512,101 @@ func (h *UserHandler) GetUserStats(w http.ResponseWriter, r *http.Request) {
 	respondWithJSON(w, http.StatusOK, stats)
 }
 
+func (h *UserHandler) GetYourMix(w http.ResponseWriter, r *http.Request) {
+	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
+	defer cancel()
 
+	clearkID, ok := middleware.GetClerkID(ctx)
+	if !ok {
+		respondWithError(w, http.StatusUnauthorized, "User not authenticated")
+		return
+	}
+
+	yourMixData, err := h.userService.GetYourMix(ctx, clearkID)
+	if err != nil {
+		respondWithError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+
+	log.Println(yourMixData)
+
+	respondWithJSON(w, http.StatusOK, yourMixData)
+}
+
+func (h *UserHandler) GetDrunkThought(w http.ResponseWriter, r *http.Request) {
+	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
+	defer cancel()
+
+	clerkID, ok := middleware.GetClerkID(ctx)
+	if !ok {
+		respondWithError(w, http.StatusUnauthorized, "User not authenticated")
+		return
+	}
+
+	// Get optional date parameter from query string
+	dateStr := r.URL.Query().Get("date")
+
+	var (
+		date time.Time
+		err  error
+	)
+
+	if dateStr != "" {
+		// Parse user-specified date
+		date, err = time.Parse("2006-01-02", dateStr)
+		if err != nil {
+			respondWithError(w, http.StatusBadRequest, "Invalid date format. Use YYYY-MM-DD")
+			return
+		}
+	} else {
+		// Default to today's date
+		date = time.Now().Truncate(24 * time.Hour)
+	}
+
+	// Get drunk thought for given date
+	drunkThought, err := h.userService.GetDrunkThought(ctx, clerkID, date)
+	if err != nil {
+		respondWithError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+
+	// Wrap in an object before responding
+	response := map[string]interface{}{
+		"drunk_thought": drunkThought,
+	}
+
+	respondWithJSON(w, http.StatusOK, response)
+}
+
+func (h *UserHandler) AddDrunkThought(w http.ResponseWriter, r *http.Request) {
+	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
+	defer cancel()
+
+	clerkID, ok := middleware.GetClerkID(ctx)
+	if !ok {
+		respondWithError(w, http.StatusInternalServerError, "Error while adding drinking")
+		return
+	}
+
+	var req struct {
+		DrunkThought string `json:"drunk_thought"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "invalid request body", http.StatusBadRequest)
+		return
+	}
+
+	drunkThought, err := h.userService.AddDrunkThought(ctx, clerkID, req.DrunkThought)
+	if err != nil {
+		respondWithError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+
+	respondWithJSON(w, http.StatusOK, map[string]interface{}{
+		"message":       "Drinking thought added successfully",
+		"drunk_thought": drunkThought,
+	})
+}
 
 func (h *UserHandler) DeleteAccountPage(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
@@ -503,6 +631,7 @@ func (h *UserHandler) DeleteAccountPage(w http.ResponseWriter, r *http.Request) 
 </html>
     `)
 }
+
 func (h *UserHandler) UpdateAccountPage(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	fmt.Fprintf(w, `

@@ -119,9 +119,8 @@ func main() {
 
 	api.HandleFunc("/privacy-policy", docHandler.ServePrivacyPolicy).Methods("GET")
 	api.HandleFunc("/terms-of-services", docHandler.ServeTermsOfServices).Methods("GET")
-api.HandleFunc("/delete-account-webpage", userHandler.DeleteAccountPage).Methods("GET")
-api.HandleFunc("/delete-account-details-webpage", userHandler.UpdateAccountPage).Methods("GET")
-
+	api.HandleFunc("/delete-account-webpage", userHandler.DeleteAccountPage).Methods("GET")
+	api.HandleFunc("/delete-account-details-webpage", userHandler.UpdateAccountPage).Methods("GET")
 
 	// Protected API routes (auth required)
 	protected := api.PathPrefix("").Subrouter()
@@ -134,11 +133,14 @@ api.HandleFunc("/delete-account-details-webpage", userHandler.UpdateAccountPage)
 	protected.HandleFunc("/user/leaderboard/friends", userHandler.GetFriendsLeaderboard).Methods("GET")
 	protected.HandleFunc("/user/leaderboard/global", userHandler.GetGlobalLeaderboard).Methods("GET")
 	protected.HandleFunc("/user/friends", userHandler.GetFriends).Methods("GET")
+	protected.HandleFunc("/user/your-mix", userHandler.GetYourMix).Methods("GET")
 	protected.HandleFunc("/user/friends", userHandler.AddFriend).Methods("POST")
 	protected.HandleFunc("/user/friends", userHandler.RemoveFriend).Methods("DELETE")
 	protected.HandleFunc("/user/discovery", userHandler.GetDiscovery).Methods("GET")
 	protected.HandleFunc("/user/achievements", userHandler.GetAchievements).Methods("GET")
 	protected.HandleFunc("/user/drink", userHandler.AddDrinking).Methods("POST")
+	protected.HandleFunc("/user/drunk-thought", userHandler.GetDrunkThought).Methods("GET")
+	protected.HandleFunc("/user/drunk-thought", userHandler.AddDrunkThought).Methods("POST")
 	protected.HandleFunc("/user/stats", userHandler.GetUserStats).Methods("GET")
 	protected.HandleFunc("/user/stats/weekly", userHandler.GetWeeklyDaysDrank).Methods("GET")
 	protected.HandleFunc("/user/stats/monthly", userHandler.GetMonthlyDaysDrank).Methods("GET")
@@ -146,7 +148,6 @@ api.HandleFunc("/delete-account-details-webpage", userHandler.UpdateAccountPage)
 	protected.HandleFunc("/user/stats/all-time", userHandler.GetAllTimeDaysDrank).Methods("GET")
 	protected.HandleFunc("/user/calendar", userHandler.GetCalendar).Methods("GET")
 	protected.HandleFunc("/user/search", userHandler.SearchUsers).Methods("GET")
-
 
 	// CORS configuration
 	corsHandler := gorilllaHandlers.CORS(
