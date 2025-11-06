@@ -1417,7 +1417,6 @@ func (s *UserService) GetMixTimeline(ctx context.Context, clerkID string) ([]Dai
 		AND dd.image_url IS NOT NULL
 		AND dd.image_url != ''
 	ORDER BY dd.logged_at DESC
-	LIMIT 50
 	`
 
 	rows, err := s.db.Query(ctx, query, userID)
