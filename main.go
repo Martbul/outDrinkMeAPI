@@ -134,6 +134,7 @@ func main() {
 	protected.HandleFunc("/user/leaderboard/global", userHandler.GetGlobalLeaderboard).Methods("GET")
 	protected.HandleFunc("/user/friends", userHandler.GetFriends).Methods("GET")
 	protected.HandleFunc("/user/your-mix", userHandler.GetYourMix).Methods("GET")
+	protected.HandleFunc("/user/mix-timeline", userHandler.GetMixTimeline).Methods("GET")
 	protected.HandleFunc("/user/friends", userHandler.AddFriend).Methods("POST")
 	protected.HandleFunc("/user/friends", userHandler.RemoveFriend).Methods("DELETE")
 	protected.HandleFunc("/user/discovery", userHandler.GetDiscovery).Methods("GET")

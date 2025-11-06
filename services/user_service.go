@@ -1389,6 +1389,93 @@ func (s *UserService) GetYourMix(ctx context.Context, clerkID string) ([]DailyDr
 	return posts, nil
 }
 
+
+func (s *UserService) GetMixTimeline(ctx context.Context, clerkID string) ([]DailyDrinkingPost, error) {
+	log.Println("getting user mix timeline")
+
+	var userID string
+	err := s.db.QueryRow(ctx, "SELECT id FROM users WHERE clerk_id = $1", clerkID).Scan(&userID)
+	if err != nil {
+		return nil, fmt.Errorf("user not found: %w", err)
+	}
+
+	query := `
+	SELECT 
+		dd.id,
+		dd.user_id,
+		u.image_url AS user_image_url,
+		dd.date,
+		dd.drank_today,
+		dd.logged_at,
+		dd.image_url AS post_image_url,
+		dd.location_text,
+		dd.mentioned_buddies,
+		'own' AS source_type
+	FROM daily_drinking dd
+	JOIN users u ON u.id = dd.user_id
+	WHERE dd.user_id = $1
+		AND dd.image_url IS NOT NULL
+		AND dd.image_url != ''
+	ORDER BY dd.logged_at DESC
+	LIMIT 50
+	`
+
+	rows, err := s.db.Query(ctx, query, userID)
+	if err != nil {
+		log.Println("failed to get feed")
+		return nil, fmt.Errorf("failed to get feed: %w", err)
+	}
+	defer rows.Close()
+
+	var posts []DailyDrinkingPost
+	for rows.Next() {
+		var post DailyDrinkingPost
+		var mentionedBuddyIDs []string // Scan as string array
+
+		err := rows.Scan(
+			&post.ID,
+			&post.UserID,
+			&post.UserImageURL,
+			&post.Date,
+			&post.DrankToday,
+			&post.LoggedAt,
+			&post.ImageURL,
+			&post.LocationText,
+			&mentionedBuddyIDs,
+			&post.SourceType,
+		)
+		if err != nil {
+			log.Println("failed to scan post")
+			return nil, fmt.Errorf("failed to scan post: %w", err)
+		}
+
+		// Fetch the full user objects for mentioned buddies
+		if len(mentionedBuddyIDs) > 0 {
+			post.MentionedBuddies, err = s.getUsersByIDs(ctx, mentionedBuddyIDs)
+			if err != nil {
+				log.Printf("failed to fetch mentioned buddies for post %s: %v", post.ID, err)
+				// Continue without buddies rather than failing
+				post.MentionedBuddies = []user.User{}
+			}
+		} else {
+			post.MentionedBuddies = []user.User{}
+		}
+
+		posts = append(posts, post)
+	}
+
+	if err = rows.Err(); err != nil {
+		log.Println("error iterating posts")
+		return nil, fmt.Errorf("error iterating posts: %w", err)
+	}
+	log.Println(posts)
+
+	return posts, nil
+}
+
+
+
+
 func (s *UserService) getUsersByIDs(ctx context.Context, clerkIDs []string) ([]user.User, error) {
 	if len(clerkIDs) == 0 {
 		return []user.User{}, nil

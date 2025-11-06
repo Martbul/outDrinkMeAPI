@@ -533,6 +533,27 @@ func (h *UserHandler) GetYourMix(w http.ResponseWriter, r *http.Request) {
 	respondWithJSON(w, http.StatusOK, yourMixData)
 }
 
+
+
+func (h *UserHandler) GetMixTimeline(w http.ResponseWriter, r *http.Request) {
+	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
+	defer cancel()
+
+	clearkID, ok := middleware.GetClerkID(ctx)
+	if !ok {
+		respondWithError(w, http.StatusUnauthorized, "User not authenticated")
+		return
+	}
+
+	mixTimelineData, err := h.userService.GetMixTimeline(ctx, clearkID)
+	if err != nil {
+		respondWithError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+
+	respondWithJSON(w, http.StatusOK, mixTimelineData)
+}
+
 func (h *UserHandler) GetDrunkThought(w http.ResponseWriter, r *http.Request) {
 	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
 	defer cancel()
