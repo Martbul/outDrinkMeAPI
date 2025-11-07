@@ -787,6 +787,8 @@ func (s *UserService) GetWeeklyDaysDrank(ctx context.Context, clerkID string) (*
 
 	return stat, nil
 }
+
+
 func (s *UserService) SearchUsers(ctx context.Context, clerkID string, query string) ([]*user.User, error) {
 	// Clean and prepare the query
 	cleanQuery := strings.TrimSpace(query)
@@ -1532,4 +1534,77 @@ func (s *UserService) getUsersByIDs(ctx context.Context, clerkIDs []string) ([]u
 	}
 
 	return users, nil
+}
+type DrunkThought struct {
+    ID           string    `json:"id"`
+    UserID       string    `json:"user_id"`
+    Username     string    `json:"username"`
+    UserImageURL string    `json:"user_image_url"`
+    Thought      string    `json:"thought"`
+    CreatedAt    time.Time `json:"created_at"`
+}
+
+func (s *UserService) GetDrunkFriendThoughts(ctx context.Context, clerkID string) ([]DrunkThought, error) {
+    log.Println("getting drunk friends thoughts")
+    
+    var userID string
+    err := s.db.QueryRow(ctx, "SELECT id FROM users WHERE clerk_id = $1", clerkID).Scan(&userID)
+    if err != nil {
+        return nil, fmt.Errorf("user not found: %w", err)
+    }
+    
+    query := `
+    SELECT 
+        dd.id,
+        dd.user_id,
+        u.username,
+        u.image_url,
+        dd.drunk_thought,
+        dd.logged_at
+    FROM daily_drinking dd
+    JOIN users u ON u.id = dd.user_id
+    JOIN friendships f ON (
+        (f.user_id = $1 AND f.friend_id = dd.user_id) OR 
+        (f.friend_id = $1 AND f.user_id = dd.user_id)
+    )
+    WHERE f.status = 'accepted'
+        AND dd.drunk_thought IS NOT NULL
+        AND dd.drunk_thought != ''
+        AND dd.date >= CURRENT_DATE - INTERVAL '7 days'
+    ORDER BY dd.logged_at DESC
+    `
+    
+    rows, err := s.db.Query(ctx, query, userID)
+    if err != nil {
+        log.Println("failed to get drunk friend thoughts:", err)
+        return nil, fmt.Errorf("failed to get drunk friend thoughts: %w", err)
+    }
+    defer rows.Close()
+    
+    var thoughts []DrunkThought
+    for rows.Next() {
+        var thought DrunkThought
+        err := rows.Scan(
+            &thought.ID,
+            &thought.UserID,
+            &thought.Username,
+            &thought.UserImageURL,
+            &thought.Thought,
+            &thought.CreatedAt,
+        )
+        if err != nil {
+            log.Println("failed to scan thought:", err)
+            return nil, fmt.Errorf("failed to scan thought: %w", err)
+        }
+        
+        thoughts = append(thoughts, thought)
+    }
+    
+    if err = rows.Err(); err != nil {
+        log.Println("error iterating thoughts:", err)
+        return nil, fmt.Errorf("error iterating thoughts: %w", err)
+    }
+    
+    log.Printf("found %d drunk thoughts from friends", len(thoughts))
+    return thoughts, nil
 }

@@ -430,6 +430,27 @@ func (h *UserHandler) GetAllTimeDaysDrank(w http.ResponseWriter, r *http.Request
 	respondWithJSON(w, http.StatusOK, allTimeDaysDrank)
 }
 
+
+
+func (h *UserHandler) GetDrunkFriendThoughts(w http.ResponseWriter, r *http.Request) {
+	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
+	defer cancel()
+
+	clearkID, ok := middleware.GetClerkID(ctx)
+	if !ok {
+		respondWithError(w, http.StatusInternalServerError, "Error while getting drunk friends thoughts")
+		return
+	}
+
+	drunkFriendThoughts, err := h.userService.GetDrunkFriendThoughts(ctx, clearkID)
+	if err != nil {
+		respondWithError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+
+	respondWithJSON(w, http.StatusOK, drunkFriendThoughts)
+}
+
 func (h *UserHandler) SearchUsers(w http.ResponseWriter, r *http.Request) {
 	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
 	defer cancel()

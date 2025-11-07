@@ -149,6 +149,7 @@ func main() {
 	protected.HandleFunc("/user/stats/all-time", userHandler.GetAllTimeDaysDrank).Methods("GET")
 	protected.HandleFunc("/user/calendar", userHandler.GetCalendar).Methods("GET")
 	protected.HandleFunc("/user/search", userHandler.SearchUsers).Methods("GET")
+	protected.HandleFunc("/user/drunk-friend-thoughts", userHandler.GetDrunkFriendThoughts).Methods("GET")
 
 	// CORS configuration
 	corsHandler := gorilllaHandlers.CORS(
