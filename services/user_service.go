@@ -1669,13 +1669,12 @@ func (s *UserService) GetAlcoholCollection(ctx context.Context, clerkID string) 
 
 
 type AlcoholItem struct {
-	ID string
-	Name string
-	Type string 
-	ImageUrl string
-	Rarity string
-	Abv float32
-
+    ID       string
+    Name     string
+    Type     string 
+    ImageUrl *string  // Change to pointer
+    Rarity   string
+    Abv      float32
 }
 func (s *UserService) SearchDbAlcohol(ctx context.Context, clerkID string, queryAlcoholName string) (*AlcoholItem, error) {
     log.Println("searching alcohol collection")
@@ -1691,7 +1690,7 @@ func (s *UserService) SearchDbAlcohol(ctx context.Context, clerkID string, query
         image_url,
         rarity,
         abv
-    FROM db_alcohol_collection_data
+    FROM alcohol
     WHERE LOWER(name) LIKE LOWER($1)
     ORDER BY
         CASE
@@ -1708,7 +1707,7 @@ func (s *UserService) SearchDbAlcohol(ctx context.Context, clerkID string, query
         &item.ID,
         &item.Name,
         &item.Type,
-        &item.ImageUrl,
+        &item.ImageUrl,  // Scans NULL as nil, values as *string
         &item.Rarity,
         &item.Abv,
     )
