@@ -1690,7 +1690,7 @@ func (s *UserService) SearchDbAlcohol(ctx context.Context, clerkID string, query
         image_url,
         rarity,
         abv
-    FROM alcohol
+    FROM db_alcohol_collection_data
     WHERE LOWER(name) LIKE LOWER($1)
     ORDER BY
         CASE
