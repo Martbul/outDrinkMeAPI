@@ -449,7 +449,7 @@ func (h *UserHandler) GetDrunkFriendThoughts(w http.ResponseWriter, r *http.Requ
 	respondWithJSON(w, http.StatusOK, drunkFriendThoughts)
 }
 
-func (h *UserHandler) GetAlcoholCollection(w http.ResponseWriter, r *http.Request) {
+func (h *UserHandler) GetUserAlcoholCollection(w http.ResponseWriter, r *http.Request) {
 	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
 	defer cancel()
 
@@ -459,7 +459,7 @@ func (h *UserHandler) GetAlcoholCollection(w http.ResponseWriter, r *http.Reques
 		return
 	}
 
-	alcoholCollection, err := h.userService.GetAlcoholCollection(ctx, clearkID)
+	alcoholCollection, err := h.userService.GetUserAlcoholCollection(ctx, clearkID)
 	if err != nil {
 		respondWithError(w, http.StatusInternalServerError, err.Error())
 		return

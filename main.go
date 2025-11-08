@@ -150,7 +150,7 @@ func main() {
 	protected.HandleFunc("/user/calendar", userHandler.GetCalendar).Methods("GET")
 	protected.HandleFunc("/user/search", userHandler.SearchUsers).Methods("GET")
 	protected.HandleFunc("/user/search-db-alcohol", userHandler.SearchDbAlcohol).Methods("GET")
-	// protected.HandleFunc("/user/alcohol-collection", userHandler.GetAlcoholCollection).Methods("GET")
+	protected.HandleFunc("/user/alcohol-collection", userHandler.GetUserAlcoholCollection).Methods("GET")
 	protected.HandleFunc("/user/drunk-friend-thoughts", userHandler.GetDrunkFriendThoughts).Methods("GET")
 
 	// CORS configuration
