@@ -1667,33 +1667,32 @@ func (s *UserService) GetAlcoholCollection(ctx context.Context, clerkID string) 
 	return thoughts, nil
 }
 
-
 type AlcoholItem struct {
-    ID       string
-    Name     string
-    Type     string 
-    ImageUrl *string  // Change to pointer
-    Rarity   string
-    Abv      float32
+	ID       string  `json:"id"`
+	Name     string  `json:"name"`
+	Type     string  `json:"type"`
+	ImageUrl *string `json:"image_url"`
+	Rarity   string  `json:"rarity"`
+	Abv      float32 `json:"abv"`
 }
 
 func (s *UserService) SearchDbAlcohol(ctx context.Context, clerkID string, queryAlcoholName string) (*AlcoholItem, error) {
-    log.Println("searching alcohol collection")
-    
-    // First, get the user's UUID from clerk_id
-    var userID string
-    userQuery := `SELECT id FROM users WHERE clerk_id = $1`
-    err := s.db.QueryRow(ctx, userQuery, clerkID).Scan(&userID)
-    if err != nil {
-        log.Println("failed to get user ID:", err)
-        return nil, fmt.Errorf("failed to get user: %w", err)
-    }
-    
-    cleanQuery := strings.TrimSpace(queryAlcoholName)
-    searchPattern := "%" + cleanQuery + "%"
-    startsWithPattern := cleanQuery + "%"
-    
-    query := `
+	log.Println("searching alcohol collection")
+
+	// First, get the user's UUID from clerk_id
+	var userID string
+	userQuery := `SELECT id FROM users WHERE clerk_id = $1`
+	err := s.db.QueryRow(ctx, userQuery, clerkID).Scan(&userID)
+	if err != nil {
+		log.Println("failed to get user ID:", err)
+		return nil, fmt.Errorf("failed to get user: %w", err)
+	}
+
+	cleanQuery := strings.TrimSpace(queryAlcoholName)
+	searchPattern := "%" + cleanQuery + "%"
+	startsWithPattern := cleanQuery + "%"
+
+	query := `
     SELECT 
         id,
         name,
@@ -1712,70 +1711,70 @@ func (s *UserService) SearchDbAlcohol(ctx context.Context, clerkID string, query
         END DESC
     LIMIT 1
     `
-    
-    var item AlcoholItem
-    err = s.db.QueryRow(ctx, query, searchPattern, cleanQuery, startsWithPattern).Scan(
-        &item.ID,
-        &item.Name,
-        &item.Type,
-        &item.ImageUrl,
-        &item.Rarity,
-        &item.Abv,
-    )
-    
-    if err != nil {
-        if err == pgx.ErrNoRows {
-            log.Println("no alcohol found matching query:", queryAlcoholName)
-            return nil, nil
-        }
-        log.Println("failed to search alcohol:", err)
-        return nil, fmt.Errorf("failed to search alcohol: %w", err)
-    }
-    
-    log.Printf("found alcohol item: %s", item.Name)
-    
-    // Add to user's collection (insert or ignore if already exists)
-    insertQuery := `
+
+	var item AlcoholItem
+	err = s.db.QueryRow(ctx, query, searchPattern, cleanQuery, startsWithPattern).Scan(
+		&item.ID,
+		&item.Name,
+		&item.Type,
+		&item.ImageUrl,
+		&item.Rarity,
+		&item.Abv,
+	)
+
+	if err != nil {
+		if err == pgx.ErrNoRows {
+			log.Println("no alcohol found matching query:", queryAlcoholName)
+			return nil, nil
+		}
+		log.Println("failed to search alcohol:", err)
+		return nil, fmt.Errorf("failed to search alcohol: %w", err)
+	}
+
+	log.Printf("found alcohol item: %s", item.Name)
+
+	// Add to user's collection (insert or ignore if already exists)
+	insertQuery := `
     INSERT INTO alcohol_collection (user_id, alcohol_id)
     VALUES ($1, $2)
     ON CONFLICT (user_id, alcohol_id) DO NOTHING
     RETURNING id, acquired_at
     `
-    
-    var collectionID string
-    var acquiredAt time.Time
-    err = s.db.QueryRow(ctx, insertQuery, userID, item.ID).Scan(&collectionID, &acquiredAt)
-    
-    if err != nil {
-        if err == pgx.ErrNoRows {
-            // Item already exists in collection
-            log.Printf("alcohol item %s already in user's collection", item.Name)
-            // You might want to return an error here or set a flag
-            return nil, fmt.Errorf("item already in collection")
-        }
-        log.Println("failed to add to collection:", err)
-        return nil, fmt.Errorf("failed to add to collection: %w", err)
-    }
-    
-    log.Printf("added alcohol item %s to user's collection", item.Name)
-    return &item, nil
+
+	var collectionID string
+	var acquiredAt time.Time
+	err = s.db.QueryRow(ctx, insertQuery, userID, item.ID).Scan(&collectionID, &acquiredAt)
+
+	if err != nil {
+		if err == pgx.ErrNoRows {
+			// Item already exists in collection
+			log.Printf("alcohol item %s already in user's collection", item.Name)
+			// You might want to return an error here or set a flag
+			return nil, fmt.Errorf("item already in collection")
+		}
+		log.Println("failed to add to collection:", err)
+		return nil, fmt.Errorf("failed to add to collection: %w", err)
+	}
+
+	log.Printf("added alcohol item %s to user's collection", item.Name)
+	return &item, nil
 }
 
 type AlcoholCollectionByType map[string][]AlcoholItem
 
 func (s *UserService) GetUserAlcoholCollection(ctx context.Context, clerkID string) (AlcoholCollectionByType, error) {
-    log.Println("fetching user alcohol collection")
-    
-    // First, get the user's UUID from clerk_id
-    var userID string
-    userQuery := `SELECT id FROM users WHERE clerk_id = $1`
-    err := s.db.QueryRow(ctx, userQuery, clerkID).Scan(&userID)
-    if err != nil {
-        log.Println("failed to get user ID:", err)
-        return nil, fmt.Errorf("failed to get user: %w", err)
-    }
-    
-    query := `
+	log.Println("fetching user alcohol collection")
+
+	// First, get the user's UUID from clerk_id
+	var userID string
+	userQuery := `SELECT id FROM users WHERE clerk_id = $1`
+	err := s.db.QueryRow(ctx, userQuery, clerkID).Scan(&userID)
+	if err != nil {
+		log.Println("failed to get user ID:", err)
+		return nil, fmt.Errorf("failed to get user: %w", err)
+	}
+
+	query := `
     SELECT 
         d.id,
         d.name,
@@ -1789,71 +1788,71 @@ func (s *UserService) GetUserAlcoholCollection(ctx context.Context, clerkID stri
     WHERE c.user_id = $1
     ORDER BY c.acquired_at DESC
     `
-    
-    rows, err := s.db.Query(ctx, query, userID)
-    if err != nil {
-        log.Println("failed to get user collection:", err)
-        return nil, fmt.Errorf("failed to get user collection: %w", err)
-    }
-    defer rows.Close()
-    
-    // Initialize the map with all alcohol types
-    collection := AlcoholCollectionByType{
-        "beer":    []AlcoholItem{},
-        "whiskey": []AlcoholItem{},
-        "wine":    []AlcoholItem{},
-        "vodka":   []AlcoholItem{},
-        "gin":     []AlcoholItem{},
-        "liqueur": []AlcoholItem{},
-        "rum":     []AlcoholItem{},
-        "tequila": []AlcoholItem{},
-    }
-    
-    for rows.Next() {
-        var item AlcoholItem
-        var acquiredAt time.Time
-        
-        err := rows.Scan(
-            &item.ID,
-            &item.Name,
-            &item.Type,
-            &item.ImageUrl,
-            &item.Rarity,
-            &item.Abv,
-            &acquiredAt,
-        )
-        
-        if err != nil {
-            log.Println("failed to scan alcohol item:", err)
-            return nil, fmt.Errorf("failed to scan alcohol item: %w", err)
-        }
-        
-        // Normalize the type to lowercase for consistent map keys
-        alcoholType := strings.ToLower(item.Type)
-        
-        // Add to the appropriate category
-        if _, exists := collection[alcoholType]; exists {
-            collection[alcoholType] = append(collection[alcoholType], item)
-        } else {
-            // If type doesn't match any category, you can either skip it or add to "other"
-            log.Printf("unknown alcohol type: %s for item: %s", item.Type, item.Name)
-        }
-    }
-    
-    if err = rows.Err(); err != nil {
-        log.Println("error iterating collection:", err)
-        return nil, fmt.Errorf("error iterating collection: %w", err)
-    }
-    
-    log.Printf("fetched user collection: %d items", getTotalCount(collection))
-    return collection, nil
+
+	rows, err := s.db.Query(ctx, query, userID)
+	if err != nil {
+		log.Println("failed to get user collection:", err)
+		return nil, fmt.Errorf("failed to get user collection: %w", err)
+	}
+	defer rows.Close()
+
+	// Initialize the map with all alcohol types
+	collection := AlcoholCollectionByType{
+		"beer":    []AlcoholItem{},
+		"whiskey": []AlcoholItem{},
+		"wine":    []AlcoholItem{},
+		"vodka":   []AlcoholItem{},
+		"gin":     []AlcoholItem{},
+		"liqueur": []AlcoholItem{},
+		"rum":     []AlcoholItem{},
+		"tequila": []AlcoholItem{},
+	}
+
+	for rows.Next() {
+		var item AlcoholItem
+		var acquiredAt time.Time
+
+		err := rows.Scan(
+			&item.ID,
+			&item.Name,
+			&item.Type,
+			&item.ImageUrl,
+			&item.Rarity,
+			&item.Abv,
+			&acquiredAt,
+		)
+
+		if err != nil {
+			log.Println("failed to scan alcohol item:", err)
+			return nil, fmt.Errorf("failed to scan alcohol item: %w", err)
+		}
+
+		// Normalize the type to lowercase for consistent map keys
+		alcoholType := strings.ToLower(item.Type)
+
+		// Add to the appropriate category
+		if _, exists := collection[alcoholType]; exists {
+			collection[alcoholType] = append(collection[alcoholType], item)
+		} else {
+			// If type doesn't match any category, you can either skip it or add to "other"
+			log.Printf("unknown alcohol type: %s for item: %s", item.Type, item.Name)
+		}
+	}
+
+	if err = rows.Err(); err != nil {
+		log.Println("error iterating collection:", err)
+		return nil, fmt.Errorf("error iterating collection: %w", err)
+	}
+
+	log.Printf("fetched user collection: %d items", getTotalCount(collection))
+	return collection, nil
 }
 
 // Helper function to count total items
 func getTotalCount(collection AlcoholCollectionByType) int {
-    total := 0
-    for _, items := range collection {
-        total += len(items)
-    }
-    return total
+	total := 0
+	for _, items := range collection {
+		total += len(items)
+	}
+	return total
 }
