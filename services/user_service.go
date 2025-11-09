@@ -1806,6 +1806,7 @@ func (s *UserService) GetUserAlcoholCollection(ctx context.Context, clerkID stri
 		"liqueur": []AlcoholItem{},
 		"rum":     []AlcoholItem{},
 		"tequila": []AlcoholItem{},
+		"rakiya":  []AlcoholItem{},
 	}
 
 	for rows.Next() {
