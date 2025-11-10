@@ -1050,34 +1050,36 @@ func (s *UserService) GetUserStats(ctx context.Context, clerkID string) (*stats.
 
 	query := `
     WITH RECURSIVE streak_calc AS (
-        -- Start with today or the most recent drinking day
-        SELECT 
-            user_id,
-            date,
-            1 as streak_length
-        FROM daily_drinking
-        WHERE user_id = $1 
-            AND drank_today = true
-            AND date = (
-                SELECT MAX(date) 
-                FROM daily_drinking 
-                WHERE user_id = $1 
-                    AND drank_today = true 
-                    AND date <= CURRENT_DATE
-            )
-        
-        UNION ALL
-        
-        -- Recursively check previous days
-        SELECT 
-            dd.user_id,
-            dd.date,
-            sc.streak_length + 1
-        FROM daily_drinking dd
-        INNER JOIN streak_calc sc ON dd.user_id = sc.user_id 
-            AND dd.date = sc.date - INTERVAL '1 day'
-        WHERE dd.drank_today = true
-    ),
+    -- Start with today or yesterday ONLY if they drank
+    SELECT 
+        user_id,
+        date,
+        1 as streak_length
+    FROM daily_drinking
+    WHERE user_id = $1 
+        AND drank_today = true
+        AND date = (
+            SELECT MAX(date) 
+            FROM daily_drinking 
+            WHERE user_id = $1 
+                AND drank_today = true 
+                AND date <= CURRENT_DATE
+        )
+        -- KEY FIX: Only start if the most recent day is today or yesterday
+        AND date >= CURRENT_DATE - INTERVAL '1 day'
+    
+    UNION ALL
+    
+    -- Recursively check previous days
+    SELECT 
+        dd.user_id,
+        dd.date,
+        sc.streak_length + 1
+    FROM daily_drinking dd
+    INNER JOIN streak_calc sc ON dd.user_id = sc.user_id 
+        AND dd.date = sc.date - INTERVAL '1 day'
+    WHERE dd.drank_today = true
+),
     current_streak_result AS (
         SELECT 
             user_id,
