@@ -1676,7 +1676,7 @@ type AlcoholItem struct {
 	Abv      float32 `json:"abv"`
 }
 
-func (s *UserService) SearchDbAlcohol(ctx context.Context, clerkID string, queryAlcoholName string) (*AlcoholItem, error) {
+func (s *UserService) SearchDbAlcohol(ctx context.Context, clerkID string, queryAlcoholName string) (map[string]interface{}, error) {
 	log.Println("searching alcohol collection")
 
 	// First, get the user's UUID from clerk_id
@@ -1745,21 +1745,27 @@ func (s *UserService) SearchDbAlcohol(ctx context.Context, clerkID string, query
 	var acquiredAt time.Time
 	err = s.db.QueryRow(ctx, insertQuery, userID, item.ID).Scan(&collectionID, &acquiredAt)
 
+	isNewlyAdded := true
 	if err != nil {
 		if err == pgx.ErrNoRows {
 			// Item already exists in collection
 			log.Printf("alcohol item %s already in user's collection", item.Name)
-			// You might want to return an error here or set a flag
-			return nil, fmt.Errorf("item already in collection")
+			isNewlyAdded = false
+		} else {
+			log.Println("failed to add to collection:", err)
+			return nil, fmt.Errorf("failed to add to collection: %w", err)
 		}
-		log.Println("failed to add to collection:", err)
-		return nil, fmt.Errorf("failed to add to collection: %w", err)
+	} else {
+		log.Printf("added alcohol item %s to user's collection", item.Name)
 	}
 
-	log.Printf("added alcohol item %s to user's collection", item.Name)
-	return &item, nil
-}
+	result := map[string]interface{}{
+		"item":       &item,
+		"isNewlyAdded": isNewlyAdded,
+	}
 
+	return result, nil
+}
 type AlcoholCollectionByType map[string][]AlcoholItem
 
 func (s *UserService) GetUserAlcoholCollection(ctx context.Context, clerkID string) (AlcoholCollectionByType, error) {
