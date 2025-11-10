@@ -684,6 +684,8 @@ func (s *UserService) GetAchievements(ctx context.Context, clerkID string) ([]*a
 
 	return achievements, nil
 }
+
+
 func (s *UserService) AddDrinking(ctx context.Context, clerkID string, drankToday bool, imageUrl *string, locationText *string, clerkIDs []string, date time.Time) error {
 	var userID uuid.UUID
 	err := s.db.QueryRow(ctx, `SELECT id FROM users WHERE clerk_id = $1`, clerkID).Scan(&userID)
@@ -706,6 +708,31 @@ func (s *UserService) AddDrinking(ctx context.Context, clerkID string, drankToda
 	_, err = s.db.Exec(ctx, query, userID, date, drankToday, imageUrl, locationText, clerkIDs)
 	if err != nil {
 		return fmt.Errorf("failed to log drinking: %w", err)
+	}
+
+	return nil
+}
+
+func (s *UserService) RemoveDrinking(ctx context.Context, clerkID string, date time.Time) error {
+	var userID uuid.UUID
+	err := s.db.QueryRow(ctx, `SELECT id FROM users WHERE clerk_id = $1`, clerkID).Scan(&userID)
+	if err != nil {
+		return fmt.Errorf("user not found: %w", err)
+	}
+
+	query := `
+        DELETE FROM daily_drinking 
+        WHERE user_id = $1 AND date = $2
+    `
+
+	result, err := s.db.Exec(ctx, query, userID, date)
+	if err != nil {
+		return fmt.Errorf("failed to remove drinking log: %w", err)
+	}
+
+	rowsAffected := result.RowsAffected()
+	if rowsAffected == 0 {
+		return fmt.Errorf("no drinking log found for the specified date")
 	}
 
 	return nil

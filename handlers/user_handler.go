@@ -319,13 +319,12 @@ func (h *UserHandler) AddDrinking(w http.ResponseWriter, r *http.Request) {
 		date = time.Now().Truncate(24 * time.Hour)
 	}
 
-	// Create a simpler struct that just captures the clerk IDs
 	var req struct {
 		DrankToday       bool    `json:"drank_today"`
 		ImageUrl         *string `json:"image_url"`
 		LocationText     *string `json:"location_text"`
 		MentionedBuddies []struct {
-			ClerkID string `json:"clerkId"` // Match the camelCase from frontend
+			ClerkID string `json:"clerkId"` 
 		} `json:"mentioned_buddies"`
 	}
 
@@ -345,13 +344,50 @@ func (h *UserHandler) AddDrinking(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	// Update the service method signature to accept []string instead of []*user.User
 	if err := h.userService.AddDrinking(ctx, clearkID, req.DrankToday, req.ImageUrl, req.LocationText, clerkIDs, date); err != nil {
 		respondWithError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
 
 	respondWithJSON(w, http.StatusOK, map[string]string{"message": "Drinking activity added successfully"})
+}
+
+
+func (h *UserHandler) RemoveDrinking(w http.ResponseWriter, r *http.Request) {
+	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
+	defer cancel()
+
+	clearkID, ok := middleware.GetClerkID(ctx)
+	if !ok {
+		respondWithError(w, http.StatusInternalServerError, "Error while adding drinking")
+		return
+	}
+
+	dateStr := r.URL.Query().Get("date")
+
+	var (
+		date time.Time
+		err  error
+	)
+
+	if dateStr != "" {
+		date, err = time.Parse("2006-01-02", dateStr)
+		if err != nil {
+			respondWithError(w, http.StatusBadRequest, "Invalid date format. Use YYYY-MM-DD")
+			return
+		}
+	} else {
+		date = time.Now().Truncate(24 * time.Hour)
+	}
+
+
+
+	if err := h.userService.RemoveDrinking(ctx, clearkID, date); err != nil {
+		respondWithError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+
+	respondWithJSON(w, http.StatusOK, map[string]string{"message": "Drinking activity removed successfully"})
 }
 
 func (h *UserHandler) GetWeeklyDaysDrank(w http.ResponseWriter, r *http.Request) {
