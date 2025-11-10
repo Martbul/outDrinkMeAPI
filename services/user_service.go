@@ -1275,6 +1275,47 @@ func (s *UserService) GetYourMix(ctx context.Context, clerkID string) ([]DailyDr
 	if err != nil {
 		return nil, fmt.Errorf("user not found: %w", err)
 	}
+	log.Printf("Found user ID: %s for clerk_id: %s", userID, clerkID)
+
+	// Debug: Check if there are ANY posts with images in the last 5 days
+	var totalPostsCount int
+	s.db.QueryRow(ctx, `
+		SELECT COUNT(*) 
+		FROM daily_drinking 
+		WHERE logged_at >= NOW() - INTERVAL '5 days'
+		AND image_url IS NOT NULL 
+		AND image_url != ''
+	`).Scan(&totalPostsCount)
+	log.Printf("Total posts with images in last 5 days: %d", totalPostsCount)
+
+	// Debug: Check friend count
+	var friendCount int
+	s.db.QueryRow(ctx, `
+		SELECT COUNT(DISTINCT friend_id) 
+		FROM (
+			SELECT friend_id FROM friendships WHERE user_id = $1 AND status = 'accepted'
+			UNION
+			SELECT user_id FROM friendships WHERE friend_id = $1 AND status = 'accepted'
+		) AS friends
+	`, userID).Scan(&friendCount)
+	log.Printf("User has %d friends", friendCount)
+
+	// Debug: Check posts from friends
+	var friendPostsCount int
+	s.db.QueryRow(ctx, `
+		SELECT COUNT(*) 
+		FROM daily_drinking dd
+		WHERE dd.user_id != $1
+		AND dd.logged_at >= NOW() - INTERVAL '5 days'
+		AND dd.image_url IS NOT NULL
+		AND dd.image_url != ''
+		AND dd.user_id IN (
+			SELECT friend_id FROM friendships WHERE user_id = $1 AND status = 'accepted'
+			UNION
+			SELECT user_id FROM friendships WHERE friend_id = $1 AND status = 'accepted'
+		)
+	`, userID).Scan(&friendPostsCount)
+	log.Printf("Posts from friends: %d", friendPostsCount)
 
 	query := `
 	WITH friend_posts AS (
@@ -1411,11 +1452,10 @@ func (s *UserService) GetYourMix(ctx context.Context, clerkID string) ([]DailyDr
 		log.Println("error iterating posts")
 		return nil, fmt.Errorf("error iterating posts: %w", err)
 	}
-	log.Println(posts)
+	log.Printf("Returning %d posts", len(posts))
 
 	return posts, nil
 }
-
 func (s *UserService) GetMixTimeline(ctx context.Context, clerkID string) ([]DailyDrinkingPost, error) {
 	log.Println("getting user mix timeline")
 
