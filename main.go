@@ -134,11 +134,13 @@ func main() {
 	protected.HandleFunc("/user/leaderboard/global", userHandler.GetGlobalLeaderboard).Methods("GET")
 	protected.HandleFunc("/user/friends", userHandler.GetFriends).Methods("GET")
 	protected.HandleFunc("/user/your-mix", userHandler.GetYourMix).Methods("GET")
+	protected.HandleFunc("/user/mix-timeline", userHandler.GetMixTimeline).Methods("GET")
 	protected.HandleFunc("/user/friends", userHandler.AddFriend).Methods("POST")
 	protected.HandleFunc("/user/friends", userHandler.RemoveFriend).Methods("DELETE")
 	protected.HandleFunc("/user/discovery", userHandler.GetDiscovery).Methods("GET")
 	protected.HandleFunc("/user/achievements", userHandler.GetAchievements).Methods("GET")
 	protected.HandleFunc("/user/drink", userHandler.AddDrinking).Methods("POST")
+	protected.HandleFunc("/user/drink", userHandler.RemoveDrinking).Methods("DELETE")
 	protected.HandleFunc("/user/drunk-thought", userHandler.GetDrunkThought).Methods("GET")
 	protected.HandleFunc("/user/drunk-thought", userHandler.AddDrunkThought).Methods("POST")
 	protected.HandleFunc("/user/stats", userHandler.GetUserStats).Methods("GET")
@@ -148,6 +150,10 @@ func main() {
 	protected.HandleFunc("/user/stats/all-time", userHandler.GetAllTimeDaysDrank).Methods("GET")
 	protected.HandleFunc("/user/calendar", userHandler.GetCalendar).Methods("GET")
 	protected.HandleFunc("/user/search", userHandler.SearchUsers).Methods("GET")
+	protected.HandleFunc("/user/search-db-alcohol", userHandler.SearchDbAlcohol).Methods("GET")
+	protected.HandleFunc("/user/alcohol-collection", userHandler.GetUserAlcoholCollection).Methods("GET")
+	protected.HandleFunc("/user/alcohol-collection", userHandler.RemoveAlcoholCollectionItem).Methods("DELETE")
+	protected.HandleFunc("/user/drunk-friend-thoughts", userHandler.GetDrunkFriendThoughts).Methods("GET")
 
 	// CORS configuration
 	corsHandler := gorilllaHandlers.CORS(

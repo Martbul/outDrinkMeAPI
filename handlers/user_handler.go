@@ -294,64 +294,100 @@ func (h *UserHandler) GetAchievements(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *UserHandler) AddDrinking(w http.ResponseWriter, r *http.Request) {
-    ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
-    defer cancel()
+	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
+	defer cancel()
 
-    clearkID, ok := middleware.GetClerkID(ctx)
-    if !ok {
-        respondWithError(w, http.StatusInternalServerError, "Error while adding drinking")
-        return
-    }
+	clearkID, ok := middleware.GetClerkID(ctx)
+	if !ok {
+		respondWithError(w, http.StatusInternalServerError, "Error while adding drinking")
+		return
+	}
 
-    dateStr := r.URL.Query().Get("date")
+	dateStr := r.URL.Query().Get("date")
 
-    var (
-        date time.Time
-        err  error
-    )
-    if dateStr != "" {
-        date, err = time.Parse("2006-01-02", dateStr)
-        if err != nil {
-            respondWithError(w, http.StatusBadRequest, "Invalid date format. Use YYYY-MM-DD")
-            return
-        }
-    } else {
-        date = time.Now().Truncate(24 * time.Hour)
-    }
+	var (
+		date time.Time
+		err  error
+	)
+	if dateStr != "" {
+		date, err = time.Parse("2006-01-02", dateStr)
+		if err != nil {
+			respondWithError(w, http.StatusBadRequest, "Invalid date format. Use YYYY-MM-DD")
+			return
+		}
+	} else {
+		date = time.Now().Truncate(24 * time.Hour)
+	}
 
-    // Create a simpler struct that just captures the clerk IDs
-    var req struct {
-        DrankToday       bool   `json:"drank_today"`
-        ImageUrl         *string `json:"image_url"`
-        LocationText     *string `json:"location_text"`
-        MentionedBuddies []struct {
-            ClerkID string `json:"clerkId"` // Match the camelCase from frontend
-        } `json:"mentioned_buddies"`
-    }
+	var req struct {
+		DrankToday       bool    `json:"drank_today"`
+		ImageUrl         *string `json:"image_url"`
+		LocationText     *string `json:"location_text"`
+		MentionedBuddies []struct {
+			ClerkID string `json:"clerkId"` 
+		} `json:"mentioned_buddies"`
+	}
 
-    if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-        http.Error(w, "invalid request body", http.StatusBadRequest)
-        return
-    }
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "invalid request body", http.StatusBadRequest)
+		return
+	}
 
-    // Extract just the clerk IDs
-    var clerkIDs []string
-    if len(req.MentionedBuddies) > 0 {
-        clerkIDs = make([]string, 0, len(req.MentionedBuddies))
-        for _, buddy := range req.MentionedBuddies {
-            if buddy.ClerkID != "" {
-                clerkIDs = append(clerkIDs, buddy.ClerkID)
-            }
-        }
-    }
+	// Extract just the clerk IDs
+	var clerkIDs []string
+	if len(req.MentionedBuddies) > 0 {
+		clerkIDs = make([]string, 0, len(req.MentionedBuddies))
+		for _, buddy := range req.MentionedBuddies {
+			if buddy.ClerkID != "" {
+				clerkIDs = append(clerkIDs, buddy.ClerkID)
+			}
+		}
+	}
 
-    // Update the service method signature to accept []string instead of []*user.User
-    if err := h.userService.AddDrinking(ctx, clearkID, req.DrankToday, req.ImageUrl, req.LocationText, clerkIDs, date); err != nil {
-        respondWithError(w, http.StatusInternalServerError, err.Error())
-        return
-    }
+	if err := h.userService.AddDrinking(ctx, clearkID, req.DrankToday, req.ImageUrl, req.LocationText, clerkIDs, date); err != nil {
+		respondWithError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
 
-    respondWithJSON(w, http.StatusOK, map[string]string{"message": "Drinking activity added successfully"})
+	respondWithJSON(w, http.StatusOK, map[string]string{"message": "Drinking activity added successfully"})
+}
+
+
+func (h *UserHandler) RemoveDrinking(w http.ResponseWriter, r *http.Request) {
+	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
+	defer cancel()
+
+	clearkID, ok := middleware.GetClerkID(ctx)
+	if !ok {
+		respondWithError(w, http.StatusInternalServerError, "Error while adding drinking")
+		return
+	}
+
+	dateStr := r.URL.Query().Get("date")
+
+	var (
+		date time.Time
+		err  error
+	)
+
+	if dateStr != "" {
+		date, err = time.Parse("2006-01-02", dateStr)
+		if err != nil {
+			respondWithError(w, http.StatusBadRequest, "Invalid date format. Use YYYY-MM-DD")
+			return
+		}
+	} else {
+		date = time.Now().Truncate(24 * time.Hour)
+	}
+
+
+
+	if err := h.userService.RemoveDrinking(ctx, clearkID, date); err != nil {
+		respondWithError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+
+	respondWithJSON(w, http.StatusOK, map[string]string{"message": "Drinking activity removed successfully"})
 }
 
 func (h *UserHandler) GetWeeklyDaysDrank(w http.ResponseWriter, r *http.Request) {
@@ -428,6 +464,96 @@ func (h *UserHandler) GetAllTimeDaysDrank(w http.ResponseWriter, r *http.Request
 	}
 
 	respondWithJSON(w, http.StatusOK, allTimeDaysDrank)
+}
+
+func (h *UserHandler) GetDrunkFriendThoughts(w http.ResponseWriter, r *http.Request) {
+	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
+	defer cancel()
+
+	clearkID, ok := middleware.GetClerkID(ctx)
+	if !ok {
+		respondWithError(w, http.StatusInternalServerError, "Error while getting drunk friends thoughts")
+		return
+	}
+
+	drunkFriendThoughts, err := h.userService.GetDrunkFriendThoughts(ctx, clearkID)
+	if err != nil {
+		respondWithError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+
+	respondWithJSON(w, http.StatusOK, drunkFriendThoughts)
+}
+
+func (h *UserHandler) GetUserAlcoholCollection(w http.ResponseWriter, r *http.Request) {
+	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
+	defer cancel()
+
+	clearkID, ok := middleware.GetClerkID(ctx)
+	if !ok {
+		respondWithError(w, http.StatusInternalServerError, "Error while getting drunk friends thoughts")
+		return
+	}
+
+	alcoholCollection, err := h.userService.GetUserAlcoholCollection(ctx, clearkID)
+	if err != nil {
+		respondWithError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+
+	respondWithJSON(w, http.StatusOK, alcoholCollection)
+}
+
+func (h *UserHandler) RemoveAlcoholCollectionItem(w http.ResponseWriter, r *http.Request) {
+	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
+	defer cancel()
+
+	clearkID, ok := middleware.GetClerkID(ctx)
+	if !ok {
+		respondWithError(w, http.StatusInternalServerError, "Error while getting drunk friends thoughts")
+		return
+	}
+
+
+		itemIdForRemoval := r.URL.Query().Get("itemId")
+	if itemIdForRemoval == "" {
+		respondWithError(w, http.StatusBadRequest, "Search query parameter 'itemIdForRemoval' is required")
+		return
+	}
+
+
+	success, err := h.userService.RemoveAlcoholCollectionItem(ctx, clearkID,itemIdForRemoval)
+	if err != nil {
+		respondWithError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+
+	respondWithJSON(w, http.StatusOK, success)
+}
+
+func (h *UserHandler) SearchDbAlcohol(w http.ResponseWriter, r *http.Request) {
+	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
+	defer cancel()
+
+	clearkID, ok := middleware.GetClerkID(ctx)
+	if !ok {
+		respondWithError(w, http.StatusInternalServerError, "Error while getting drunk friends thoughts")
+		return
+	}
+
+	query := r.URL.Query().Get("alcohol_name")
+	if query == "" {
+		respondWithError(w, http.StatusBadRequest, "Search query parameter 'alcoholName' is required")
+		return
+	}
+
+	alcoholItem, err := h.userService.SearchDbAlcohol(ctx, clearkID, query)
+	if err != nil {
+		respondWithError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+
+	respondWithJSON(w, http.StatusOK, alcoholItem)
 }
 
 func (h *UserHandler) SearchUsers(w http.ResponseWriter, r *http.Request) {
@@ -531,6 +657,25 @@ func (h *UserHandler) GetYourMix(w http.ResponseWriter, r *http.Request) {
 	log.Println(yourMixData)
 
 	respondWithJSON(w, http.StatusOK, yourMixData)
+}
+
+func (h *UserHandler) GetMixTimeline(w http.ResponseWriter, r *http.Request) {
+	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
+	defer cancel()
+
+	clearkID, ok := middleware.GetClerkID(ctx)
+	if !ok {
+		respondWithError(w, http.StatusUnauthorized, "User not authenticated")
+		return
+	}
+
+	mixTimelineData, err := h.userService.GetMixTimeline(ctx, clearkID)
+	if err != nil {
+		respondWithError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+
+	respondWithJSON(w, http.StatusOK, mixTimelineData)
 }
 
 func (h *UserHandler) GetDrunkThought(w http.ResponseWriter, r *http.Request) {

@@ -684,14 +684,15 @@ func (s *UserService) GetAchievements(ctx context.Context, clerkID string) ([]*a
 
 	return achievements, nil
 }
-func (s *UserService) AddDrinking(ctx context.Context, clerkID string, drankToday bool, imageUrl *string, locationText *string, clerkIDs []string, date time.Time) error {
-    var userID uuid.UUID
-    err := s.db.QueryRow(ctx, `SELECT id FROM users WHERE clerk_id = $1`, clerkID).Scan(&userID)
-    if err != nil {
-        return fmt.Errorf("user not found: %w", err)
-    }
 
-    query := `
+func (s *UserService) AddDrinking(ctx context.Context, clerkID string, drankToday bool, imageUrl *string, locationText *string, clerkIDs []string, date time.Time) error {
+	var userID uuid.UUID
+	err := s.db.QueryRow(ctx, `SELECT id FROM users WHERE clerk_id = $1`, clerkID).Scan(&userID)
+	if err != nil {
+		return fmt.Errorf("user not found: %w", err)
+	}
+
+	query := `
         INSERT INTO daily_drinking (user_id, date, drank_today, logged_at, image_url, location_text, mentioned_buddies)
         VALUES ($1, $2, $3, NOW(), $4, $5, $6)
         ON CONFLICT (user_id, date) 
@@ -703,15 +704,38 @@ func (s *UserService) AddDrinking(ctx context.Context, clerkID string, drankToda
             mentioned_buddies = $6
     `
 
-    _, err = s.db.Exec(ctx, query, userID, date, drankToday, imageUrl, locationText, clerkIDs)
-    if err != nil {
-        return fmt.Errorf("failed to log drinking: %w", err)
-    }
+	_, err = s.db.Exec(ctx, query, userID, date, drankToday, imageUrl, locationText, clerkIDs)
+	if err != nil {
+		return fmt.Errorf("failed to log drinking: %w", err)
+	}
 
-    return nil
+	return nil
 }
 
+func (s *UserService) RemoveDrinking(ctx context.Context, clerkID string, date time.Time) error {
+	var userID uuid.UUID
+	err := s.db.QueryRow(ctx, `SELECT id FROM users WHERE clerk_id = $1`, clerkID).Scan(&userID)
+	if err != nil {
+		return fmt.Errorf("user not found: %w", err)
+	}
 
+	query := `
+        DELETE FROM daily_drinking 
+        WHERE user_id = $1 AND date = $2
+    `
+
+	result, err := s.db.Exec(ctx, query, userID, date)
+	if err != nil {
+		return fmt.Errorf("failed to remove drinking log: %w", err)
+	}
+
+	rowsAffected := result.RowsAffected()
+	if rowsAffected == 0 {
+		return fmt.Errorf("no drinking log found for the specified date")
+	}
+
+	return nil
+}
 
 func (s *UserService) GetDrunkThought(ctx context.Context, clerkID string, date time.Time) (*string, error) {
 	var userID uuid.UUID
@@ -787,8 +811,8 @@ func (s *UserService) GetWeeklyDaysDrank(ctx context.Context, clerkID string) (*
 
 	return stat, nil
 }
+
 func (s *UserService) SearchUsers(ctx context.Context, clerkID string, query string) ([]*user.User, error) {
-	// Clean and prepare the query
 	cleanQuery := strings.TrimSpace(query)
 	searchPattern := "%" + cleanQuery + "%"
 	startsWithPattern := cleanQuery + "%"
@@ -1052,34 +1076,36 @@ func (s *UserService) GetUserStats(ctx context.Context, clerkID string) (*stats.
 
 	query := `
     WITH RECURSIVE streak_calc AS (
-        -- Start with today or the most recent drinking day
-        SELECT 
-            user_id,
-            date,
-            1 as streak_length
-        FROM daily_drinking
-        WHERE user_id = $1 
-            AND drank_today = true
-            AND date = (
-                SELECT MAX(date) 
-                FROM daily_drinking 
-                WHERE user_id = $1 
-                    AND drank_today = true 
-                    AND date <= CURRENT_DATE
-            )
-        
-        UNION ALL
-        
-        -- Recursively check previous days
-        SELECT 
-            dd.user_id,
-            dd.date,
-            sc.streak_length + 1
-        FROM daily_drinking dd
-        INNER JOIN streak_calc sc ON dd.user_id = sc.user_id 
-            AND dd.date = sc.date - INTERVAL '1 day'
-        WHERE dd.drank_today = true
-    ),
+    -- Start with today or yesterday ONLY if they drank
+    SELECT 
+        user_id,
+        date,
+        1 as streak_length
+    FROM daily_drinking
+    WHERE user_id = $1 
+        AND drank_today = true
+        AND date = (
+            SELECT MAX(date) 
+            FROM daily_drinking 
+            WHERE user_id = $1 
+                AND drank_today = true 
+                AND date <= CURRENT_DATE
+        )
+        -- KEY FIX: Only start if the most recent day is today or yesterday
+        AND date >= CURRENT_DATE - INTERVAL '1 day'
+    
+    UNION ALL
+    
+    -- Recursively check previous days
+    SELECT 
+        dd.user_id,
+        dd.date,
+        sc.streak_length + 1
+    FROM daily_drinking dd
+    INNER JOIN streak_calc sc ON dd.user_id = sc.user_id 
+        AND dd.date = sc.date - INTERVAL '1 day'
+    WHERE dd.drank_today = true
+),
     current_streak_result AS (
         SELECT 
             user_id,
@@ -1248,6 +1274,47 @@ func (s *UserService) GetYourMix(ctx context.Context, clerkID string) ([]DailyDr
 	if err != nil {
 		return nil, fmt.Errorf("user not found: %w", err)
 	}
+	log.Printf("Found user ID: %s for clerk_id: %s", userID, clerkID)
+
+	// Debug: Check if there are ANY posts with images in the last 5 days
+	var totalPostsCount int
+	s.db.QueryRow(ctx, `
+		SELECT COUNT(*) 
+		FROM daily_drinking 
+		WHERE logged_at >= NOW() - INTERVAL '5 days'
+		AND image_url IS NOT NULL 
+		AND image_url != ''
+	`).Scan(&totalPostsCount)
+	log.Printf("Total posts with images in last 5 days: %d", totalPostsCount)
+
+	// Debug: Check friend count
+	var friendCount int
+	s.db.QueryRow(ctx, `
+		SELECT COUNT(DISTINCT friend_id) 
+		FROM (
+			SELECT friend_id FROM friendships WHERE user_id = $1 AND status = 'accepted'
+			UNION
+			SELECT user_id FROM friendships WHERE friend_id = $1 AND status = 'accepted'
+		) AS friends
+	`, userID).Scan(&friendCount)
+	log.Printf("User has %d friends", friendCount)
+
+	// Debug: Check posts from friends
+	var friendPostsCount int
+	s.db.QueryRow(ctx, `
+		SELECT COUNT(*) 
+		FROM daily_drinking dd
+		WHERE dd.user_id != $1
+		AND dd.logged_at >= NOW() - INTERVAL '5 days'
+		AND dd.image_url IS NOT NULL
+		AND dd.image_url != ''
+		AND dd.user_id IN (
+			SELECT friend_id FROM friendships WHERE user_id = $1 AND status = 'accepted'
+			UNION
+			SELECT user_id FROM friendships WHERE friend_id = $1 AND status = 'accepted'
+		)
+	`, userID).Scan(&friendPostsCount)
+	log.Printf("Posts from friends: %d", friendPostsCount)
 
 	query := `
 	WITH friend_posts AS (
@@ -1384,6 +1451,88 @@ func (s *UserService) GetYourMix(ctx context.Context, clerkID string) ([]DailyDr
 		log.Println("error iterating posts")
 		return nil, fmt.Errorf("error iterating posts: %w", err)
 	}
+	log.Printf("Returning %d posts", len(posts))
+
+	return posts, nil
+}
+
+func (s *UserService) GetMixTimeline(ctx context.Context, clerkID string) ([]DailyDrinkingPost, error) {
+	log.Println("getting user mix timeline")
+
+	var userID string
+	err := s.db.QueryRow(ctx, "SELECT id FROM users WHERE clerk_id = $1", clerkID).Scan(&userID)
+	if err != nil {
+		return nil, fmt.Errorf("user not found: %w", err)
+	}
+
+	query := `
+	SELECT 
+		dd.id,
+		dd.user_id,
+		u.image_url AS user_image_url,
+		dd.date,
+		dd.drank_today,
+		dd.logged_at,
+		dd.image_url AS post_image_url,
+		dd.location_text,
+		dd.mentioned_buddies,
+		'own' AS source_type
+	FROM daily_drinking dd
+	JOIN users u ON u.id = dd.user_id
+	WHERE dd.user_id = $1
+		AND dd.image_url IS NOT NULL
+		AND dd.image_url != ''
+	ORDER BY dd.logged_at DESC
+	`
+
+	rows, err := s.db.Query(ctx, query, userID)
+	if err != nil {
+		log.Println("failed to get feed")
+		return nil, fmt.Errorf("failed to get feed: %w", err)
+	}
+	defer rows.Close()
+
+	var posts []DailyDrinkingPost
+	for rows.Next() {
+		var post DailyDrinkingPost
+		var mentionedBuddyIDs []string // Scan as string array
+
+		err := rows.Scan(
+			&post.ID,
+			&post.UserID,
+			&post.UserImageURL,
+			&post.Date,
+			&post.DrankToday,
+			&post.LoggedAt,
+			&post.ImageURL,
+			&post.LocationText,
+			&mentionedBuddyIDs,
+			&post.SourceType,
+		)
+		if err != nil {
+			log.Println("failed to scan post")
+			return nil, fmt.Errorf("failed to scan post: %w", err)
+		}
+
+		// Fetch the full user objects for mentioned buddies
+		if len(mentionedBuddyIDs) > 0 {
+			post.MentionedBuddies, err = s.getUsersByIDs(ctx, mentionedBuddyIDs)
+			if err != nil {
+				log.Printf("failed to fetch mentioned buddies for post %s: %v", post.ID, err)
+				// Continue without buddies rather than failing
+				post.MentionedBuddies = []user.User{}
+			}
+		} else {
+			post.MentionedBuddies = []user.User{}
+		}
+
+		posts = append(posts, post)
+	}
+
+	if err = rows.Err(); err != nil {
+		log.Println("error iterating posts")
+		return nil, fmt.Errorf("error iterating posts: %w", err)
+	}
 	log.Println(posts)
 
 	return posts, nil
@@ -1446,4 +1595,367 @@ func (s *UserService) getUsersByIDs(ctx context.Context, clerkIDs []string) ([]u
 	}
 
 	return users, nil
+}
+
+type DrunkThought struct {
+	ID           string    `json:"id"`
+	UserID       string    `json:"user_id"`
+	Username     string    `json:"username"`
+	UserImageURL string    `json:"user_image_url"`
+	Thought      string    `json:"thought"`
+	CreatedAt    time.Time `json:"created_at"`
+}
+
+func (s *UserService) GetDrunkFriendThoughts(ctx context.Context, clerkID string) ([]DrunkThought, error) {
+	log.Println("getting drunk friends thoughts")
+
+	var userID string
+	err := s.db.QueryRow(ctx, "SELECT id FROM users WHERE clerk_id = $1", clerkID).Scan(&userID)
+	if err != nil {
+		return nil, fmt.Errorf("user not found: %w", err)
+	}
+
+	query := `
+    SELECT 
+        dd.id,
+        dd.user_id,
+        u.username,
+        u.image_url,
+        dd.drunk_thought,
+        dd.logged_at
+    FROM daily_drinking dd
+    JOIN users u ON u.id = dd.user_id
+    JOIN friendships f ON (
+        (f.user_id = $1 AND f.friend_id = dd.user_id) OR 
+        (f.friend_id = $1 AND f.user_id = dd.user_id)
+    )
+    WHERE f.status = 'accepted'
+        AND dd.drunk_thought IS NOT NULL
+        AND dd.drunk_thought != ''
+        AND dd.date >= CURRENT_DATE - INTERVAL '7 days'
+    ORDER BY dd.logged_at DESC
+    `
+
+	rows, err := s.db.Query(ctx, query, userID)
+	if err != nil {
+		log.Println("failed to get drunk friend thoughts:", err)
+		return nil, fmt.Errorf("failed to get drunk friend thoughts: %w", err)
+	}
+	defer rows.Close()
+
+	var thoughts []DrunkThought
+	for rows.Next() {
+		var thought DrunkThought
+		err := rows.Scan(
+			&thought.ID,
+			&thought.UserID,
+			&thought.Username,
+			&thought.UserImageURL,
+			&thought.Thought,
+			&thought.CreatedAt,
+		)
+		if err != nil {
+			log.Println("failed to scan thought:", err)
+			return nil, fmt.Errorf("failed to scan thought: %w", err)
+		}
+
+		thoughts = append(thoughts, thought)
+	}
+
+	if err = rows.Err(); err != nil {
+		log.Println("error iterating thoughts:", err)
+		return nil, fmt.Errorf("error iterating thoughts: %w", err)
+	}
+
+	log.Printf("found %d drunk thoughts from friends", len(thoughts))
+	return thoughts, nil
+}
+
+func (s *UserService) GetAlcoholCollection(ctx context.Context, clerkID string) ([]DrunkThought, error) {
+	log.Println("getting alcohol collection")
+
+	var userID string
+	err := s.db.QueryRow(ctx, "SELECT id FROM users WHERE clerk_id = $1", clerkID).Scan(&userID)
+	if err != nil {
+		return nil, fmt.Errorf("user not found: %w", err)
+	}
+
+	query := `
+    SELECT 
+        collection_data.name,
+        collection_data.type,
+        u.username,
+        u.image_url,
+        dd.drunk_thought,
+        dd.logged_at
+    FROM db_alcohol_collection_data collection_data
+    JOIN users u ON u.id = dd.user_id
+    JOIN friendships f ON (
+        (f.user_id = $1 AND f.friend_id = dd.user_id) OR 
+        (f.friend_id = $1 AND f.user_id = dd.user_id)
+    )
+    WHERE f.status = 'accepted'
+        AND dd.drunk_thought IS NOT NULL
+        AND dd.drunk_thought != ''
+        AND dd.date >= CURRENT_DATE - INTERVAL '7 days'
+    ORDER BY dd.logged_at DESC
+    `
+
+	rows, err := s.db.Query(ctx, query, userID)
+	if err != nil {
+		log.Println("failed to get drunk friend thoughts:", err)
+		return nil, fmt.Errorf("failed to get drunk friend thoughts: %w", err)
+	}
+	defer rows.Close()
+
+	var thoughts []DrunkThought
+	for rows.Next() {
+		var thought DrunkThought
+		err := rows.Scan(
+			&thought.ID,
+			&thought.UserID,
+			&thought.Username,
+			&thought.UserImageURL,
+			&thought.Thought,
+			&thought.CreatedAt,
+		)
+		if err != nil {
+			log.Println("failed to scan thought:", err)
+			return nil, fmt.Errorf("failed to scan thought: %w", err)
+		}
+
+		thoughts = append(thoughts, thought)
+	}
+
+	if err = rows.Err(); err != nil {
+		log.Println("error iterating thoughts:", err)
+		return nil, fmt.Errorf("error iterating thoughts: %w", err)
+	}
+
+	log.Printf("found %d drunk thoughts from friends", len(thoughts))
+	return thoughts, nil
+}
+
+type AlcoholItem struct {
+	ID       string  `json:"id"`
+	Name     string  `json:"name"`
+	Type     string  `json:"type"`
+	ImageUrl *string `json:"image_url"`
+	Rarity   string  `json:"rarity"`
+	Abv      float32 `json:"abv"`
+}
+
+func (s *UserService) SearchDbAlcohol(ctx context.Context, clerkID string, queryAlcoholName string) (map[string]interface{}, error) {
+	log.Println("searching alcohol collection")
+
+	// First, get the user's UUID from clerk_id
+	var userID string
+	userQuery := `SELECT id FROM users WHERE clerk_id = $1`
+	err := s.db.QueryRow(ctx, userQuery, clerkID).Scan(&userID)
+	if err != nil {
+		log.Println("failed to get user ID:", err)
+		return nil, fmt.Errorf("failed to get user: %w", err)
+	}
+
+	cleanQuery := strings.TrimSpace(queryAlcoholName)
+	searchPattern := "%" + cleanQuery + "%"
+	startsWithPattern := cleanQuery + "%"
+
+	query := `
+    SELECT 
+        id,
+        name,
+        type,
+        image_url,
+        rarity,
+        abv
+    FROM db_alcohol_collection_data
+    WHERE LOWER(name) LIKE LOWER($1)
+    ORDER BY
+        CASE
+            WHEN LOWER(name) = LOWER($2) THEN 100
+            WHEN LOWER(name) LIKE LOWER($3) THEN 90
+            WHEN LOWER(name) LIKE LOWER($1) THEN 80
+            ELSE 0
+        END DESC
+    LIMIT 1
+    `
+
+	var item AlcoholItem
+	err = s.db.QueryRow(ctx, query, searchPattern, cleanQuery, startsWithPattern).Scan(
+		&item.ID,
+		&item.Name,
+		&item.Type,
+		&item.ImageUrl,
+		&item.Rarity,
+		&item.Abv,
+	)
+
+	if err != nil {
+		if err == pgx.ErrNoRows {
+			log.Println("no alcohol found matching query:", queryAlcoholName)
+			return nil, nil
+		}
+		log.Println("failed to search alcohol:", err)
+		return nil, fmt.Errorf("failed to search alcohol: %w", err)
+	}
+
+	log.Printf("found alcohol item: %s", item.Name)
+
+	// Add to user's collection (insert or ignore if already exists)
+	insertQuery := `
+    INSERT INTO alcohol_collection (user_id, alcohol_id)
+    VALUES ($1, $2)
+    ON CONFLICT (user_id, alcohol_id) DO NOTHING
+    RETURNING id, acquired_at
+    `
+
+	var collectionID string
+	var acquiredAt time.Time
+	err = s.db.QueryRow(ctx, insertQuery, userID, item.ID).Scan(&collectionID, &acquiredAt)
+
+	isNewlyAdded := true
+	if err != nil {
+		if err == pgx.ErrNoRows {
+			// Item already exists in collection
+			log.Printf("alcohol item %s already in user's collection", item.Name)
+			isNewlyAdded = false
+		} else {
+			log.Println("failed to add to collection:", err)
+			return nil, fmt.Errorf("failed to add to collection: %w", err)
+		}
+	} else {
+		log.Printf("added alcohol item %s to user's collection", item.Name)
+	}
+
+	result := map[string]interface{}{
+		"item":         &item,
+		"isNewlyAdded": isNewlyAdded,
+	}
+
+	return result, nil
+}
+
+type AlcoholCollectionByType map[string][]AlcoholItem
+
+func (s *UserService) GetUserAlcoholCollection(ctx context.Context, clerkID string) (AlcoholCollectionByType, error) {
+	log.Println("fetching user alcohol collection")
+
+	// First, get the user's UUID from clerk_id
+	var userID string
+	userQuery := `SELECT id FROM users WHERE clerk_id = $1`
+	err := s.db.QueryRow(ctx, userQuery, clerkID).Scan(&userID)
+	if err != nil {
+		log.Println("failed to get user ID:", err)
+		return nil, fmt.Errorf("failed to get user: %w", err)
+	}
+
+	query := `
+    SELECT 
+        d.id,
+        d.name,
+        d.type,
+        d.image_url,
+        d.rarity,
+        d.abv,
+        c.acquired_at
+    FROM alcohol_collection c
+    INNER JOIN db_alcohol_collection_data d ON c.alcohol_id = d.id
+    WHERE c.user_id = $1
+    ORDER BY c.acquired_at DESC
+    `
+
+	rows, err := s.db.Query(ctx, query, userID)
+	if err != nil {
+		log.Println("failed to get user collection:", err)
+		return nil, fmt.Errorf("failed to get user collection: %w", err)
+	}
+	defer rows.Close()
+
+	// Initialize the map with all alcohol types
+	collection := AlcoholCollectionByType{
+		"beer":    []AlcoholItem{},
+		"whiskey": []AlcoholItem{},
+		"wine":    []AlcoholItem{},
+		"vodka":   []AlcoholItem{},
+		"gin":     []AlcoholItem{},
+		"liqueur": []AlcoholItem{},
+		"rum":     []AlcoholItem{},
+		"tequila": []AlcoholItem{},
+		"rakiya":  []AlcoholItem{},
+	}
+
+	for rows.Next() {
+		var item AlcoholItem
+		var acquiredAt time.Time
+
+		err := rows.Scan(
+			&item.ID,
+			&item.Name,
+			&item.Type,
+			&item.ImageUrl,
+			&item.Rarity,
+			&item.Abv,
+			&acquiredAt,
+		)
+
+		if err != nil {
+			log.Println("failed to scan alcohol item:", err)
+			return nil, fmt.Errorf("failed to scan alcohol item: %w", err)
+		}
+
+		// Normalize the type to lowercase for consistent map keys
+		alcoholType := strings.ToLower(item.Type)
+
+		// Add to the appropriate category
+		if _, exists := collection[alcoholType]; exists {
+			collection[alcoholType] = append(collection[alcoholType], item)
+		} else {
+			// If type doesn't match any category, you can either skip it or add to "other"
+			log.Printf("unknown alcohol type: %s for item: %s", item.Type, item.Name)
+		}
+	}
+
+	if err = rows.Err(); err != nil {
+		log.Println("error iterating collection:", err)
+		return nil, fmt.Errorf("error iterating collection: %w", err)
+	}
+
+	log.Printf("fetched user collection: %d items", getTotalCount(collection))
+	return collection, nil
+}
+
+func (s *UserService) RemoveAlcoholCollectionItem(ctx context.Context, clerkID string, itemIdForRemoval string) (bool, error) {
+	log.Println("removing item id from user collection")
+
+	var userID string
+	userQuery := `SELECT id FROM users WHERE clerk_id = $1`
+	err := s.db.QueryRow(ctx, userQuery, clerkID).Scan(&userID)
+	if err != nil {
+		log.Println("failed to get user ID:", err)
+		return false, fmt.Errorf("failed to get user: %w", err)
+	}
+
+	query := `
+   DELETE FROM alcohol_collection ac 
+	WHERE ac.user_id = $1 AND ac.alcohol_id = $2
+    `
+
+	rows, err := s.db.Query(ctx, query, userID, itemIdForRemoval)
+	if err != nil {
+		log.Println("failed to get user collection:", err)
+		return false, fmt.Errorf("failed to get user collection: %w", err)
+	}
+	defer rows.Close()
+
+	return true, nil
+}
+
+// Helper function to count total items
+func getTotalCount(collection AlcoholCollectionByType) int {
+	total := 0
+	for _, items := range collection {
+		total += len(items)
+	}
+	return total
 }
