@@ -504,6 +504,33 @@ func (h *UserHandler) GetUserAlcoholCollection(w http.ResponseWriter, r *http.Re
 	respondWithJSON(w, http.StatusOK, alcoholCollection)
 }
 
+func (h *UserHandler) RemoveAlcoholCollectionItem(w http.ResponseWriter, r *http.Request) {
+	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
+	defer cancel()
+
+	clearkID, ok := middleware.GetClerkID(ctx)
+	if !ok {
+		respondWithError(w, http.StatusInternalServerError, "Error while getting drunk friends thoughts")
+		return
+	}
+
+
+		itemIdForRemoval := r.URL.Query().Get("itemId")
+	if itemIdForRemoval == "" {
+		respondWithError(w, http.StatusBadRequest, "Search query parameter 'itemIdForRemoval' is required")
+		return
+	}
+
+
+	success, err := h.userService.RemoveAlcoholCollectionItem(ctx, clearkID,itemIdForRemoval)
+	if err != nil {
+		respondWithError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+
+	respondWithJSON(w, http.StatusOK, success)
+}
+
 func (h *UserHandler) SearchDbAlcohol(w http.ResponseWriter, r *http.Request) {
 	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
 	defer cancel()

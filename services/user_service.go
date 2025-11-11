@@ -685,7 +685,6 @@ func (s *UserService) GetAchievements(ctx context.Context, clerkID string) ([]*a
 	return achievements, nil
 }
 
-
 func (s *UserService) AddDrinking(ctx context.Context, clerkID string, drankToday bool, imageUrl *string, locationText *string, clerkIDs []string, date time.Time) error {
 	var userID uuid.UUID
 	err := s.db.QueryRow(ctx, `SELECT id FROM users WHERE clerk_id = $1`, clerkID).Scan(&userID)
@@ -1456,6 +1455,7 @@ func (s *UserService) GetYourMix(ctx context.Context, clerkID string) ([]DailyDr
 
 	return posts, nil
 }
+
 func (s *UserService) GetMixTimeline(ctx context.Context, clerkID string) ([]DailyDrinkingPost, error) {
 	log.Println("getting user mix timeline")
 
@@ -1829,12 +1829,13 @@ func (s *UserService) SearchDbAlcohol(ctx context.Context, clerkID string, query
 	}
 
 	result := map[string]interface{}{
-		"item":       &item,
+		"item":         &item,
 		"isNewlyAdded": isNewlyAdded,
 	}
 
 	return result, nil
 }
+
 type AlcoholCollectionByType map[string][]AlcoholItem
 
 func (s *UserService) GetUserAlcoholCollection(ctx context.Context, clerkID string) (AlcoholCollectionByType, error) {
@@ -1922,6 +1923,32 @@ func (s *UserService) GetUserAlcoholCollection(ctx context.Context, clerkID stri
 
 	log.Printf("fetched user collection: %d items", getTotalCount(collection))
 	return collection, nil
+}
+
+func (s *UserService) RemoveAlcoholCollectionItem(ctx context.Context, clerkID string, itemIdForRemoval string) (bool, error) {
+	log.Println("removing item id from user collection")
+
+	var userID string
+	userQuery := `SELECT id FROM users WHERE clerk_id = $1`
+	err := s.db.QueryRow(ctx, userQuery, clerkID).Scan(&userID)
+	if err != nil {
+		log.Println("failed to get user ID:", err)
+		return false, fmt.Errorf("failed to get user: %w", err)
+	}
+
+	query := `
+   DELETE FROM alcohol_collection ac 
+	WHERE ac.user_id = $1 AND ac.alcohol_id = $2
+    `
+
+	rows, err := s.db.Query(ctx, query, userID, itemIdForRemoval)
+	if err != nil {
+		log.Println("failed to get user collection:", err)
+		return false, fmt.Errorf("failed to get user collection: %w", err)
+	}
+	defer rows.Close()
+
+	return true, nil
 }
 
 // Helper function to count total items
