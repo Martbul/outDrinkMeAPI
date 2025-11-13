@@ -352,6 +352,24 @@ func (h *UserHandler) AddDrinking(w http.ResponseWriter, r *http.Request) {
 	respondWithJSON(w, http.StatusOK, map[string]string{"message": "Drinking activity added successfully"})
 }
 
+func (h *UserHandler) GetMixVideoFeed(w http.ResponseWriter, r *http.Request) {
+    ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
+    defer cancel()
+
+    clerkID, ok := middleware.GetClerkID(ctx)
+    if !ok {
+        respondWithError(w, http.StatusInternalServerError, "Error while getting videos")
+        return
+    }
+
+    videos, err := h.userService.GetMixVideoFeed(ctx, clerkID)
+    if err != nil {
+        respondWithError(w, http.StatusInternalServerError, err.Error())
+        return
+    }
+
+    respondWithJSON(w, http.StatusOK, videos)
+}
 func (h *UserHandler) AddMixVideo(w http.ResponseWriter, r *http.Request) {
 	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
 	defer cancel()
