@@ -153,6 +153,9 @@ func main() {
 	protected.HandleFunc("/user/search-db-alcohol", userHandler.SearchDbAlcohol).Methods("GET")
 	protected.HandleFunc("/user/alcohol-collection", userHandler.GetUserAlcoholCollection).Methods("GET")
 	protected.HandleFunc("/user/alcohol-collection", userHandler.RemoveAlcoholCollectionItem).Methods("DELETE")
+	protected.HandleFunc("/user/mix-videos", userHandler.GetMixVideoFeed).Methods("GET")
+	protected.HandleFunc("/user/mix-videos", userHandler.AddMixVideo).Methods("POST")
+	protected.HandleFunc("/user/mix-video-chips", userHandler.AddChipsToVideo).Methods("POST")
 	protected.HandleFunc("/user/drunk-friend-thoughts", userHandler.GetDrunkFriendThoughts).Methods("GET")
 
 	// CORS configuration

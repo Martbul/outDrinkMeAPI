@@ -712,6 +712,26 @@ func (s *UserService) AddDrinking(ctx context.Context, clerkID string, drankToda
 	return nil
 }
 
+func (s *UserService) AddMixVideo(ctx context.Context, clerkID string, videoUrl string, caption *string, duration int) error {
+	var userID uuid.UUID
+	err := s.db.QueryRow(ctx, `SELECT id FROM users WHERE clerk_id = $1`, clerkID).Scan(&userID)
+	if err != nil {
+		return fmt.Errorf("user not found: %w", err)
+	}
+
+	query := `
+        INSERT INTO mix_videos (user_id, video_url, caption, duration, chips)
+        VALUES ($1, $2, $3, $4, 0)
+    `
+
+	_, err = s.db.Exec(ctx, query, userID, videoUrl, caption, duration)
+	if err != nil {
+		return fmt.Errorf("failed to insert mix video: %w", err)
+	}
+
+	return nil
+}
+
 func (s *UserService) RemoveDrinking(ctx context.Context, clerkID string, date time.Time) error {
 	var userID uuid.UUID
 	err := s.db.QueryRow(ctx, `SELECT id FROM users WHERE clerk_id = $1`, clerkID).Scan(&userID)
@@ -1456,6 +1476,149 @@ func (s *UserService) GetYourMix(ctx context.Context, clerkID string) ([]DailyDr
 	return posts, nil
 }
 
+type VideoPost struct {
+	ID           string    `json:"id"`
+	UserID       string    `json:"user_id"`
+	Username     string    `json:"username"`
+	UserImageUrl string    `json:"user_image_url"`
+	VideoUrl     string    `json:"video_url"`
+	Caption      string    `json:"caption"`
+	Chips        int       `json:"chips"`
+	Duration     int       `json:"duration"`
+	CreatedAt    time.Time `json:"created_at"`
+}
+
+func (s *UserService) GetMixVideoFeed(ctx context.Context, clerkID string) ([]VideoPost, error) {
+	log.Println("getting video feed")
+
+	var userID string
+	err := s.db.QueryRow(ctx, "SELECT id FROM users WHERE clerk_id = $1", clerkID).Scan(&userID)
+	if err != nil {
+		return nil, fmt.Errorf("user not found: %w", err)
+	}
+	log.Printf("Found user ID: %s for clerk_id: %s", userID, clerkID)
+
+	query := `
+	WITH friend_videos AS (
+		-- Get videos from friends (up to 30 videos = 60% of 50)
+		SELECT 
+			mv.id,
+			mv.user_id,
+			u.username,
+			u.image_url AS user_image_url,
+			mv.video_url,
+			mv.caption,
+			mv.chips,
+			mv.duration,
+			mv.created_at,
+			'friend' AS source_type
+		FROM mix_videos mv
+		JOIN users u ON u.id = mv.user_id
+		WHERE mv.user_id != $1
+			AND mv.created_at >= NOW() - INTERVAL '7 days'
+			AND mv.user_id IN (
+				-- Get all friends (bidirectional)
+				SELECT friend_id FROM friendships 
+				WHERE user_id = $1 AND status = 'accepted'
+				UNION
+				SELECT user_id FROM friendships 
+				WHERE friend_id = $1 AND status = 'accepted'
+			)
+		ORDER BY mv.created_at DESC
+		LIMIT 30
+	),
+	friend_count AS (
+		-- Count how many friend videos we got
+		SELECT COUNT(*) as cnt FROM friend_videos
+	),
+	other_videos AS (
+		-- Get videos from non-friends
+		-- Calculate limit: 50 - friend_count, with minimum of 20 (40% of 50)
+		SELECT 
+			mv.id,
+			mv.user_id,
+			u.username,
+			u.image_url AS user_image_url,
+			mv.video_url,
+			mv.caption,
+			mv.chips,
+			mv.duration,
+			mv.created_at,
+			'other' AS source_type
+		FROM mix_videos mv
+		JOIN users u ON u.id = mv.user_id
+		WHERE mv.user_id != $1
+			AND mv.created_at >= NOW() - INTERVAL '7 days'
+			AND mv.user_id NOT IN (
+				-- Exclude friends (bidirectional)
+				SELECT friend_id FROM friendships 
+				WHERE user_id = $1 AND status = 'accepted'
+				UNION
+				SELECT user_id FROM friendships 
+				WHERE friend_id = $1 AND status = 'accepted'
+			)
+		ORDER BY mv.created_at DESC
+		LIMIT GREATEST(20, 50 - (SELECT cnt FROM friend_count))
+	)
+	-- Combine and return final feed
+	SELECT 
+		id,
+		user_id,
+		username,
+		user_image_url,
+		video_url,
+		caption,
+		chips,
+		duration,
+		created_at
+	FROM (
+		SELECT * FROM friend_videos
+		UNION ALL
+		SELECT * FROM other_videos
+	) AS combined_feed
+	ORDER BY created_at DESC
+	LIMIT 50
+	`
+
+	rows, err := s.db.Query(ctx, query, userID)
+	if err != nil {
+		log.Println("failed to get video feed")
+		return nil, fmt.Errorf("failed to get video feed: %w", err)
+	}
+	defer rows.Close()
+
+	var videos []VideoPost
+	for rows.Next() {
+		var video VideoPost
+
+		err := rows.Scan(
+			&video.ID,
+			&video.UserID,
+			&video.Username,
+			&video.UserImageUrl,
+			&video.VideoUrl,
+			&video.Caption,
+			&video.Chips,
+			&video.Duration,
+			&video.CreatedAt,
+		)
+		if err != nil {
+			log.Println("failed to scan video")
+			return nil, fmt.Errorf("failed to scan video: %w", err)
+		}
+
+		videos = append(videos, video)
+	}
+
+	if err = rows.Err(); err != nil {
+		log.Println("error iterating videos")
+		return nil, fmt.Errorf("error iterating videos: %w", err)
+	}
+	log.Printf("Returning %d videos", len(videos))
+
+	return videos, nil
+}
+
 func (s *UserService) GetMixTimeline(ctx context.Context, clerkID string) ([]DailyDrinkingPost, error) {
 	log.Println("getting user mix timeline")
 
@@ -1536,6 +1699,35 @@ func (s *UserService) GetMixTimeline(ctx context.Context, clerkID string) ([]Dai
 	log.Println(posts)
 
 	return posts, nil
+}
+
+func (s *UserService) AddChipsToVideo(ctx context.Context, clerkID string, videoID string) error {
+	// Get user ID
+	var userID string
+	err := s.db.QueryRow(ctx, "SELECT id FROM users WHERE clerk_id = $1", clerkID).Scan(&userID)
+	if err != nil {
+		return fmt.Errorf("user not found: %w", err)
+	}
+
+	// Insert like (ignore if already exists)
+	_, err = s.db.Exec(ctx,
+		"INSERT INTO mix_video_likes (video_id, user_id) VALUES ($1, $2) ON CONFLICT DO NOTHING",
+		videoID, userID,
+	)
+	if err != nil {
+		return fmt.Errorf("failed to like video: %w", err)
+	}
+
+	// Increment chips
+	_, err = s.db.Exec(ctx,
+		"UPDATE mix_videos SET chips = COALESCE(chips, 0) + 1 WHERE id = $1",
+		videoID,
+	)
+	if err != nil {
+		return fmt.Errorf("failed to increment chips: %w", err)
+	}
+
+	return nil
 }
 
 func (s *UserService) getUsersByIDs(ctx context.Context, clerkIDs []string) ([]user.User, error) {
