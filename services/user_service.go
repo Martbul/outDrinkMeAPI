@@ -1477,16 +1477,18 @@ func (s *UserService) GetYourMix(ctx context.Context, clerkID string) ([]DailyDr
 }
 
 type VideoPost struct {
-	ID           string
-	UserID       string
-	Username     string
-	UserImageUrl string
-	VideoUrl     string
-	Caption      string
-	Chips        int
-	Duration     int
-	CreatedAt    string
+    ID           string `json:"id"`
+    UserID       string `json:"user_id"`
+    Username     string `json:"username"`
+    UserImageUrl string `json:"user_image_url"`
+    VideoUrl     string `json:"video_url"`
+    Caption      string `json:"caption"`
+    Chips        int    `json:"chips"`
+    Duration     int    `json:"duration"`
+    CreatedAt    string `json:"created_at"`
 }
+
+
 func (s *UserService) GetMixVideoFeed(ctx context.Context, clerkID string) ([]VideoPost, error) {
 	log.Println("getting video feed")
 
@@ -1698,6 +1700,35 @@ func (s *UserService) GetMixTimeline(ctx context.Context, clerkID string) ([]Dai
 	log.Println(posts)
 
 	return posts, nil
+}
+
+func (s *UserService) AddChipsToVideo(ctx context.Context, clerkID string, videoID string) error {
+	// Get user ID
+	var userID string
+	err := s.db.QueryRow(ctx, "SELECT id FROM users WHERE clerk_id = $1", clerkID).Scan(&userID)
+	if err != nil {
+		return fmt.Errorf("user not found: %w", err)
+	}
+
+	// Insert like (ignore if already exists)
+	_, err = s.db.Exec(ctx,
+		"INSERT INTO mix_video_likes (video_id, user_id) VALUES ($1, $2) ON CONFLICT DO NOTHING",
+		videoID, userID,
+	)
+	if err != nil {
+		return fmt.Errorf("failed to like video: %w", err)
+	}
+
+	// Increment chips
+	_, err = s.db.Exec(ctx,
+		"UPDATE mix_videos SET chips = COALESCE(chips, 0) + 1 WHERE id = $1",
+		videoID,
+	)
+	if err != nil {
+		return fmt.Errorf("failed to increment chips: %w", err)
+	}
+
+	return nil
 }
 
 func (s *UserService) getUsersByIDs(ctx context.Context, clerkIDs []string) ([]user.User, error) {

@@ -398,6 +398,38 @@ func (h *UserHandler) AddMixVideo(w http.ResponseWriter, r *http.Request) {
 
 	respondWithJSON(w, http.StatusOK, map[string]string{"message": "Drinking activity added successfully"})
 }
+func (h *UserHandler) AddChipsToVideo(w http.ResponseWriter, r *http.Request) {
+	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
+	defer cancel()
+
+	clerkID, ok := middleware.GetClerkID(ctx)
+	if !ok {
+		respondWithError(w, http.StatusInternalServerError, "Error while getting user")
+		return
+	}
+
+	var req struct {
+		VideoID string `json:"video_id"`
+	}
+
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		respondWithError(w, http.StatusBadRequest, "Invalid request body")
+		return
+	}
+
+	if req.VideoID == "" {
+		respondWithError(w, http.StatusBadRequest, "video_id is required")
+		return
+	}
+
+	if err := h.userService.AddChipsToVideo(ctx, clerkID, req.VideoID); err != nil {
+		respondWithError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+
+	respondWithJSON(w, http.StatusOK, map[string]string{"message": "Chips added successfully"})
+}
+
 
 func (h *UserHandler) RemoveDrinking(w http.ResponseWriter, r *http.Request) {
 	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
