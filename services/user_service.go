@@ -1477,17 +1477,16 @@ func (s *UserService) GetYourMix(ctx context.Context, clerkID string) ([]DailyDr
 }
 
 type VideoPost struct {
-    ID           string `json:"id"`
-    UserID       string `json:"user_id"`
-    Username     string `json:"username"`
-    UserImageUrl string `json:"user_image_url"`
-    VideoUrl     string `json:"video_url"`
-    Caption      string `json:"caption"`
-    Chips        int    `json:"chips"`
-    Duration     int    `json:"duration"`
-    CreatedAt    string `json:"created_at"`
+	ID           string    `json:"id"`
+	UserID       string    `json:"user_id"`
+	Username     string    `json:"username"`
+	UserImageUrl string    `json:"user_image_url"`
+	VideoUrl     string    `json:"video_url"`
+	Caption      string    `json:"caption"`
+	Chips        int       `json:"chips"`
+	Duration     int       `json:"duration"`
+	CreatedAt    time.Time `json:"created_at"`
 }
-
 
 func (s *UserService) GetMixVideoFeed(ctx context.Context, clerkID string) ([]VideoPost, error) {
 	log.Println("getting video feed")
