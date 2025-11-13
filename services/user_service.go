@@ -712,6 +712,27 @@ func (s *UserService) AddDrinking(ctx context.Context, clerkID string, drankToda
 	return nil
 }
 
+
+func (s *UserService) AddMixVideo(ctx context.Context, clerkID string, videoUrl string, caption *string, duration int) error {
+	var userID uuid.UUID
+	err := s.db.QueryRow(ctx, `SELECT id FROM users WHERE clerk_id = $1`, clerkID).Scan(&userID)
+	if err != nil {
+		return fmt.Errorf("user not found: %w", err)
+	}
+
+	query := `
+        INSERT INTO mix_videos (user_id, video_url, caption, duration, chips)
+        VALUES ($1, $2, $3, $4, 0)
+    `
+
+	_, err = s.db.Exec(ctx, query, userID, videoUrl, caption, duration)
+	if err != nil {
+		return fmt.Errorf("failed to insert mix video: %w", err)
+	}
+
+	return nil
+}
+
 func (s *UserService) RemoveDrinking(ctx context.Context, clerkID string, date time.Time) error {
 	var userID uuid.UUID
 	err := s.db.QueryRow(ctx, `SELECT id FROM users WHERE clerk_id = $1`, clerkID).Scan(&userID)

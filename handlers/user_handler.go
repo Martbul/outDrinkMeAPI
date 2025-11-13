@@ -324,7 +324,7 @@ func (h *UserHandler) AddDrinking(w http.ResponseWriter, r *http.Request) {
 		ImageUrl         *string `json:"image_url"`
 		LocationText     *string `json:"location_text"`
 		MentionedBuddies []struct {
-			ClerkID string `json:"clerkId"` 
+			ClerkID string `json:"clerkId"`
 		} `json:"mentioned_buddies"`
 	}
 
@@ -352,6 +352,34 @@ func (h *UserHandler) AddDrinking(w http.ResponseWriter, r *http.Request) {
 	respondWithJSON(w, http.StatusOK, map[string]string{"message": "Drinking activity added successfully"})
 }
 
+func (h *UserHandler) AddMixVideo(w http.ResponseWriter, r *http.Request) {
+	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
+	defer cancel()
+
+	clearkID, ok := middleware.GetClerkID(ctx)
+	if !ok {
+		respondWithError(w, http.StatusInternalServerError, "Error while adding drinking")
+		return
+	}
+
+	var req struct {
+		VideoUrl string  `json:"video_url"`
+		Caption  *string `json:"caption"`
+		Duration int     `json:"duration"`
+	}
+
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "invalid request body", http.StatusBadRequest)
+		return
+	}
+
+	if err := h.userService.AddMixVideo(ctx, clearkID, req.VideoUrl, req.Caption, req.Duration); err != nil {
+		respondWithError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+
+	respondWithJSON(w, http.StatusOK, map[string]string{"message": "Drinking activity added successfully"})
+}
 
 func (h *UserHandler) RemoveDrinking(w http.ResponseWriter, r *http.Request) {
 	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
@@ -379,8 +407,6 @@ func (h *UserHandler) RemoveDrinking(w http.ResponseWriter, r *http.Request) {
 	} else {
 		date = time.Now().Truncate(24 * time.Hour)
 	}
-
-
 
 	if err := h.userService.RemoveDrinking(ctx, clearkID, date); err != nil {
 		respondWithError(w, http.StatusInternalServerError, err.Error())
@@ -514,15 +540,13 @@ func (h *UserHandler) RemoveAlcoholCollectionItem(w http.ResponseWriter, r *http
 		return
 	}
 
-
-		itemIdForRemoval := r.URL.Query().Get("itemId")
+	itemIdForRemoval := r.URL.Query().Get("itemId")
 	if itemIdForRemoval == "" {
 		respondWithError(w, http.StatusBadRequest, "Search query parameter 'itemIdForRemoval' is required")
 		return
 	}
 
-
-	success, err := h.userService.RemoveAlcoholCollectionItem(ctx, clearkID,itemIdForRemoval)
+	success, err := h.userService.RemoveAlcoholCollectionItem(ctx, clearkID, itemIdForRemoval)
 	if err != nil {
 		respondWithError(w, http.StatusInternalServerError, err.Error())
 		return
