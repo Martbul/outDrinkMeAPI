@@ -12,6 +12,7 @@ import (
 	"net/http"
 	"os"
 
+	"outDrinkMeAPI/internal/clerk"
 	"outDrinkMeAPI/internal/user"
 	"outDrinkMeAPI/services"
 )
@@ -26,44 +27,7 @@ func NewWebhookHandler(userService *services.UserService) *WebhookHandler {
 	}
 }
 
-type ClerkWebhookEvent struct {
-	Data   json.RawMessage `json:"data"`
-	Object string          `json:"object"`
-	Type   string          `json:"type"`
-}
 
-type ClerkUserData struct {
-	ID                     string                    `json:"id"`
-	EmailAddresses         []ClerkEmailAddress       `json:"email_addresses"`
-	FirstName              string                    `json:"first_name"`
-	LastName               string                    `json:"last_name"`
-	Username               string                    `json:"username"`
-	ImageURL               string                    `json:"image_url"`
-	ProfileImageURL        string                    `json:"profile_image_url"`
-	ExternalAccounts       []ClerkExternalAccount    `json:"external_accounts"`
-	PrimaryEmailAddressID  string                    `json:"primary_email_address_id"`
-}
-
-type ClerkEmailAddress struct {
-	EmailAddress string                 `json:"email_address"`
-	ID           string                 `json:"id"`
-	Verification ClerkEmailVerification `json:"verification"`
-}
-
-type ClerkEmailVerification struct {
-	Status string `json:"status"`
-}
-
-type ClerkExternalAccount struct {
-	Provider           string `json:"provider"`
-	EmailAddress       string `json:"email_address"`
-	FirstName          string `json:"first_name"`
-	LastName           string `json:"last_name"`
-	Username           string `json:"username"`
-	Picture            string `json:"picture"`
-	VerifiedAt         string `json:"verified_at"`
-	GoogleID           string `json:"google_id"`
-}
 
 func (h *WebhookHandler) HandleClerkWebhook(w http.ResponseWriter, r *http.Request) {
 	// Verify webhook signature
@@ -82,7 +46,7 @@ func (h *WebhookHandler) HandleClerkWebhook(w http.ResponseWriter, r *http.Reque
 	}
 
 	// Parse event
-	var event ClerkWebhookEvent
+	var event clerk.ClerkWebhookEvent
 	if err := json.Unmarshal(body, &event); err != nil {
 		log.Printf("Error parsing webhook: %v", err)
 		http.Error(w, "Error parsing webhook", http.StatusBadRequest)
@@ -130,7 +94,7 @@ func (h *WebhookHandler) HandleClerkWebhook(w http.ResponseWriter, r *http.Reque
 }
 
 func (h *WebhookHandler) handleUserCreated(ctx context.Context, data json.RawMessage) error {
-	var userData ClerkUserData
+	var userData clerk.ClerkUserData
 	if err := json.Unmarshal(data, &userData); err != nil {
 		return fmt.Errorf("failed to unmarshal user data: %w", err)
 	}
@@ -179,7 +143,7 @@ func (h *WebhookHandler) handleUserCreated(ctx context.Context, data json.RawMes
 }
 
 func (h *WebhookHandler) handleUserUpdated(ctx context.Context, data json.RawMessage) error {
-	var userData ClerkUserData
+	var userData clerk.ClerkUserData
 	if err := json.Unmarshal(data, &userData); err != nil {
 		return fmt.Errorf("failed to unmarshal user data: %w", err)
 	}
