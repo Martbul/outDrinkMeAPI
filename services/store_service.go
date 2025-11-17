@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"outDrinkMeAPI/internal/store"
+	"outDrinkMeAPI/internal/user"
 	"time"
 
 	"github.com/google/uuid"
@@ -66,8 +67,6 @@ func (s *StoreService) GetStore(ctx context.Context) (map[string][]*store.Item, 
 
 	return all_store_items, nil
 }
-
-// ! fx this, ïs pro_only no longer exists and many others
 func (s *StoreService) PurchaseStoreItem(ctx context.Context, clerkID string, itemId string) (*store.Purchase, error) {
 	// Start a transaction
 	tx, err := s.db.Begin(ctx)
@@ -104,14 +103,25 @@ func (s *StoreService) PurchaseStoreItem(ctx context.Context, clerkID string, it
 		return nil, fmt.Errorf("store item is not available for purchase")
 	}
 
-	var userID uuid.UUID
-	userQuery := `SELECT id FROM users WHERE clerk_id = $1`
-	err = s.db.QueryRow(ctx, userQuery, clerkID).Scan(&userID)
+	var user user.User // Assuming you have a models package for User
+	userQuery := `SELECT id, gems FROM users WHERE clerk_id = $1`
+	err = tx.QueryRow(ctx, userQuery, clerkID).Scan(&user.ID, &user.Gems)
 	if err != nil {
 		if err == pgx.ErrNoRows {
 			return nil, fmt.Errorf("user not found")
 		}
 		return nil, fmt.Errorf("failed to get user: %w", err)
+	}
+
+	// Parse user.ID (string) to uuid.UUID for use in other structs
+	userIDUUID, err := uuid.Parse(user.ID)
+	if err != nil {
+		return nil, fmt.Errorf("invalid user ID from database: %w", err)
+	}
+
+	// Check if user has enough gems
+	if user.Gems < int(item.BasePrice) { // Assuming BasePrice is an int or can be safely cast
+		return nil, fmt.Errorf("user does not have enough gems to purchase this item")
 	}
 
 	// Check if user already has this item in inventory
@@ -121,7 +131,7 @@ func (s *StoreService) PurchaseStoreItem(ctx context.Context, clerkID string, it
 		FROM user_inventory
 		WHERE user_id = $1 AND item_id = $2
 	`
-	err = tx.QueryRow(ctx, checkInventoryQuery, userID, itemUUID).Scan(
+	err = tx.QueryRow(ctx, checkInventoryQuery, userIDUUID, itemUUID).Scan( // Use userIDUUID here
 		&existingInventoryItem.ID,
 		&existingInventoryItem.Quantity,
 	)
@@ -130,12 +140,24 @@ func (s *StoreService) PurchaseStoreItem(ctx context.Context, clerkID string, it
 		return nil, fmt.Errorf("failed to check existing inventory item: %w", err)
 	}
 
+	// Deduct item price from user's gems
+	newGems := user.Gems - int(item.BasePrice)
+	updateUserGemsQuery := `
+		UPDATE users
+		SET gems = $1
+		WHERE id = $2
+	`
+	_, err = tx.Exec(ctx, updateUserGemsQuery, newGems, user.ID) // user.ID is a string here, which is fine for the WHERE clause
+	if err != nil {
+		return nil, fmt.Errorf("failed to deduct gems from user: %w", err)
+	}
+
 	if err == pgx.ErrNoRows {
 		// User does not own this item, proceed with new purchase and add to inventory
 		// Create purchase record
 		purchase := store.Purchase{
 			ID:           uuid.New(),
-			UserID:       userID,
+			UserID:       userIDUUID, // Use userIDUUID here
 			ItemID:       &itemUUID,
 			PurchaseType: "store_item",
 			AmountPaid:   &item.BasePrice,
@@ -168,7 +190,7 @@ func (s *StoreService) PurchaseStoreItem(ctx context.Context, clerkID string, it
 		// Add item to user's inventory
 		inventoryItem := store.InventoryItem{
 			ID:         uuid.New(),
-			UserID:     userID,
+			UserID:     userIDUUID, // Use userIDUUID here
 			ItemID:     itemUUID,
 			Quantity:   1,
 			IsEquipped: false,
@@ -218,7 +240,7 @@ func (s *StoreService) PurchaseStoreItem(ctx context.Context, clerkID string, it
 		// Create a purchase record even if just incrementing quantity, to log the purchase event
 		purchase := store.Purchase{
 			ID:           uuid.New(),
-			UserID:       userID,
+			UserID:       userIDUUID, // Use userIDUUID here
 			ItemID:       &itemUUID,
 			PurchaseType: "store_item_quantity_increment", // A different type to distinguish
 			AmountPaid:   &item.BasePrice,                 // Still record the price paid
@@ -256,7 +278,6 @@ func (s *StoreService) PurchaseStoreItem(ctx context.Context, clerkID string, it
 		return &purchase, nil
 	}
 }
-
 //TODO:
 // func (s *StoreService) BuyGems(ctx context.Context) (map[string][]*store.Item, error) {}
 // func (s *StoreService) PurchaseGems(ctx context.Context ,clerkID string, gemsCount int) (bool, error) {
