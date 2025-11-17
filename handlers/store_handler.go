@@ -43,7 +43,7 @@ func (h *StoreHandler) PurchaseStoreItem(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	var req store.PurchaseRequest
+	var req store.PurchaseItemRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		respondWithError(w, http.StatusBadRequest, "Invalid request body")
 		return
@@ -57,3 +57,30 @@ func (h *StoreHandler) PurchaseStoreItem(w http.ResponseWriter, r *http.Request)
 
 	respondWithJSON(w, http.StatusOK, user)
 }
+
+
+
+// func (h *StoreHandler) PurchaseGems(w http.ResponseWriter, r *http.Request) {
+// 	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
+// 	defer cancel()
+
+// 	clerkID, ok := middleware.GetClerkID(ctx)
+// 	if !ok {
+// 		respondWithError(w, http.StatusUnauthorized, "User not authenticated")
+// 		return
+// 	}
+
+// 	var req store.PurchaseGemsRequest
+// 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+// 		respondWithError(w, http.StatusBadRequest, "Invalid request body")
+// 		return
+// 	}
+
+// 	user, err := h.storeService.PurchaseGems(ctx, clerkID, req.GemsCount)
+// 	if err != nil {
+// 		respondWithError(w, http.StatusNotFound, "User not found")
+// 		return
+// 	}
+
+// 	respondWithJSON(w, http.StatusOK, user)
+// }

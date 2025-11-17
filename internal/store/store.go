@@ -82,9 +82,14 @@ type EquippedItem struct {
 	EquippedAt time.Time `json:"equipped_at" db:"equipped_at"`
 }
 
-type PurchaseRequest struct {
+type PurchaseItemRequest struct {
 	ItemID string `json:"item_id" validate:"required"`
 }
+
+type PurchaseGemsRequest struct {
+	GemsID string `json:"gems_id" validate:"required"`
+}
+
 
 type EquipItemRequest struct {
 	ItemID string `json:"item_id" validate:"required"`
