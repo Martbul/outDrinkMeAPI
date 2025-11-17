@@ -2088,7 +2088,6 @@ func (s *UserService) RemoveAlcoholCollectionItem(ctx context.Context, clerkID s
 }
 
 func (s *UserService) GetUserInventory(ctx context.Context, clerkID string) ([]*store.InventoryItem, error) {
-	// Get user ID from clerk ID
 	var userID uuid.UUID
 	userQuery := `SELECT id FROM users WHERE clerk_id = $1`
 	err := s.db.QueryRow(ctx, userQuery, clerkID).Scan(&userID)
@@ -2099,7 +2098,6 @@ func (s *UserService) GetUserInventory(ctx context.Context, clerkID string) ([]*
 		return nil, fmt.Errorf("failed to get user: %w", err)
 	}
 
-	// Get all inventory items for the user
 	query := `
 		SELECT
 			i.id,
@@ -2109,7 +2107,7 @@ func (s *UserService) GetUserInventory(ctx context.Context, clerkID string) ([]*
 			i.is_equipped,
 			i.acquired_at,
 			i.expires_at
-		FROM inventory_items i
+		FROM user_inventory i
 		WHERE i.user_id = $1
 		ORDER BY i.acquired_at DESC
 	`
@@ -2146,7 +2144,9 @@ func (s *UserService) GetUserInventory(ctx context.Context, clerkID string) ([]*
 }
 
 //TODO: Creae theese
-// func (s *UserService) EquipItem(ctx context.Context, clerkID string, itemIdForRemoval string) (bool, error) {}
+func (s *UserService) EquipItem(ctx context.Context, clerkID string, itemIdForRemoval string) (bool, error) {
+	return true, nil
+}
 
 
 // Helper function to count total items
