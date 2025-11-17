@@ -76,12 +76,6 @@ func init() {
 
 	// Initialize services
 	userService = services.NewUserService(dbPool)
-
-	// Initialize database schema
-	// if err := userService.InitSchema(ctx); err != nil {
-	// 	log.Fatal("Failed to initialize schema:", err)
-	// }
-	// log.Println("Database schema initialized")
 }
 
 func main() {
@@ -96,6 +90,13 @@ func main() {
 	webhookHandler := handlers.NewWebhookHandler(userService)
 
 	r := mux.NewRouter()
+
+	// Serve static files from assets directory
+	// Images will be accessible at: http://localhost:3333/assets/images/photo.jpg
+	assetsDir := "./assets"
+	fs := http.FileServer(http.Dir(assetsDir))
+	r.PathPrefix("/assets/").Handler(http.StripPrefix("/assets/", fs))
+	log.Printf("Serving static files from %s at /assets/", assetsDir)
 
 	r.HandleFunc("/health", func(w http.ResponseWriter, r *http.Request) {
 		ctx, cancel := context.WithTimeout(r.Context(), 2*time.Second)
@@ -155,7 +156,6 @@ func main() {
 	protected.HandleFunc("/user/alcohol-collection", userHandler.RemoveAlcoholCollectionItem).Methods("DELETE")
 	protected.HandleFunc("/user/mix-videos", userHandler.GetMixVideoFeed).Methods("GET")
 	protected.HandleFunc("/user/mix-videos", userHandler.AddMixVideo).Methods("POST")
-	protected.HandleFunc("/user/feedback", userHandler.AddUserFeedback).Methods("POST")
 	protected.HandleFunc("/user/mix-video-chips", userHandler.AddChipsToVideo).Methods("POST")
 	protected.HandleFunc("/user/drunk-friend-thoughts", userHandler.GetDrunkFriendThoughts).Methods("GET")
 
