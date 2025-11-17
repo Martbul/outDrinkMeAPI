@@ -20,9 +20,10 @@ import (
 )
 
 var (
-	dbPool      *pgxpool.Pool
-	userService *services.UserService
-	docService  *services.DocService
+	dbPool       *pgxpool.Pool
+	userService  *services.UserService
+	docService   *services.DocService
+	storeService *services.StoreService
 )
 
 func init() {
@@ -87,6 +88,7 @@ func main() {
 	// Initialize handlers
 	userHandler := handlers.NewUserHandler(userService)
 	docHandler := handlers.NewDocHandler(docService)
+	storeHandler := handlers.NewStoreHandler(storeService)
 	webhookHandler := handlers.NewWebhookHandler(userService)
 
 	r := mux.NewRouter()
@@ -158,6 +160,10 @@ func main() {
 	protected.HandleFunc("/user/mix-videos", userHandler.AddMixVideo).Methods("POST")
 	protected.HandleFunc("/user/mix-video-chips", userHandler.AddChipsToVideo).Methods("POST")
 	protected.HandleFunc("/user/drunk-friend-thoughts", userHandler.GetDrunkFriendThoughts).Methods("GET")
+	protected.HandleFunc("/user/inventory", userHandler.GetUserInventory).Methods("GET")
+
+	protected.HandleFunc("/store", storeHandler.GetStore).Methods("GET")
+	protected.HandleFunc("/store/purchase", storeHandler.PurchaseStoreItem).Methods("POST")
 
 	// CORS configuration
 	corsHandler := gorilllaHandlers.CORS(

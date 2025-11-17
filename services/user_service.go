@@ -11,6 +11,7 @@ import (
 	"outDrinkMeAPI/internal/leaderboard"
 	"outDrinkMeAPI/internal/mix"
 	"outDrinkMeAPI/internal/stats"
+	"outDrinkMeAPI/internal/store"
 	"outDrinkMeAPI/internal/user"
 	"strings"
 	"time"
@@ -2085,6 +2086,68 @@ func (s *UserService) RemoveAlcoholCollectionItem(ctx context.Context, clerkID s
 
 	return true, nil
 }
+
+func (s *UserService) GetUserInventory(ctx context.Context, clerkID string) ([]*store.InventoryItem, error) {
+	// Get user ID from clerk ID
+	var userID uuid.UUID
+	userQuery := `SELECT id FROM users WHERE clerk_id = $1`
+	err := s.db.QueryRow(ctx, userQuery, clerkID).Scan(&userID)
+	if err != nil {
+		if err == pgx.ErrNoRows {
+			return nil, fmt.Errorf("user not found")
+		}
+		return nil, fmt.Errorf("failed to get user: %w", err)
+	}
+
+	// Get all inventory items for the user
+	query := `
+		SELECT
+			i.id,
+			i.user_id,
+			i.item_id,
+			i.quantity,
+			i.is_equipped,
+			i.acquired_at,
+			i.expires_at
+		FROM inventory_items i
+		WHERE i.user_id = $1
+		ORDER BY i.acquired_at DESC
+	`
+
+	rows, err := s.db.Query(ctx, query, userID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to query inventory: %w", err)
+	}
+	defer rows.Close()
+
+	var inventory []*store.InventoryItem
+	for rows.Next() {
+		var item store.InventoryItem
+		err := rows.Scan(
+			&item.ID,
+			&item.UserID,
+			&item.ItemID,
+			&item.Quantity,
+			&item.IsEquipped,
+			&item.AcquiredAt,
+			&item.ExpiresAt,
+		)
+		if err != nil {
+			return nil, fmt.Errorf("failed to scan inventory item: %w", err)
+		}
+		inventory = append(inventory, &item)
+	}
+
+	if err = rows.Err(); err != nil {
+		return nil, fmt.Errorf("error iterating inventory rows: %w", err)
+	}
+
+	return inventory, nil
+}
+
+//TODO: Creae theese
+// func (s *UserService) EquipItem(ctx context.Context, clerkID string, itemIdForRemoval string) (bool, error) {}
+
 
 // Helper function to count total items
 func getTotalCount(collection collection.AlcoholCollectionByType) int {

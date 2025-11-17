@@ -589,6 +589,25 @@ func (h *UserHandler) GetDrunkFriendThoughts(w http.ResponseWriter, r *http.Requ
 	respondWithJSON(w, http.StatusOK, drunkFriendThoughts)
 }
 
+func (h *UserHandler) GetUserInventory(w http.ResponseWriter, r *http.Request) {
+	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
+	defer cancel()
+
+	clearkID, ok := middleware.GetClerkID(ctx)
+	if !ok {
+		respondWithError(w, http.StatusInternalServerError, "Error while getting user inventory")
+		return
+	}
+
+	user_inventory, err := h.userService.GetUserInventory(ctx, clearkID)
+	if err != nil {
+		respondWithError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+
+	respondWithJSON(w, http.StatusOK, user_inventory)
+}
+
 func (h *UserHandler) GetUserAlcoholCollection(w http.ResponseWriter, r *http.Request) {
 	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
 	defer cancel()
