@@ -29,7 +29,6 @@ func (s *StoreService) GetStore(ctx context.Context) (map[string][]*store.Item, 
         s.item_type,
         s.image_url,
         s.base_price,
-        s.is_pro_only,
         s.is_active
     FROM store_items s
     `
@@ -52,7 +51,6 @@ func (s *StoreService) GetStore(ctx context.Context) (map[string][]*store.Item, 
 			&item.ItemType,
 			&item.ImageURL,
 			&item.BasePrice,
-			&item.IsProOnly,
 			&item.IsActive,
 		)
 		if err != nil {
@@ -68,7 +66,7 @@ func (s *StoreService) GetStore(ctx context.Context) (map[string][]*store.Item, 
 	return all_store_items, nil
 }
 
-
+//! fx this, ïs pro_only no longer exists and many others
 func (s *StoreService) PurchaseStoreItem(ctx context.Context, clerkId string, itemId string) (*store.Purchase, error) {
 	// Start a transaction
 	tx, err := s.db.Begin(ctx)
@@ -93,7 +91,6 @@ func (s *StoreService) PurchaseStoreItem(ctx context.Context, clerkId string, it
 	err = tx.QueryRow(ctx, itemQuery, itemUUID).Scan(
 		&item.ID,
 		&item.BasePrice,
-		&item.IsProOnly,
 		&item.IsActive,
 	)
 	if err != nil {

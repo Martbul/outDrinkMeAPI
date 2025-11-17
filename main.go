@@ -77,6 +77,7 @@ func init() {
 
 	// Initialize services
 	userService = services.NewUserService(dbPool)
+	storeService = services.NewStoreService(dbPool)
 }
 
 func main() {

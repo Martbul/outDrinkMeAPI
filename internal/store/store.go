@@ -19,30 +19,23 @@ type Category struct {
 }
 
 type Item struct {
-	ID                 uuid.UUID       `json:"id" db:"id"`
-	CategoryID         *uuid.UUID      `json:"category_id" db:"category_id"`
-	Name               string          `json:"name" db:"name"`
-	Description        *string         `json:"description" db:"description"`
-	ItemType           string          `json:"item_type" db:"item_type"`
-	ImageURL           *string         `json:"image_url" db:"image_url"`
-	BasePrice          int             `json:"base_price" db:"base_price"`
-	OriginalPrice      *int            `json:"original_price" db:"original_price"`
-	IsFeatured         bool            `json:"is_featured" db:"is_featured"`
-	IsProOnly          bool            `json:"is_pro_only" db:"is_pro_only"`
-	IsActive           bool            `json:"is_active" db:"is_active"`
-	RequiresRealMoney  bool            `json:"requires_real_money" db:"requires_real_money"`
-	RealMoneyPrice     *string         `json:"real_money_price" db:"real_money_price"`
-	StockQuantity      *int            `json:"stock_quantity" db:"stock_quantity"`
-	Metadata           map[string]any  `json:"metadata" db:"metadata"`
-	CreatedAt          time.Time       `json:"created_at" db:"created_at"`
-	UpdatedAt          time.Time       `json:"updated_at" db:"updated_at"`
+	ID          uuid.UUID `json:"id" db:"id"`
+	CategoryID  uuid.UUID `json:"category_id" db:"category_id"`
+	Name        string    `json:"name" db:"name"`
+	Description string    `json:"description" db:"description"`
+	ItemType    string    `json:"item_type" db:"item_type"`
+	ImageURL    string    `json:"image_url" db:"image_url"`
+	BasePrice   int       `json:"base_price" db:"base_price"`
+	IsActive    bool      `json:"is_active" db:"is_active"`
+	CreatedAt   time.Time `json:"created_at" db:"created_at"`
+	UpdatedAt   time.Time `json:"updated_at" db:"updated_at"`
 }
 
 type ItemWithDeal struct {
 	Item
-	HasDeal            bool      `json:"has_deal"`
-	DiscountPercentage *int      `json:"discount_percentage,omitempty"`
-	DiscountedPrice    *int      `json:"discounted_price,omitempty"`
+	HasDeal            bool       `json:"has_deal"`
+	DiscountPercentage *int       `json:"discount_percentage,omitempty"`
+	DiscountedPrice    *int       `json:"discounted_price,omitempty"`
 	DealEndDate        *time.Time `json:"deal_end_date,omitempty"`
 }
 
@@ -98,13 +91,12 @@ type EquipItemRequest struct {
 }
 
 type StoreResponse struct {
-	Categories      []*Category      `json:"categories"`
-	RegularDeals    []*ItemWithDeal  `json:"regular_deals"`
-	ProDeals        []*ItemWithDeal  `json:"pro_deals"`
-	Flags           []*ItemWithDeal  `json:"flags"`
-	SmokingDevices  []*ItemWithDeal  `json:"smoking_devices"`
-	Themes          []*ItemWithDeal  `json:"themes"`
-	GemPacks        []*ItemWithDeal  `json:"gem_packs"`
-	UserGemsBalance int              `json:"user_gems_balance"`
+	Categories      []*Category     `json:"categories"`
+	RegularDeals    []*ItemWithDeal `json:"regular_deals"`
+	ProDeals        []*ItemWithDeal `json:"pro_deals"`
+	Flags           []*ItemWithDeal `json:"flags"`
+	SmokingDevices  []*ItemWithDeal `json:"smoking_devices"`
+	Themes          []*ItemWithDeal `json:"themes"`
+	GemPacks        []*ItemWithDeal `json:"gem_packs"`
+	UserGemsBalance int             `json:"user_gems_balance"`
 }
-

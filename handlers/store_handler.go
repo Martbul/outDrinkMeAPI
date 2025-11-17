@@ -24,13 +24,13 @@ func (h *StoreHandler) GetStore(w http.ResponseWriter, r *http.Request) {
 	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
 	defer cancel()
 
-	user, err := h.storeService.GetStore(ctx)
+	store, err := h.storeService.GetStore(ctx)
 	if err != nil {
-		respondWithError(w, http.StatusNotFound, "User not found")
+		respondWithError(w, http.StatusNotFound, "store isnt available")
 		return
 	}
 
-	respondWithJSON(w, http.StatusOK, user)
+	respondWithJSON(w, http.StatusOK, store)
 }
 
 func (h *StoreHandler) PurchaseStoreItem(w http.ResponseWriter, r *http.Request) {
