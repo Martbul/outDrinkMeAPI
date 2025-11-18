@@ -69,8 +69,6 @@ func (s *StoreService) GetStore(ctx context.Context) (map[string][]*store.Item, 
 	return all_store_items, nil
 }
 
-
-//!FIX: Item is not added to user's inventory
 func (s *StoreService) PurchaseStoreItem(ctx context.Context, clerkID string, itemId string) (*store.Purchase, error) {
 	// Start a transaction
 	tx, err := s.db.Begin(ctx)
@@ -122,8 +120,20 @@ func (s *StoreService) PurchaseStoreItem(ctx context.Context, clerkID string, it
 	}
 
 	// Check if user has enough gems
-	if user.Gems < int(item.BasePrice) { // Assuming BasePrice is an int or can be safely cast
+	if user.Gems < int(item.BasePrice) {
 		return nil, fmt.Errorf("user does not have enough gems to purchase this item")
+	}
+
+	// Deduct item price from user's gems FIRST
+	newGems := user.Gems - int(item.BasePrice)
+	updateUserGemsQuery := `
+		UPDATE users
+		SET gems = $1
+		WHERE id = $2
+	`
+	_, err = tx.Exec(ctx, updateUserGemsQuery, newGems, userIDUUID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to deduct gems from user: %w", err)
 	}
 
 	// Check if user already has this item in inventory
@@ -138,36 +148,26 @@ func (s *StoreService) PurchaseStoreItem(ctx context.Context, clerkID string, it
 		&existingInventoryItem.Quantity,
 	)
 
+	// Store whether item exists in inventory
+	itemExistsInInventory := (err == nil)
+
 	if err != nil && err != pgx.ErrNoRows {
 		return nil, fmt.Errorf("failed to check existing inventory item: %w", err)
 	}
 
-	log.Panicln("item in inventory",existingInventoryItem)
-
-	// Deduct item price from user's gems
-	newGems := user.Gems - int(item.BasePrice)
-	updateUserGemsQuery := `
-		UPDATE users
-		SET gems = $1
-		WHERE id = $2
-	`
-	_, err = tx.Exec(ctx, updateUserGemsQuery, newGems, user.ID) 
-	if err != nil {
-		return nil, fmt.Errorf("failed to deduct gems from user: %w", err)
+	// Create purchase record (common for both paths)
+	purchase := store.Purchase{
+		ID:           uuid.New(),
+		UserID:       userIDUUID,
+		ItemID:       &itemUUID,
+		AmountPaid:   &item.BasePrice,
+		Status:       "completed",
+		PurchasedAt:  time.Now(),
 	}
 
-	if err == pgx.ErrNoRows {
-		// User does not own this item, proceed with new purchase and add to inventory
-		// Create purchase record
-		purchase := store.Purchase{
-			ID:           uuid.New(),
-			UserID:       userIDUUID,
-			ItemID:       &itemUUID,
-			PurchaseType: "store_item",
-			AmountPaid:   &item.BasePrice,
-			Status:       "completed",
-			PurchasedAt:  time.Now(),
-		}
+	if !itemExistsInInventory {
+		// User does not own this item, add to inventory
+		purchase.PurchaseType = "store_item"
 
 		insertPurchaseQuery := `
 			INSERT INTO user_purchases (
@@ -194,7 +194,7 @@ func (s *StoreService) PurchaseStoreItem(ctx context.Context, clerkID string, it
 		// Add item to user's inventory
 		inventoryItem := store.InventoryItem{
 			ID:         uuid.New(),
-			UserID:     userIDUUID, // Use userIDUUID here
+			UserID:     userIDUUID,
 			ItemID:     itemUUID,
 			Quantity:   1,
 			IsEquipped: false,
@@ -218,19 +218,13 @@ func (s *StoreService) PurchaseStoreItem(ctx context.Context, clerkID string, it
 			inventoryItem.ExpiresAt,
 		)
 		if err != nil {
-			log.Println("FAILED OT ADD ITEM TO USER INVENTORY")
+			log.Println("FAILED TO ADD ITEM TO USER INVENTORY:", err)
 			return nil, fmt.Errorf("failed to add item to inventory: %w", err)
 		}
-
-		// Commit transaction
-		if err = tx.Commit(ctx); err != nil {
-			return nil, fmt.Errorf("failed to commit transaction: %w", err)
-		}
-
-		return &purchase, nil
-
 	} else {
 		// User already has this item, increment quantity
+		purchase.PurchaseType = "store_item_quantity_increment"
+
 		newQuantity := existingInventoryItem.Quantity + 1
 		updateInventoryQuery := `
 			UPDATE user_inventory
@@ -240,17 +234,6 @@ func (s *StoreService) PurchaseStoreItem(ctx context.Context, clerkID string, it
 		_, err = tx.Exec(ctx, updateInventoryQuery, newQuantity, existingInventoryItem.ID)
 		if err != nil {
 			return nil, fmt.Errorf("failed to update inventory item quantity: %w", err)
-		}
-
-		// Create a purchase record even if just incrementing quantity, to log the purchase event
-		purchase := store.Purchase{
-			ID:           uuid.New(),
-			UserID:       userIDUUID, // Use userIDUUID here
-			ItemID:       &itemUUID,
-			PurchaseType: "store_item_quantity_increment", // A different type to distinguish
-			AmountPaid:   &item.BasePrice,                 // Still record the price paid
-			Status:       "completed",
-			PurchasedAt:  time.Now(),
 		}
 
 		insertPurchaseQuery := `
@@ -274,16 +257,15 @@ func (s *StoreService) PurchaseStoreItem(ctx context.Context, clerkID string, it
 		if err != nil {
 			return nil, fmt.Errorf("failed to create purchase for quantity increment: %w", err)
 		}
-
-		// Commit transaction
-		if err = tx.Commit(ctx); err != nil {
-			return nil, fmt.Errorf("failed to commit transaction: %w", err)
-		}
-
-		return &purchase, nil
 	}
-}
 
+	// Commit transaction
+	if err = tx.Commit(ctx); err != nil {
+		return nil, fmt.Errorf("failed to commit transaction: %w", err)
+	}
+
+	return &purchase, nil
+}
 
 //TODO:
 // func (s *StoreService) BuyGems(ctx context.Context) (map[string][]*store.Item, error) {}
