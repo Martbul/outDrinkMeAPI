@@ -208,7 +208,7 @@ func (s *StoreService) PurchaseStoreItem(ctx context.Context, clerkID string, it
 			INSERT INTO user_inventory (
 				id, user_id, item_id, item_type, quantity, is_equipped, acquired_at, expires_at
 			)
-			VALUES ($1, $2, $3, $4, $5, $6, $7)
+			VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
 		`
 		_, err = tx.Exec(ctx, insertInventoryQuery,
 			inventoryItem.ID,
