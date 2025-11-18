@@ -51,7 +51,7 @@ func (h *StoreHandler) PurchaseStoreItem(w http.ResponseWriter, r *http.Request)
 
 	user, err := h.storeService.PurchaseStoreItem(ctx, clerkID, req.ItemID)
 	if err != nil {
-		respondWithError(w, http.StatusNotFound, "User not found")
+		respondWithError(w, http.StatusInternalServerError, "Failed to purchase item")
 		return
 	}
 

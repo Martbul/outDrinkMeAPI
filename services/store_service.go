@@ -214,7 +214,7 @@ func (s *StoreService) PurchaseStoreItem(ctx context.Context, clerkID string, it
 			inventoryItem.ID,
 			inventoryItem.UserID,
 			inventoryItem.ItemID,
-			inventoryItem.ItemID,
+			inventoryItem.ItemType,
 			inventoryItem.Quantity,
 			inventoryItem.IsEquipped,
 			inventoryItem.AcquiredAt,
