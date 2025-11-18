@@ -65,9 +65,10 @@ type Purchase struct {
 }
 
 type InventoryItem struct {
-	ID         uuid.UUID  `json:"id" db:"id"`
-	UserID     uuid.UUID  `json:"user_id" db:"user_id"`
-	ItemID     uuid.UUID  `json:"item_id" db:"item_id"`
+	ID       uuid.UUID `json:"id" db:"id"`
+	UserID   uuid.UUID `json:"user_id" db:"user_id"`
+	ItemID   uuid.UUID `json:"item_id" db:"item_id"`
+	ItemType string    `json:"item_type" db:"item_type"`
 	Quantity   int        `json:"quantity" db:"quantity"`
 	IsEquipped bool       `json:"is_equipped" db:"is_equipped"`
 	AcquiredAt time.Time  `json:"acquired_at" db:"acquired_at"`
@@ -89,7 +90,6 @@ type PurchaseItemRequest struct {
 type PurchaseGemsRequest struct {
 	GemsID string `json:"gems_id" validate:"required"`
 }
-
 
 type EquipItemRequest struct {
 	ItemID string `json:"item_id" validate:"required"`

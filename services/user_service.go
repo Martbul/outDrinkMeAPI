@@ -735,8 +735,6 @@ func (s *UserService) AddMixVideo(ctx context.Context, clerkID string, videoUrl 
 	return nil
 }
 
-
-
 func (s *UserService) AddUserFeedback(ctx context.Context, clerkID string, category string, feedbackText string) error {
 	var userID uuid.UUID
 	err := s.db.QueryRow(ctx, `SELECT id FROM users WHERE clerk_id = $1`, clerkID).Scan(&userID)
@@ -1298,7 +1296,6 @@ func (s *UserService) GetUserStats(ctx context.Context, clerkID string) (*stats.
 	return stats, nil
 }
 
-
 func (s *UserService) GetYourMix(ctx context.Context, clerkID string) ([]mix.DailyDrinkingPost, error) {
 	log.Println("getting feed")
 
@@ -1448,8 +1445,6 @@ func (s *UserService) GetYourMix(ctx context.Context, clerkID string) ([]mix.Dai
 
 	return posts, nil
 }
-
-
 
 func (s *UserService) GetMixVideoFeed(ctx context.Context, clerkID string) ([]mix.VideoPost, error) {
 	log.Println("getting video feed")
@@ -1752,7 +1747,6 @@ func (s *UserService) getUsersByIDs(ctx context.Context, clerkIDs []string) ([]u
 	return users, nil
 }
 
-
 func (s *UserService) GetDrunkFriendThoughts(ctx context.Context, clerkID string) ([]user.DrunkThought, error) {
 	log.Println("getting drunk friends thoughts")
 
@@ -1883,8 +1877,6 @@ func (s *UserService) GetAlcoholCollection(ctx context.Context, clerkID string) 
 	return thoughts, nil
 }
 
-
-
 func (s *UserService) SearchDbAlcohol(ctx context.Context, clerkID string, queryAlcoholName string) (map[string]interface{}, error) {
 	log.Println("searching alcohol collection")
 
@@ -1973,7 +1965,6 @@ func (s *UserService) SearchDbAlcohol(ctx context.Context, clerkID string, query
 
 	return result, nil
 }
-
 
 func (s *UserService) GetUserAlcoholCollection(ctx context.Context, clerkID string) (collection.AlcoholCollectionByType, error) {
 	log.Println("fetching user alcohol collection")
@@ -2087,7 +2078,7 @@ func (s *UserService) RemoveAlcoholCollectionItem(ctx context.Context, clerkID s
 	return true, nil
 }
 
-func (s *UserService) GetUserInventory(ctx context.Context, clerkID string) ([]*store.InventoryItem, error) {
+func (s *UserService) GetUserInventory(ctx context.Context, clerkID string) (map[string][]*store.InventoryItem, error) {
 	var userID uuid.UUID
 	userQuery := `SELECT id FROM users WHERE clerk_id = $1`
 	err := s.db.QueryRow(ctx, userQuery, clerkID).Scan(&userID)
@@ -2103,6 +2094,7 @@ func (s *UserService) GetUserInventory(ctx context.Context, clerkID string) ([]*
 			i.id,
 			i.user_id,
 			i.item_id,
+			i.item_type,
 			i.quantity,
 			i.is_equipped,
 			i.acquired_at,
@@ -2118,13 +2110,14 @@ func (s *UserService) GetUserInventory(ctx context.Context, clerkID string) ([]*
 	}
 	defer rows.Close()
 
-	var inventory []*store.InventoryItem
+	var inventory = make(map[string][]*store.InventoryItem)
 	for rows.Next() {
 		var item store.InventoryItem
 		err := rows.Scan(
 			&item.ID,
 			&item.UserID,
 			&item.ItemID,
+			&item.ItemType,
 			&item.Quantity,
 			&item.IsEquipped,
 			&item.AcquiredAt,
@@ -2133,7 +2126,7 @@ func (s *UserService) GetUserInventory(ctx context.Context, clerkID string) ([]*
 		if err != nil {
 			return nil, fmt.Errorf("failed to scan inventory item: %w", err)
 		}
-		inventory = append(inventory, &item)
+		inventory[item.ItemType] = append(inventory[item.ItemType], &item)
 	}
 
 	if err = rows.Err(); err != nil {
@@ -2143,11 +2136,10 @@ func (s *UserService) GetUserInventory(ctx context.Context, clerkID string) ([]*
 	return inventory, nil
 }
 
-//TODO: Creae theese
+// TODO: Creae theese
 func (s *UserService) EquipItem(ctx context.Context, clerkID string, itemIdForRemoval string) (bool, error) {
 	return true, nil
 }
-
 
 // Helper function to count total items
 func getTotalCount(collection collection.AlcoholCollectionByType) int {
