@@ -3,6 +3,7 @@ package services
 import (
 	"context"
 	"fmt"
+	"log"
 	"outDrinkMeAPI/internal/store"
 	"outDrinkMeAPI/internal/user"
 	"time"
@@ -67,6 +68,9 @@ func (s *StoreService) GetStore(ctx context.Context) (map[string][]*store.Item, 
 
 	return all_store_items, nil
 }
+
+
+//!FIX: Item is not added to user's inventory
 func (s *StoreService) PurchaseStoreItem(ctx context.Context, clerkID string, itemId string) (*store.Purchase, error) {
 	// Start a transaction
 	tx, err := s.db.Begin(ctx)
@@ -75,7 +79,6 @@ func (s *StoreService) PurchaseStoreItem(ctx context.Context, clerkID string, it
 	}
 	defer tx.Rollback(ctx)
 
-	// Parse itemId to UUID
 	itemUUID, err := uuid.Parse(itemId)
 	if err != nil {
 		return nil, fmt.Errorf("invalid item ID: %w", err)
@@ -103,7 +106,7 @@ func (s *StoreService) PurchaseStoreItem(ctx context.Context, clerkID string, it
 		return nil, fmt.Errorf("store item is not available for purchase")
 	}
 
-	var user user.User // Assuming you have a models package for User
+	var user user.User
 	userQuery := `SELECT id, gems FROM users WHERE clerk_id = $1`
 	err = tx.QueryRow(ctx, userQuery, clerkID).Scan(&user.ID, &user.Gems)
 	if err != nil {
@@ -113,7 +116,6 @@ func (s *StoreService) PurchaseStoreItem(ctx context.Context, clerkID string, it
 		return nil, fmt.Errorf("failed to get user: %w", err)
 	}
 
-	// Parse user.ID (string) to uuid.UUID for use in other structs
 	userIDUUID, err := uuid.Parse(user.ID)
 	if err != nil {
 		return nil, fmt.Errorf("invalid user ID from database: %w", err)
@@ -131,7 +133,7 @@ func (s *StoreService) PurchaseStoreItem(ctx context.Context, clerkID string, it
 		FROM user_inventory
 		WHERE user_id = $1 AND item_id = $2
 	`
-	err = tx.QueryRow(ctx, checkInventoryQuery, userIDUUID, itemUUID).Scan( // Use userIDUUID here
+	err = tx.QueryRow(ctx, checkInventoryQuery, userIDUUID, itemUUID).Scan(
 		&existingInventoryItem.ID,
 		&existingInventoryItem.Quantity,
 	)
@@ -140,6 +142,8 @@ func (s *StoreService) PurchaseStoreItem(ctx context.Context, clerkID string, it
 		return nil, fmt.Errorf("failed to check existing inventory item: %w", err)
 	}
 
+	log.Panicln("item in inventory",existingInventoryItem)
+
 	// Deduct item price from user's gems
 	newGems := user.Gems - int(item.BasePrice)
 	updateUserGemsQuery := `
@@ -147,7 +151,7 @@ func (s *StoreService) PurchaseStoreItem(ctx context.Context, clerkID string, it
 		SET gems = $1
 		WHERE id = $2
 	`
-	_, err = tx.Exec(ctx, updateUserGemsQuery, newGems, user.ID) // user.ID is a string here, which is fine for the WHERE clause
+	_, err = tx.Exec(ctx, updateUserGemsQuery, newGems, user.ID) 
 	if err != nil {
 		return nil, fmt.Errorf("failed to deduct gems from user: %w", err)
 	}
@@ -157,7 +161,7 @@ func (s *StoreService) PurchaseStoreItem(ctx context.Context, clerkID string, it
 		// Create purchase record
 		purchase := store.Purchase{
 			ID:           uuid.New(),
-			UserID:       userIDUUID, // Use userIDUUID here
+			UserID:       userIDUUID,
 			ItemID:       &itemUUID,
 			PurchaseType: "store_item",
 			AmountPaid:   &item.BasePrice,
@@ -214,6 +218,7 @@ func (s *StoreService) PurchaseStoreItem(ctx context.Context, clerkID string, it
 			inventoryItem.ExpiresAt,
 		)
 		if err != nil {
+			log.Println("FAILED OT ADD ITEM TO USER INVENTORY")
 			return nil, fmt.Errorf("failed to add item to inventory: %w", err)
 		}
 
@@ -278,6 +283,8 @@ func (s *StoreService) PurchaseStoreItem(ctx context.Context, clerkID string, it
 		return &purchase, nil
 	}
 }
+
+
 //TODO:
 // func (s *StoreService) BuyGems(ctx context.Context) (map[string][]*store.Item, error) {}
 // func (s *StoreService) PurchaseGems(ctx context.Context ,clerkID string, gemsCount int) (bool, error) {
