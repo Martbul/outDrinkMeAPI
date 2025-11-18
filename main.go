@@ -20,9 +20,10 @@ import (
 )
 
 var (
-	dbPool      *pgxpool.Pool
-	userService *services.UserService
-	docService  *services.DocService
+	dbPool       *pgxpool.Pool
+	userService  *services.UserService
+	docService   *services.DocService
+	storeService *services.StoreService
 )
 
 func init() {
@@ -76,12 +77,7 @@ func init() {
 
 	// Initialize services
 	userService = services.NewUserService(dbPool)
-
-	// Initialize database schema
-	// if err := userService.InitSchema(ctx); err != nil {
-	// 	log.Fatal("Failed to initialize schema:", err)
-	// }
-	// log.Println("Database schema initialized")
+	storeService = services.NewStoreService(dbPool)
 }
 
 func main() {
@@ -93,9 +89,17 @@ func main() {
 	// Initialize handlers
 	userHandler := handlers.NewUserHandler(userService)
 	docHandler := handlers.NewDocHandler(docService)
+	storeHandler := handlers.NewStoreHandler(storeService)
 	webhookHandler := handlers.NewWebhookHandler(userService)
 
 	r := mux.NewRouter()
+
+	// Serve static files from assets directory
+	// Images will be accessible at: http://localhost:3333/assets/images/photo.jpg
+	assetsDir := "./assets"
+	fs := http.FileServer(http.Dir(assetsDir))
+	r.PathPrefix("/assets/").Handler(http.StripPrefix("/assets/", fs))
+	log.Printf("Serving static files from %s at /assets/", assetsDir)
 
 	r.HandleFunc("/health", func(w http.ResponseWriter, r *http.Request) {
 		ctx, cancel := context.WithTimeout(r.Context(), 2*time.Second)
@@ -157,6 +161,11 @@ func main() {
 	protected.HandleFunc("/user/mix-videos", userHandler.AddMixVideo).Methods("POST")
 	protected.HandleFunc("/user/mix-video-chips", userHandler.AddChipsToVideo).Methods("POST")
 	protected.HandleFunc("/user/drunk-friend-thoughts", userHandler.GetDrunkFriendThoughts).Methods("GET")
+	protected.HandleFunc("/user/inventory", userHandler.GetUserInventory).Methods("GET")
+
+	protected.HandleFunc("/store", storeHandler.GetStore).Methods("GET")
+	protected.HandleFunc("/store/purchase/item", storeHandler.PurchaseStoreItem).Methods("POST")
+	// protected.HandleFunc("/store/purchase/gems", storeHandler.PurchaseGems).Methods("POST")
 
 	// CORS configuration
 	corsHandler := gorilllaHandlers.CORS(

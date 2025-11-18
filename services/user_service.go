@@ -7,8 +7,11 @@ import (
 	"log"
 	"outDrinkMeAPI/internal/achievement"
 	"outDrinkMeAPI/internal/calendar"
+	"outDrinkMeAPI/internal/collection"
 	"outDrinkMeAPI/internal/leaderboard"
+	"outDrinkMeAPI/internal/mix"
 	"outDrinkMeAPI/internal/stats"
+	"outDrinkMeAPI/internal/store"
 	"outDrinkMeAPI/internal/user"
 	"strings"
 	"time"
@@ -732,6 +735,26 @@ func (s *UserService) AddMixVideo(ctx context.Context, clerkID string, videoUrl 
 	return nil
 }
 
+func (s *UserService) AddUserFeedback(ctx context.Context, clerkID string, category string, feedbackText string) error {
+	var userID uuid.UUID
+	err := s.db.QueryRow(ctx, `SELECT id FROM users WHERE clerk_id = $1`, clerkID).Scan(&userID)
+	if err != nil {
+		return fmt.Errorf("user not found: %w", err)
+	}
+
+	query := `
+        INSERT INTO feedback (user_id, category, feedback_text)
+        VALUES ($1, $2, $3)
+    `
+
+	_, err = s.db.Exec(ctx, query, userID, category, feedbackText)
+	if err != nil {
+		return fmt.Errorf("failed to insert feedback: %w", err)
+	}
+
+	return nil
+}
+
 func (s *UserService) RemoveDrinking(ctx context.Context, clerkID string, date time.Time) error {
 	var userID uuid.UUID
 	err := s.db.QueryRow(ctx, `SELECT id FROM users WHERE clerk_id = $1`, clerkID).Scan(&userID)
@@ -1273,20 +1296,7 @@ func (s *UserService) GetUserStats(ctx context.Context, clerkID string) (*stats.
 	return stats, nil
 }
 
-type DailyDrinkingPost struct {
-	ID               string
-	UserID           string
-	UserImageURL     *string
-	Date             time.Time
-	DrankToday       bool
-	LoggedAt         time.Time
-	ImageURL         *string
-	LocationText     *string
-	MentionedBuddies []user.User
-	SourceType       string
-}
-
-func (s *UserService) GetYourMix(ctx context.Context, clerkID string) ([]DailyDrinkingPost, error) {
+func (s *UserService) GetYourMix(ctx context.Context, clerkID string) ([]mix.DailyDrinkingPost, error) {
 	log.Println("getting feed")
 
 	var userID string
@@ -1295,46 +1305,6 @@ func (s *UserService) GetYourMix(ctx context.Context, clerkID string) ([]DailyDr
 		return nil, fmt.Errorf("user not found: %w", err)
 	}
 	log.Printf("Found user ID: %s for clerk_id: %s", userID, clerkID)
-
-	// Debug: Check if there are ANY posts with images in the last 5 days
-	var totalPostsCount int
-	s.db.QueryRow(ctx, `
-		SELECT COUNT(*) 
-		FROM daily_drinking 
-		WHERE logged_at >= NOW() - INTERVAL '5 days'
-		AND image_url IS NOT NULL 
-		AND image_url != ''
-	`).Scan(&totalPostsCount)
-	log.Printf("Total posts with images in last 5 days: %d", totalPostsCount)
-
-	// Debug: Check friend count
-	var friendCount int
-	s.db.QueryRow(ctx, `
-		SELECT COUNT(DISTINCT friend_id) 
-		FROM (
-			SELECT friend_id FROM friendships WHERE user_id = $1 AND status = 'accepted'
-			UNION
-			SELECT user_id FROM friendships WHERE friend_id = $1 AND status = 'accepted'
-		) AS friends
-	`, userID).Scan(&friendCount)
-	log.Printf("User has %d friends", friendCount)
-
-	// Debug: Check posts from friends
-	var friendPostsCount int
-	s.db.QueryRow(ctx, `
-		SELECT COUNT(*) 
-		FROM daily_drinking dd
-		WHERE dd.user_id != $1
-		AND dd.logged_at >= NOW() - INTERVAL '5 days'
-		AND dd.image_url IS NOT NULL
-		AND dd.image_url != ''
-		AND dd.user_id IN (
-			SELECT friend_id FROM friendships WHERE user_id = $1 AND status = 'accepted'
-			UNION
-			SELECT user_id FROM friendships WHERE friend_id = $1 AND status = 'accepted'
-		)
-	`, userID).Scan(&friendPostsCount)
-	log.Printf("Posts from friends: %d", friendPostsCount)
 
 	query := `
 	WITH friend_posts AS (
@@ -1430,9 +1400,9 @@ func (s *UserService) GetYourMix(ctx context.Context, clerkID string) ([]DailyDr
 	}
 	defer rows.Close()
 
-	var posts []DailyDrinkingPost
+	var posts []mix.DailyDrinkingPost
 	for rows.Next() {
-		var post DailyDrinkingPost
+		var post mix.DailyDrinkingPost
 		var mentionedBuddyIDs []string // Scan as string array
 
 		err := rows.Scan(
@@ -1476,19 +1446,7 @@ func (s *UserService) GetYourMix(ctx context.Context, clerkID string) ([]DailyDr
 	return posts, nil
 }
 
-type VideoPost struct {
-	ID           string    `json:"id"`
-	UserID       string    `json:"user_id"`
-	Username     string    `json:"username"`
-	UserImageUrl string    `json:"user_image_url"`
-	VideoUrl     string    `json:"video_url"`
-	Caption      string    `json:"caption"`
-	Chips        int       `json:"chips"`
-	Duration     int       `json:"duration"`
-	CreatedAt    time.Time `json:"created_at"`
-}
-
-func (s *UserService) GetMixVideoFeed(ctx context.Context, clerkID string) ([]VideoPost, error) {
+func (s *UserService) GetMixVideoFeed(ctx context.Context, clerkID string) ([]mix.VideoPost, error) {
 	log.Println("getting video feed")
 
 	var userID string
@@ -1587,9 +1545,9 @@ func (s *UserService) GetMixVideoFeed(ctx context.Context, clerkID string) ([]Vi
 	}
 	defer rows.Close()
 
-	var videos []VideoPost
+	var videos []mix.VideoPost
 	for rows.Next() {
-		var video VideoPost
+		var video mix.VideoPost
 
 		err := rows.Scan(
 			&video.ID,
@@ -1619,7 +1577,7 @@ func (s *UserService) GetMixVideoFeed(ctx context.Context, clerkID string) ([]Vi
 	return videos, nil
 }
 
-func (s *UserService) GetMixTimeline(ctx context.Context, clerkID string) ([]DailyDrinkingPost, error) {
+func (s *UserService) GetMixTimeline(ctx context.Context, clerkID string) ([]mix.DailyDrinkingPost, error) {
 	log.Println("getting user mix timeline")
 
 	var userID string
@@ -1655,9 +1613,9 @@ func (s *UserService) GetMixTimeline(ctx context.Context, clerkID string) ([]Dai
 	}
 	defer rows.Close()
 
-	var posts []DailyDrinkingPost
+	var posts []mix.DailyDrinkingPost
 	for rows.Next() {
-		var post DailyDrinkingPost
+		var post mix.DailyDrinkingPost
 		var mentionedBuddyIDs []string // Scan as string array
 
 		err := rows.Scan(
@@ -1789,16 +1747,7 @@ func (s *UserService) getUsersByIDs(ctx context.Context, clerkIDs []string) ([]u
 	return users, nil
 }
 
-type DrunkThought struct {
-	ID           string    `json:"id"`
-	UserID       string    `json:"user_id"`
-	Username     string    `json:"username"`
-	UserImageURL string    `json:"user_image_url"`
-	Thought      string    `json:"thought"`
-	CreatedAt    time.Time `json:"created_at"`
-}
-
-func (s *UserService) GetDrunkFriendThoughts(ctx context.Context, clerkID string) ([]DrunkThought, error) {
+func (s *UserService) GetDrunkFriendThoughts(ctx context.Context, clerkID string) ([]user.DrunkThought, error) {
 	log.Println("getting drunk friends thoughts")
 
 	var userID string
@@ -1835,9 +1784,9 @@ func (s *UserService) GetDrunkFriendThoughts(ctx context.Context, clerkID string
 	}
 	defer rows.Close()
 
-	var thoughts []DrunkThought
+	var thoughts []user.DrunkThought
 	for rows.Next() {
-		var thought DrunkThought
+		var thought user.DrunkThought
 		err := rows.Scan(
 			&thought.ID,
 			&thought.UserID,
@@ -1863,7 +1812,7 @@ func (s *UserService) GetDrunkFriendThoughts(ctx context.Context, clerkID string
 	return thoughts, nil
 }
 
-func (s *UserService) GetAlcoholCollection(ctx context.Context, clerkID string) ([]DrunkThought, error) {
+func (s *UserService) GetAlcoholCollection(ctx context.Context, clerkID string) ([]user.DrunkThought, error) {
 	log.Println("getting alcohol collection")
 
 	var userID string
@@ -1900,9 +1849,9 @@ func (s *UserService) GetAlcoholCollection(ctx context.Context, clerkID string) 
 	}
 	defer rows.Close()
 
-	var thoughts []DrunkThought
+	var thoughts []user.DrunkThought
 	for rows.Next() {
-		var thought DrunkThought
+		var thought user.DrunkThought
 		err := rows.Scan(
 			&thought.ID,
 			&thought.UserID,
@@ -1928,19 +1877,9 @@ func (s *UserService) GetAlcoholCollection(ctx context.Context, clerkID string) 
 	return thoughts, nil
 }
 
-type AlcoholItem struct {
-	ID       string  `json:"id"`
-	Name     string  `json:"name"`
-	Type     string  `json:"type"`
-	ImageUrl *string `json:"image_url"`
-	Rarity   string  `json:"rarity"`
-	Abv      float32 `json:"abv"`
-}
-
 func (s *UserService) SearchDbAlcohol(ctx context.Context, clerkID string, queryAlcoholName string) (map[string]interface{}, error) {
 	log.Println("searching alcohol collection")
 
-	// First, get the user's UUID from clerk_id
 	var userID string
 	userQuery := `SELECT id FROM users WHERE clerk_id = $1`
 	err := s.db.QueryRow(ctx, userQuery, clerkID).Scan(&userID)
@@ -1973,7 +1912,7 @@ func (s *UserService) SearchDbAlcohol(ctx context.Context, clerkID string, query
     LIMIT 1
     `
 
-	var item AlcoholItem
+	var item collection.AlcoholItem
 	err = s.db.QueryRow(ctx, query, searchPattern, cleanQuery, startsWithPattern).Scan(
 		&item.ID,
 		&item.Name,
@@ -1994,7 +1933,6 @@ func (s *UserService) SearchDbAlcohol(ctx context.Context, clerkID string, query
 
 	log.Printf("found alcohol item: %s", item.Name)
 
-	// Add to user's collection (insert or ignore if already exists)
 	insertQuery := `
     INSERT INTO alcohol_collection (user_id, alcohol_id)
     VALUES ($1, $2)
@@ -2028,12 +1966,9 @@ func (s *UserService) SearchDbAlcohol(ctx context.Context, clerkID string, query
 	return result, nil
 }
 
-type AlcoholCollectionByType map[string][]AlcoholItem
-
-func (s *UserService) GetUserAlcoholCollection(ctx context.Context, clerkID string) (AlcoholCollectionByType, error) {
+func (s *UserService) GetUserAlcoholCollection(ctx context.Context, clerkID string) (collection.AlcoholCollectionByType, error) {
 	log.Println("fetching user alcohol collection")
 
-	// First, get the user's UUID from clerk_id
 	var userID string
 	userQuery := `SELECT id FROM users WHERE clerk_id = $1`
 	err := s.db.QueryRow(ctx, userQuery, clerkID).Scan(&userID)
@@ -2065,20 +2000,20 @@ func (s *UserService) GetUserAlcoholCollection(ctx context.Context, clerkID stri
 	defer rows.Close()
 
 	// Initialize the map with all alcohol types
-	collection := AlcoholCollectionByType{
-		"beer":    []AlcoholItem{},
-		"whiskey": []AlcoholItem{},
-		"wine":    []AlcoholItem{},
-		"vodka":   []AlcoholItem{},
-		"gin":     []AlcoholItem{},
-		"liqueur": []AlcoholItem{},
-		"rum":     []AlcoholItem{},
-		"tequila": []AlcoholItem{},
-		"rakiya":  []AlcoholItem{},
+	collectionItemTypes := collection.AlcoholCollectionByType{
+		"beer":    []collection.AlcoholItem{},
+		"whiskey": []collection.AlcoholItem{},
+		"wine":    []collection.AlcoholItem{},
+		"vodka":   []collection.AlcoholItem{},
+		"gin":     []collection.AlcoholItem{},
+		"liqueur": []collection.AlcoholItem{},
+		"rum":     []collection.AlcoholItem{},
+		"tequila": []collection.AlcoholItem{},
+		"rakiya":  []collection.AlcoholItem{},
 	}
 
 	for rows.Next() {
-		var item AlcoholItem
+		var item collection.AlcoholItem
 		var acquiredAt time.Time
 
 		err := rows.Scan(
@@ -2100,8 +2035,8 @@ func (s *UserService) GetUserAlcoholCollection(ctx context.Context, clerkID stri
 		alcoholType := strings.ToLower(item.Type)
 
 		// Add to the appropriate category
-		if _, exists := collection[alcoholType]; exists {
-			collection[alcoholType] = append(collection[alcoholType], item)
+		if _, exists := collectionItemTypes[alcoholType]; exists {
+			collectionItemTypes[alcoholType] = append(collectionItemTypes[alcoholType], item)
 		} else {
 			// If type doesn't match any category, you can either skip it or add to "other"
 			log.Printf("unknown alcohol type: %s for item: %s", item.Type, item.Name)
@@ -2113,8 +2048,8 @@ func (s *UserService) GetUserAlcoholCollection(ctx context.Context, clerkID stri
 		return nil, fmt.Errorf("error iterating collection: %w", err)
 	}
 
-	log.Printf("fetched user collection: %d items", getTotalCount(collection))
-	return collection, nil
+	log.Printf("fetched user collection: %d items", getTotalCount(collectionItemTypes))
+	return collectionItemTypes, nil
 }
 
 func (s *UserService) RemoveAlcoholCollectionItem(ctx context.Context, clerkID string, itemIdForRemoval string) (bool, error) {
@@ -2143,8 +2078,71 @@ func (s *UserService) RemoveAlcoholCollectionItem(ctx context.Context, clerkID s
 	return true, nil
 }
 
+func (s *UserService) GetUserInventory(ctx context.Context, clerkID string) (map[string][]*store.InventoryItem, error) {
+	var userID uuid.UUID
+	userQuery := `SELECT id FROM users WHERE clerk_id = $1`
+	err := s.db.QueryRow(ctx, userQuery, clerkID).Scan(&userID)
+	if err != nil {
+		if err == pgx.ErrNoRows {
+			return nil, fmt.Errorf("user not found")
+		}
+		return nil, fmt.Errorf("failed to get user: %w", err)
+	}
+
+	query := `
+		SELECT
+			i.id,
+			i.user_id,
+			i.item_id,
+			i.item_type,
+			i.quantity,
+			i.is_equipped,
+			i.acquired_at,
+			i.expires_at
+		FROM user_inventory i
+		WHERE i.user_id = $1
+		ORDER BY i.acquired_at DESC
+	`
+
+	rows, err := s.db.Query(ctx, query, userID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to query inventory: %w", err)
+	}
+	defer rows.Close()
+
+	var inventory = make(map[string][]*store.InventoryItem)
+	for rows.Next() {
+		var item store.InventoryItem
+		err := rows.Scan(
+			&item.ID,
+			&item.UserID,
+			&item.ItemID,
+			&item.ItemType,
+			&item.Quantity,
+			&item.IsEquipped,
+			&item.AcquiredAt,
+			&item.ExpiresAt,
+		)
+		if err != nil {
+			return nil, fmt.Errorf("failed to scan inventory item: %w", err)
+		}
+		inventory[item.ItemType] = append(inventory[item.ItemType], &item)
+	}
+
+	if err = rows.Err(); err != nil {
+		return nil, fmt.Errorf("error iterating inventory rows: %w", err)
+	}
+
+	return inventory, nil
+}
+
+// TODO: Creae theese
+func (s *UserService) EquipItem(ctx context.Context, clerkID string, itemIdForRemoval string) (bool, error) {
+	return true, nil
+}
+
 // Helper function to count total items
-func getTotalCount(collection AlcoholCollectionByType) int {
+func getTotalCount(collection collection.AlcoholCollectionByType) int {
 	total := 0
 	for _, items := range collection {
 		total += len(items)

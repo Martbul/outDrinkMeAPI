@@ -17,3 +17,13 @@ type User struct {
 	XP                   int       `json:"xp"`
 	AllDaysDrinkingCount int       `json:"all_days_drinking_count"`
 }
+
+
+type DrunkThought struct {
+	ID           string    `json:"id"`
+	UserID       string    `json:"user_id"`
+	Username     string    `json:"username"`
+	UserImageURL string    `json:"user_image_url"`
+	Thought      string    `json:"thought"`
+	CreatedAt    time.Time `json:"created_at"`
+}
