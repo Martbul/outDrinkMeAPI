@@ -84,13 +84,14 @@ func (s *StoreService) PurchaseStoreItem(ctx context.Context, clerkID string, it
 
 	var item store.Item
 	itemQuery := `
-		SELECT id, base_price, is_active
+		SELECT id, base_price, item_type, is_active
 		FROM store_items
 		WHERE id = $1
 	`
 	err = tx.QueryRow(ctx, itemQuery, itemUUID).Scan(
 		&item.ID,
 		&item.BasePrice,
+		&item.ItemType,
 		&item.IsActive,
 	)
 	if err != nil {
@@ -157,12 +158,12 @@ func (s *StoreService) PurchaseStoreItem(ctx context.Context, clerkID string, it
 
 	// Create purchase record (common for both paths)
 	purchase := store.Purchase{
-		ID:           uuid.New(),
-		UserID:       userIDUUID,
-		ItemID:       &itemUUID,
-		AmountPaid:   &item.BasePrice,
-		Status:       "completed",
-		PurchasedAt:  time.Now(),
+		ID:          uuid.New(),
+		UserID:      userIDUUID,
+		ItemID:      &itemUUID,
+		AmountPaid:  &item.BasePrice,
+		Status:      "completed",
+		PurchasedAt: time.Now(),
 	}
 
 	if !itemExistsInInventory {
@@ -196,6 +197,7 @@ func (s *StoreService) PurchaseStoreItem(ctx context.Context, clerkID string, it
 			ID:         uuid.New(),
 			UserID:     userIDUUID,
 			ItemID:     itemUUID,
+			ItemType:   item.ItemType,
 			Quantity:   1,
 			IsEquipped: false,
 			AcquiredAt: time.Now(),
@@ -204,13 +206,14 @@ func (s *StoreService) PurchaseStoreItem(ctx context.Context, clerkID string, it
 
 		insertInventoryQuery := `
 			INSERT INTO user_inventory (
-				id, user_id, item_id, quantity, is_equipped, acquired_at, expires_at
+				id, user_id, item_id, item_type, quantity, is_equipped, acquired_at, expires_at
 			)
 			VALUES ($1, $2, $3, $4, $5, $6, $7)
 		`
 		_, err = tx.Exec(ctx, insertInventoryQuery,
 			inventoryItem.ID,
 			inventoryItem.UserID,
+			inventoryItem.ItemID,
 			inventoryItem.ItemID,
 			inventoryItem.Quantity,
 			inventoryItem.IsEquipped,
