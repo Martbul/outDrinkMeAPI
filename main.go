@@ -20,10 +20,11 @@ import (
 )
 
 var (
-	dbPool       *pgxpool.Pool
-	userService  *services.UserService
-	docService   *services.DocService
-	storeService *services.StoreService
+	dbPool           *pgxpool.Pool
+	userService      *services.UserService
+	docService       *services.DocService
+	storeService     *services.StoreService
+	analyticsService *services.AnalyticsService
 )
 
 func init() {
@@ -78,6 +79,9 @@ func init() {
 	// Initialize services
 	userService = services.NewUserService(dbPool)
 	storeService = services.NewStoreService(dbPool)
+	analyticsService = services.NewAnalyticsService(dbPool)
+
+	analyticsService.StartCleanupJob()
 }
 
 func main() {
@@ -91,6 +95,7 @@ func main() {
 	docHandler := handlers.NewDocHandler(docService)
 	storeHandler := handlers.NewStoreHandler(storeService)
 	webhookHandler := handlers.NewWebhookHandler(userService)
+	analyticsHandler := handlers.NewAnalyticsHandler(analyticsService)
 
 	r := mux.NewRouter()
 
@@ -167,6 +172,36 @@ func main() {
 	protected.HandleFunc("/store", storeHandler.GetStore).Methods("GET")
 	protected.HandleFunc("/store/purchase/item", storeHandler.PurchaseStoreItem).Methods("POST")
 	// protected.HandleFunc("/store/purchase/gems", storeHandler.PurchaseGems).Methods("POST")
+
+
+		// Presence tracking
+	protected.HandleFunc("/analytics/presence/heartbeat", analyticsHandler.Heartbeat).Methods("POST")
+	protected.HandleFunc("/analytics/presence/disconnect", analyticsHandler.Disconnect).Methods("POST")
+	protected.HandleFunc("/analytics/presence/active", analyticsHandler.GetActiveUsers).Methods("GET")
+
+	// Crash reporting
+	protected.HandleFunc("/analytics/crash", analyticsHandler.ReportCrash).Methods("POST")
+	protected.HandleFunc("/analytics/crash-rate", analyticsHandler.GetCrashRate).Methods("GET")
+
+	// Performance tracking
+	protected.HandleFunc("/analytics/performance", analyticsHandler.TrackPerformance).Methods("POST")
+
+	// Session tracking
+	protected.HandleFunc("/analytics/session/start", analyticsHandler.StartSession).Methods("POST")
+	protected.HandleFunc("/analytics/session/end", analyticsHandler.EndSession).Methods("POST")
+
+	// Metrics
+	protected.HandleFunc("/analytics/metrics/dau", analyticsHandler.GetDAU).Methods("GET")
+	protected.HandleFunc("/analytics/metrics/retention", analyticsHandler.GetRetention).Methods("GET")
+
+	// Screen tracking
+	protected.HandleFunc("/analytics/screen", analyticsHandler.TrackScreen).Methods("POST")
+	protected.HandleFunc("/analytics/screens/top", analyticsHandler.GetTopScreens).Methods("GET")
+	protected.HandleFunc("/analytics/screens/flow", analyticsHandler.GetScreenFlow).Methods("GET")
+
+	// Event tracking
+	protected.HandleFunc("/analytics/event", analyticsHandler.TrackEvent).Methods("POST")
+
 
 	// CORS configuration
 	corsHandler := gorilllaHandlers.CORS(
