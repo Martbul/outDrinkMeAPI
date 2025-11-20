@@ -13,10 +13,13 @@ import (
 	"github.com/gorilla/mux"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/joho/godotenv"
+	"github.com/prometheus/client_golang/prometheus/promhttp"
 
 	"outDrinkMeAPI/handlers"
 	"outDrinkMeAPI/middleware"
 	"outDrinkMeAPI/services"
+
+	_ "net/http/pprof"
 )
 
 var (
@@ -78,6 +81,8 @@ func init() {
 	// Initialize services
 	userService = services.NewUserService(dbPool)
 	storeService = services.NewStoreService(dbPool)
+
+	middleware.InitPrometheus()
 }
 
 func main() {
@@ -93,6 +98,14 @@ func main() {
 	webhookHandler := handlers.NewWebhookHandler(userService)
 
 	r := mux.NewRouter()
+
+	r.Use(middleware.MonitorMiddleware)
+
+	r.Handle("/metrics", middleware.BasicAuthMiddleware(promhttp.Handler()))
+
+	//pprof attaches to http.DefaultServeMux, so we forward traffic there
+	r.PathPrefix("/debug/pprof/").Handler(middleware.PprofSecurityMiddleware(http.DefaultServeMux))
+
 
 	// Serve static files from assets directory
 	// Images will be accessible at: http://localhost:3333/assets/images/photo.jpg
@@ -172,7 +185,7 @@ func main() {
 	corsHandler := gorilllaHandlers.CORS(
 		gorilllaHandlers.AllowedOrigins([]string{"*"}), // Configure for production
 		gorilllaHandlers.AllowedMethods([]string{"GET", "POST", "PUT", "DELETE", "OPTIONS"}),
-		gorilllaHandlers.AllowedHeaders([]string{"Content-Type", "Authorization"}),
+		gorilllaHandlers.AllowedHeaders([]string{"Content-Type", "Authorization", "X-Pprof-Secret"}), 
 		gorilllaHandlers.ExposedHeaders([]string{"Content-Length"}),
 		gorilllaHandlers.AllowCredentials(),
 	)
