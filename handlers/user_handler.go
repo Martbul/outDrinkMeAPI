@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"log"
 	"net/http"
-	"outDrinkMeAPI/internal/user"
+	"outDrinkMeAPI/internal/types/user"
 	"outDrinkMeAPI/middleware"
 	"outDrinkMeAPI/services"
 	"strings"

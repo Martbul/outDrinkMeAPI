@@ -7,7 +7,7 @@ import (
 	"testing"
 	"time"
 
-	"outDrinkMeAPI/internal/notification"
+	"outDrinkMeAPI/internal/types/notification"
 	"outDrinkMeAPI/services"
 
 	"github.com/google/uuid"

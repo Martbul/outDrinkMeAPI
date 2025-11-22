@@ -12,8 +12,8 @@ import (
 	"net/http"
 	"os"
 
-	"outDrinkMeAPI/internal/clerk"
-	"outDrinkMeAPI/internal/user"
+	"outDrinkMeAPI/internal/types/clerk"
+	"outDrinkMeAPI/internal/types/user"
 	"outDrinkMeAPI/services"
 )
 

@@ -1,8 +1,8 @@
 package user
 
 import (
-	"outDrinkMeAPI/internal/achievement"
-	"outDrinkMeAPI/internal/stats"
+	"outDrinkMeAPI/internal/types/achievement"
+	"outDrinkMeAPI/internal/types/stats"
 )
 
 type CreateUserRequest struct {
@@ -26,14 +26,12 @@ type AddFriend struct {
 	FriendId string `json:"friendId,omitempty"`
 }
 
-
-
 type FriendDeiscoveryProfileRequest struct {
 	FriendDiscoveryId string `json:"friendDiscoveryId,omitempty"`
 }
 
 type FriendDiscoveryDisplayProfileResponse struct {
-	User         *User                           `json:"user"`
+	User         *User                                `json:"user"`
 	Stats        *stats.UserStats                     `json:"stats"`
 	Achievements []*achievement.AchievementWithStatus `json:"achievements"`
 	IsFriend     bool                                 `json:"is_friend"`

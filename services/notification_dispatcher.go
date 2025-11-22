@@ -4,7 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log"
-	"outDrinkMeAPI/internal/notification"
+	"outDrinkMeAPI/internal/types/notification"
 	"sync"
 	"time"
 )

@@ -1,7 +1,7 @@
 package mix
 
 import (
-	"outDrinkMeAPI/internal/user"
+	"outDrinkMeAPI/internal/types/user"
 	"time"
 )
 

@@ -4,8 +4,8 @@ import (
 	"context"
 	"fmt"
 	"log"
-	"outDrinkMeAPI/internal/store"
-	"outDrinkMeAPI/internal/user"
+	"outDrinkMeAPI/internal/types/store"
+	"outDrinkMeAPI/internal/types/user"
 	"time"
 
 	"github.com/google/uuid"

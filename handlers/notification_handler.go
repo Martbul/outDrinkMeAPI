@@ -4,7 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"net/http"
-	"outDrinkMeAPI/internal/notification"
+	"outDrinkMeAPI/internal/types/notification"
 	"outDrinkMeAPI/middleware"
 	"outDrinkMeAPI/services"
 	"strconv"
