@@ -20,14 +20,14 @@ import (
 	"outDrinkMeAPI/services"
 
 	_ "net/http/pprof"
-
 )
 
 var (
-	dbPool           *pgxpool.Pool
-	userService      *services.UserService
-	docService       *services.DocService
-	storeService     *services.StoreService
+	dbPool              *pgxpool.Pool
+	userService         *services.UserService
+	docService          *services.DocService
+	storeService        *services.StoreService
+	notificationService *services.NotificationService
 )
 
 func init() {
@@ -82,6 +82,7 @@ func init() {
 	// Initialize services
 	userService = services.NewUserService(dbPool)
 	storeService = services.NewStoreService(dbPool)
+	notificationService = services.NewNotificationService(dbPool)
 
 	middleware.InitPrometheus()
 }
@@ -96,6 +97,7 @@ func main() {
 	userHandler := handlers.NewUserHandler(userService)
 	docHandler := handlers.NewDocHandler(docService)
 	storeHandler := handlers.NewStoreHandler(storeService)
+	notificationHandler := handlers.NewNotificationHandler(notificationService)
 	webhookHandler := handlers.NewWebhookHandler(userService)
 
 	r := mux.NewRouter()
@@ -184,6 +186,15 @@ func main() {
 	protected.HandleFunc("/store/purchase/item", storeHandler.PurchaseStoreItem).Methods("POST")
 	// protected.HandleFunc("/store/purchase/gems", storeHandler.PurchaseGems).Methods("POST")
 
+	protected.HandleFunc("/notifications", notificationHandler.GetNotifications).Methods("GET")
+	protected.HandleFunc("/notifications/unread-count", notificationHandler.GetUnreadCount).Methods("GET")
+	protected.HandleFunc("/notifications/:id/read", notificationHandler.MarkAsRead).Methods("PUT")
+	protected.HandleFunc("/notifications/read-all", notificationHandler.MarkAllAsRead).Methods("PUT")
+	protected.HandleFunc("/notifications/:id", notificationHandler.DeleteNotification).Methods("DELETE")
+	protected.HandleFunc("/notifications/preferences", notificationHandler.GetPreferences).Methods("GET")
+	protected.HandleFunc("/notifications/preferences", notificationHandler.UpdatePreferences).Methods("PUT")
+	protected.HandleFunc("/notifications/register-device", notificationHandler.RegisterDevice).Methods("POST")
+	protected.HandleFunc("/notifications/test", notificationHandler.SendTestNotification).Methods("POST")
 
 	// CORS configuration
 	corsHandler := gorilllaHandlers.CORS(
