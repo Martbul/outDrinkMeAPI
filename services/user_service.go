@@ -13,6 +13,7 @@ import (
 	"outDrinkMeAPI/internal/types/stats"
 	"outDrinkMeAPI/internal/types/store"
 	"outDrinkMeAPI/internal/types/user"
+	"outDrinkMeAPI/utils"
 	"strings"
 	"time"
 
@@ -22,11 +23,15 @@ import (
 )
 
 type UserService struct {
-	db *pgxpool.Pool
+	db           *pgxpool.Pool
+	notifService *NotificationService
 }
 
-func NewUserService(db *pgxpool.Pool) *UserService {
-	return &UserService{db: db}
+func NewUserService(db *pgxpool.Pool, notifService *NotificationService) *UserService {
+	return &UserService{
+		db:           db,
+		notifService: notifService,
+	}
 }
 
 func (s *UserService) CreateUser(ctx context.Context, req *user.CreateUserRequest) (*user.User, error) {
@@ -725,12 +730,15 @@ func (s *UserService) AddMixVideo(ctx context.Context, clerkID string, videoUrl 
 	query := `
         INSERT INTO mix_videos (user_id, video_url, caption, duration, chips)
         VALUES ($1, $2, $3, $4, 0)
-    `
+    
+		  `
 
 	_, err = s.db.Exec(ctx, query, userID, videoUrl, caption, duration)
 	if err != nil {
 		return fmt.Errorf("failed to insert mix video: %w", err)
 	}
+
+	go utils.FriendPostedImageToMix(s.db, s.notifService, userID, "User Name Here")
 
 	return nil
 }

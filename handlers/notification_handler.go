@@ -209,7 +209,6 @@ func (h *NotificationHandler) RegisterDevice(w http.ResponseWriter, r *http.Requ
 		return
 	}
 
-	// Logic moved to service
 	err := h.notificationService.RegisterDevice(ctx, clerkID, req)
 	if err != nil {
 		respondWithError(w, http.StatusInternalServerError, err.Error())

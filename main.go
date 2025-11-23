@@ -82,17 +82,18 @@ func init() {
 	log.Println("Successfully connected to NeonDB")
 
 	// Initialize services
-	userService = services.NewUserService(dbPool)
-	storeService = services.NewStoreService(dbPool)
 	notificationService = services.NewNotificationService(dbPool)
+
+	userService = services.NewUserService(dbPool, notificationService)
+	storeService = services.NewStoreService(dbPool)
 
 	fcmService, err = notification.NewFCMService("./serviceAccountKey.json")
 
-  if err != nil {
-        log.Printf("WARNING: FCM not initialized: %v", err)
-    } else {
-        notificationService.SetPushProvider(fcmService)
-    }
+	if err != nil {
+		log.Printf("WARNING: FCM not initialized: %v", err)
+	} else {
+		notificationService.SetPushProvider(fcmService)
+	}
 
 	middleware.InitPrometheus()
 }
