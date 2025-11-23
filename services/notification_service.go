@@ -18,6 +18,7 @@ type NotificationService struct {
 	dispatcher *NotificationDispatcher
 }
 
+
 func NewNotificationService(db *pgxpool.Pool) *NotificationService {
 	service := &NotificationService{
 		db: db,
@@ -125,6 +126,13 @@ func (s *NotificationService) CreateNotification(ctx context.Context, req *notif
 	}
 
 	return notif, nil
+
+}
+
+// Add this anywhere in services/services.go
+
+func (s *NotificationService) SetPushProvider(provider PushNotificationProvider) {
+	s.dispatcher.SetPushProvider(provider)
 }
 
 // ---------------------------------------------------------

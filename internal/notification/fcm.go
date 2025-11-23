@@ -2,8 +2,11 @@ package notification
 
 import (
 	"context"
+	"encoding/base64"
 	"fmt"
 	"log"
+	"os"
+	"outDrinkMeAPI/internal/types/notification"
 
 	firebase "firebase.google.com/go/v4"
 	"firebase.google.com/go/v4/messaging"
@@ -15,13 +18,35 @@ type FCMService struct {
 }
 
 // Initialize connection to Firebase
-func NewFCMService(credentialsFile string) (*FCMService, error) {
-	opt := option.WithCredentialsFile(credentialsFile)
+func NewFCMService(localFilePath string) (*FCMService, error) {
+	var opt option.ClientOption
+
+	// 1. Check for Production Environment Variable first
+	encodedCreds := os.Getenv("FIREBASE_CREDENTIALS_BASE64")
+	
+	if encodedCreds != "" {
+		log.Println("FCM: Loading credentials from Environment Variable")
+		decoded, err := base64.StdEncoding.DecodeString(encodedCreds)
+		if err != nil {
+			return nil, fmt.Errorf("failed to decode base64 firebase credentials: %v", err)
+		}
+		opt = option.WithCredentialsJSON(decoded)
+	} else {
+		// 2. Fallback to Local File (for Development)
+		log.Println("FCM: Loading credentials from local file")
+		if _, err := os.Stat(localFilePath); os.IsNotExist(err) {
+			return nil, fmt.Errorf("local firebase file not found: %s", localFilePath)
+		}
+		opt = option.WithCredentialsFile(localFilePath)
+	}
+
+	// Initialize App
 	app, err := firebase.NewApp(context.Background(), nil, opt)
 	if err != nil {
 		return nil, fmt.Errorf("error initializing firebase app: %v", err)
 	}
 
+	// Get Messaging Client
 	client, err := app.Messaging(context.Background())
 	if err != nil {
 		return nil, fmt.Errorf("error getting messaging client: %v", err)
@@ -31,7 +56,7 @@ func NewFCMService(credentialsFile string) (*FCMService, error) {
 }
 
 // SendPush sends a message to multiple Android devices
-func (s *FCMService) SendPush(ctx context.Context, tokens []DeviceToken, title, body string, data map[string]any) error {
+func (s *FCMService) SendPush(ctx context.Context, tokens []notification.DeviceToken, title, body string, data map[string]any) error {
 	if len(tokens) == 0 {
 		return nil
 	}

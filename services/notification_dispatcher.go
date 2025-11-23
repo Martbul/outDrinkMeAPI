@@ -2,18 +2,18 @@ package services
 
 import (
 	"context"
-	"fmt"
 	"log"
 	"outDrinkMeAPI/internal/types/notification"
 	"sync"
 	"time"
 )
-
+type PushNotificationProvider interface {
+	SendPush(ctx context.Context, tokens []notification.DeviceToken, title, body string, data map[string]any) error
+}
 // NotificationDispatcher handles sending notifications through various channels
 type NotificationDispatcher struct {
 	service      *NotificationService
-	pushProvider PushNotificationProvider
-	emailProvider EmailProvider
+	pushProvider PushNotificationProvider // Interface
 	workers      int
 	jobQueue     chan *DispatchJob
 	stopChan     chan struct{}
@@ -26,27 +26,16 @@ type DispatchJob struct {
 }
 
 
-// PushNotificationProvider interface for push notifications
-type PushNotificationProvider interface {
-	SendPush(ctx context.Context, tokens []notification.DeviceToken, title, body string, data map[string]any) error
-}
-
-// EmailProvider interface for email notifications
-type EmailProvider interface {
-	SendEmail(ctx context.Context, to, subject, body string) error
-}
-
 
 
 func NewNotificationDispatcher(service *NotificationService) *NotificationDispatcher {
 	dispatcher := &NotificationDispatcher{
 		service:  service,
-		workers:  10, // Number of concurrent workers
+		workers:  5, // 5 workers is plenty for now
 		jobQueue: make(chan *DispatchJob, 100),
 		stopChan: make(chan struct{}),
 	}
 
-	// Start worker pool
 	dispatcher.startWorkers()
 
 	// Start scheduled notification processor
@@ -58,6 +47,10 @@ func NewNotificationDispatcher(service *NotificationService) *NotificationDispat
 	return dispatcher
 }
 
+// Allow injecting the real FCM provider from main.go
+func (d *NotificationDispatcher) SetPushProvider(provider PushNotificationProvider) {
+	d.pushProvider = provider
+}
 
 // Start worker pool
 func (d *NotificationDispatcher) startWorkers() {
@@ -67,71 +60,44 @@ func (d *NotificationDispatcher) startWorkers() {
 	}
 }
 
-// Worker processes jobs from queue
 func (d *NotificationDispatcher) worker(id int) {
 	defer d.wg.Done()
-	
-	log.Printf("Worker %d started", id)
-	
 	for {
 		select {
 		case job := <-d.jobQueue:
 			d.processJob(job)
 		case <-d.stopChan:
-			log.Printf("Worker %d stopping", id)
 			return
 		}
 	}
 }
 
-
 func (d *NotificationDispatcher) processJob(job *DispatchJob) {
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 
 	notif := job.Notification
 	prefs := job.Preferences
 
-	log.Printf("Processing notification %s for user %s", notif.ID, notif.UserID)
-
-	var errors []error
-
-	// Send push notification
+	// 1. Send Push (If enabled, has tokens, and provider exists)
 	if prefs.PushEnabled && len(prefs.DeviceTokens) > 0 && d.pushProvider != nil {
+		// This calls the code in internal/notification/fcm.go
 		err := d.pushProvider.SendPush(ctx, prefs.DeviceTokens, notif.Title, notif.Body, notif.Data)
-		if err != nil {
-			log.Printf("Failed to send push notification: %v", err)
-			errors = append(errors, fmt.Errorf("push failed: %w", err))
-		} else {
-			log.Printf("Push notification sent successfully")
-		}
-	}
-
-	// Send email notification (for important ones)
-	if prefs.EmailEnabled && d.emailProvider != nil && 
-	   (notif.Priority == notification.PriorityHigh || notif.Priority == notification.PriorityUrgent) {
-		// Get user email
-		var email string
-		d.service.db.QueryRow(ctx, "SELECT email FROM users WHERE id = $1", notif.UserID).Scan(&email)
 		
-		if email != "" {
-			err := d.emailProvider.SendEmail(ctx, email, notif.Title, notif.Body)
-			if err != nil {
-				log.Printf("Failed to send email notification: %v", err)
-				errors = append(errors, fmt.Errorf("email failed: %w", err))
-			} else {
-				log.Printf("Email notification sent successfully")
-			}
+		if err != nil {
+			log.Printf("Push failed for user %s: %v", notif.UserID, err)
+			d.markAsFailed(ctx, notif.ID.String(), err)
+			return
 		}
+	} else {
+		log.Printf("Skipping push: Enabled=%v, Tokens=%d, ProviderSet=%v", 
+			prefs.PushEnabled, len(prefs.DeviceTokens), d.pushProvider != nil)
 	}
 
-	// Update notification status
-	if len(errors) > 0 {
-		d.markAsFailed(ctx, notif.ID.String(), errors)
-	} else {
-		d.markAsSent(ctx, notif.ID.String())
-	}
+	// 2. Mark as Sent in DB
+	d.markAsSent(ctx, notif.ID.String())
 }
+
 
 // Dispatch a notification (add to queue)
 func (d *NotificationDispatcher) DispatchNotification(ctx context.Context, notif *notification.Notification, prefs *notification.NotificationPreferences) {
@@ -284,10 +250,10 @@ func (d *NotificationDispatcher) markAsSent(ctx context.Context, notificationID 
 		log.Printf("Failed to mark notification %s as sent: %v", notificationID, err)
 	}
 }
-
-// Mark notification as failed
-func (d *NotificationDispatcher) markAsFailed(ctx context.Context, notificationID string, errors []error) {
-	failureReason := fmt.Sprintf("Multiple errors: %v", errors)
+// Replace the existing markAsFailed function with this updated version
+func (d *NotificationDispatcher) markAsFailed(ctx context.Context, notificationID string, err error) {
+	// Fix: We now take a single 'error' instead of '[]error'
+	failureReason := err.Error()
 
 	query := `
 		UPDATE notifications
@@ -295,14 +261,16 @@ func (d *NotificationDispatcher) markAsFailed(ctx context.Context, notificationI
 		WHERE id = $1
 	`
 
-	_, err := d.service.db.Exec(ctx, query, notificationID, failureReason)
-	if err != nil {
-		log.Printf("Failed to mark notification %s as failed: %v", notificationID, err)
+	_, dbErr := d.service.db.Exec(ctx, query, notificationID, failureReason)
+	if dbErr != nil {
+		log.Printf("Failed to mark notification %s as failed: %v", notificationID, dbErr)
 	}
 
 	// Schedule retry for high/urgent priority notifications (max 3 retries)
 	var retryCount int
 	var priority notification.NotificationPriority
+	// Note: Ensure you are using the correct package for NotificationPriority
+	// It might be 'notification.PriorityHigh' depending on your imports
 	d.service.db.QueryRow(ctx, "SELECT retry_count, priority FROM notifications WHERE id = $1", notificationID).Scan(&retryCount, &priority)
 
 	if retryCount < 3 && (priority == notification.PriorityHigh || priority == notification.PriorityUrgent) {

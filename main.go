@@ -16,6 +16,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 
 	"outDrinkMeAPI/handlers"
+	"outDrinkMeAPI/internal/notification"
 	"outDrinkMeAPI/middleware"
 	"outDrinkMeAPI/services"
 
@@ -28,6 +29,7 @@ var (
 	docService          *services.DocService
 	storeService        *services.StoreService
 	notificationService *services.NotificationService
+	fcmService          *notification.FCMService
 )
 
 func init() {
@@ -83,6 +85,14 @@ func init() {
 	userService = services.NewUserService(dbPool)
 	storeService = services.NewStoreService(dbPool)
 	notificationService = services.NewNotificationService(dbPool)
+
+	fcmService, err = notification.NewFCMService("./serviceAccountKey.json")
+
+  if err != nil {
+        log.Printf("WARNING: FCM not initialized: %v", err)
+    } else {
+        notificationService.SetPushProvider(fcmService)
+    }
 
 	middleware.InitPrometheus()
 }
