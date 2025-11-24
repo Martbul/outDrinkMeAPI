@@ -719,10 +719,12 @@ func (s *UserService) AddDrinking(ctx context.Context, clerkID string, drankToda
 	}
 
 	if imageUrl != nil {
-		// 3. Pass the fetched username to the utils function
-		go utils.FriendPostedImageToMix(s.db, s.notifService, userID, username)
+		// Dereference the pointer to get the string value
+		actualURL := *imageUrl
+		
+		// Run in background
+		go utils.FriendPostedImageToMix(s.db, s.notifService, userID, username, actualURL)
 	}
-
 	return nil
 }
 
