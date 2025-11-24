@@ -692,10 +692,11 @@ func (s *UserService) GetAchievements(ctx context.Context, clerkID string) ([]*a
 
 	return achievements, nil
 }
-
 func (s *UserService) AddDrinking(ctx context.Context, clerkID string, drankToday bool, imageUrl *string, locationText *string, clerkIDs []string, date time.Time) error {
 	var userID uuid.UUID
-	err := s.db.QueryRow(ctx, `SELECT id FROM users WHERE clerk_id = $1`, clerkID).Scan(&userID)
+	var username string 
+
+	err := s.db.QueryRow(ctx, `SELECT id, username FROM users WHERE clerk_id = $1`, clerkID).Scan(&userID, &username)
 	if err != nil {
 		return fmt.Errorf("user not found: %w", err)
 	}
@@ -715,6 +716,11 @@ func (s *UserService) AddDrinking(ctx context.Context, clerkID string, drankToda
 	_, err = s.db.Exec(ctx, query, userID, date, drankToday, imageUrl, locationText, clerkIDs)
 	if err != nil {
 		return fmt.Errorf("failed to log drinking: %w", err)
+	}
+
+	if imageUrl != nil {
+		// 3. Pass the fetched username to the utils function
+		go utils.FriendPostedImageToMix(s.db, s.notifService, userID, username)
 	}
 
 	return nil
@@ -737,8 +743,6 @@ func (s *UserService) AddMixVideo(ctx context.Context, clerkID string, videoUrl 
 	if err != nil {
 		return fmt.Errorf("failed to insert mix video: %w", err)
 	}
-
-	go utils.FriendPostedImageToMix(s.db, s.notifService, userID, "User Name Here")
 
 	return nil
 }
