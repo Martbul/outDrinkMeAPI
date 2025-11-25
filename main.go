@@ -28,6 +28,7 @@ var (
 	userService         *services.UserService
 	docService          *services.DocService
 	storeService        *services.StoreService
+	sideQuestService    *services.SideQuestService
 	notificationService *services.NotificationService
 	fcmService          *notification.FCMService
 )
@@ -86,7 +87,7 @@ func init() {
 
 	userService = services.NewUserService(dbPool, notificationService)
 	storeService = services.NewStoreService(dbPool)
-
+	sideQuestService = services.NewSideQuestService(dbPool, notificationService)
 	fcmService, err = notification.NewFCMService("./serviceAccountKey.json")
 
 	if err != nil {
@@ -108,6 +109,7 @@ func main() {
 	userHandler := handlers.NewUserHandler(userService)
 	docHandler := handlers.NewDocHandler(docService)
 	storeHandler := handlers.NewStoreHandler(storeService)
+	sideQuestHandler := handlers.NewSideQuestHandler(sideQuestService)
 	notificationHandler := handlers.NewNotificationHandler(notificationService)
 	webhookHandler := handlers.NewWebhookHandler(userService)
 
@@ -123,12 +125,15 @@ func main() {
 	//pprof attaches to http.DefaultServeMux, so we forward traffic there
 	r.PathPrefix("/debug/pprof/").Handler(middleware.PprofSecurityMiddleware(http.DefaultServeMux))
 
-	// Serve static files from assets directory
-	// Images will be accessible at: http://localhost:3333/assets/images/photo.jpg
 	assetsDir := "./assets"
 	fs := http.FileServer(http.Dir(assetsDir))
 	r.PathPrefix("/assets/").Handler(http.StripPrefix("/assets/", fs))
 	log.Printf("Serving static files from %s at /assets/", assetsDir)
+
+	r.HandleFunc("/app-ads.txt", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/plain")
+		w.Write([]byte("google.com, pub-1167503921437683, DIRECT, f08c47fec0942fa0"))
+	})
 
 	r.HandleFunc("/health", func(w http.ResponseWriter, r *http.Request) {
 		ctx, cancel := context.WithTimeout(r.Context(), 2*time.Second)
@@ -207,9 +212,15 @@ func main() {
 	protected.HandleFunc("/notifications/register-device", notificationHandler.RegisterDevice).Methods("POST")
 	protected.HandleFunc("/notifications/test", notificationHandler.SendTestNotification).Methods("POST")
 
+	protected.HandleFunc("/buddies-board", sideQuestHandler.GetBuddiesSideQuestBoard).Methods("GET")
+	protected.HandleFunc("/random-board", sideQuestHandler.GetRandomSideQuestBoard).Methods("GET")
+	protected.HandleFunc("/new-sidequest", sideQuestHandler.PostNewSideQuest).Methods("POST")
+	protected.HandleFunc("/:id/complete", sideQuestHandler.PostCompletion).Methods("POST") //Up to 3 iamges(sending the pics to the user that has added the quest for aprovam, if aproved -> grand the gems(fromk the quester account) to the completer)
+	protected.HandleFunc("/complete", sideQuestHandler.PostNewSideQuest).Methods("POST")
+
 	// CORS configuration
 	corsHandler := gorilllaHandlers.CORS(
-		gorilllaHandlers.AllowedOrigins([]string{"*"}), // Configure for production
+		gorilllaHandlers.AllowedOrigins([]string{"*"}),
 		gorilllaHandlers.AllowedMethods([]string{"GET", "POST", "PUT", "DELETE", "OPTIONS"}),
 		gorilllaHandlers.AllowedHeaders([]string{"Content-Type", "Authorization", "X-Pprof-Secret"}),
 		gorilllaHandlers.ExposedHeaders([]string{"Content-Length"}),
