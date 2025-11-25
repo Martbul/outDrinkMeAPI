@@ -135,18 +135,6 @@ func main() {
 		w.Write([]byte("google.com, pub-1167503921437683, DIRECT, f08c47fec0942fa0"))
 	})
 
-
-	r.HandleFunc("/app-ads.txt", func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Content-Type", "text/plain")
-		w.Write([]byte("google.com, pub-1167503921437683, DIRECT, f08c47fec0942fa0"))
-	})
-
-
-	r.HandleFunc("/app-ads.txt", func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Content-Type", "text/plain")
-		w.Write([]byte("google.com, pub-1167503921437683, DIRECT, f08c47fec0942fa0"))
-	})
-
 	r.HandleFunc("/health", func(w http.ResponseWriter, r *http.Request) {
 		ctx, cancel := context.WithTimeout(r.Context(), 2*time.Second)
 		defer cancel()
