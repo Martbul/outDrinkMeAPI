@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"log"
 	"net/http"
-	"outDrinkMeAPI/internal/user"
+	"outDrinkMeAPI/internal/types/user"
 	"outDrinkMeAPI/middleware"
 	"outDrinkMeAPI/services"
 	"strings"
@@ -27,7 +27,6 @@ func (h *UserHandler) GetProfile(w http.ResponseWriter, r *http.Request) {
 	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
 	defer cancel()
 
-	// Get authenticated Clerk user ID from context
 	clerkID, ok := middleware.GetClerkID(ctx)
 	if !ok {
 		respondWithError(w, http.StatusUnauthorized, "User not authenticated")

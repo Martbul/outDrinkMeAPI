@@ -3,11 +3,9 @@ package main
 import (
 	"context"
 	"log"
-	"net"
 	"net/http"
 	"os"
 	"os/signal"
-	"sync"
 	"time"
 
 	clerk "github.com/clerk/clerk-sdk-go/v2"
@@ -18,19 +16,21 @@ import (
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 
 	"outDrinkMeAPI/handlers"
+	"outDrinkMeAPI/internal/notification"
 	"outDrinkMeAPI/middleware"
 	"outDrinkMeAPI/services"
 
 	_ "net/http/pprof"
-
-	"golang.org/x/time/rate"
 )
 
 var (
-	dbPool       *pgxpool.Pool
-	userService  *services.UserService
-	docService   *services.DocService
-	storeService *services.StoreService
+	dbPool              *pgxpool.Pool
+	userService         *services.UserService
+	docService          *services.DocService
+	storeService        *services.StoreService
+	sideQuestService    *services.SideQuestService
+	notificationService *services.NotificationService
+	fcmService          *notification.FCMService
 )
 
 func init() {
@@ -83,8 +83,18 @@ func init() {
 	log.Println("Successfully connected to NeonDB")
 
 	// Initialize services
-	userService = services.NewUserService(dbPool)
+	notificationService = services.NewNotificationService(dbPool)
+
+	userService = services.NewUserService(dbPool, notificationService)
 	storeService = services.NewStoreService(dbPool)
+	sideQuestService = services.NewSideQuestService(dbPool, notificationService)
+	fcmService, err = notification.NewFCMService("./serviceAccountKey.json")
+
+	if err != nil {
+		log.Printf("WARNING: FCM not initialized: %v", err)
+	} else {
+		notificationService.SetPushProvider(fcmService)
+	}
 
 	middleware.InitPrometheus()
 }
@@ -99,12 +109,14 @@ func main() {
 	userHandler := handlers.NewUserHandler(userService)
 	docHandler := handlers.NewDocHandler(docService)
 	storeHandler := handlers.NewStoreHandler(storeService)
+	// sideQuestHandler := handlers.NewSideQuestHandler(sideQuestService)
+	notificationHandler := handlers.NewNotificationHandler(notificationService)
 	webhookHandler := handlers.NewWebhookHandler(userService)
 
 	r := mux.NewRouter()
 
-	go cleanupVisitors()
-	r.Use(RateLimitMiddleware)
+	go middleware.CleanupVisitors()
+	r.Use(middleware.RateLimitMiddleware)
 
 	r.Use(middleware.MonitorMiddleware)
 
@@ -113,12 +125,21 @@ func main() {
 	//pprof attaches to http.DefaultServeMux, so we forward traffic there
 	r.PathPrefix("/debug/pprof/").Handler(middleware.PprofSecurityMiddleware(http.DefaultServeMux))
 
-	// Serve static files from assets directory
-	// Images will be accessible at: http://localhost:3333/assets/images/photo.jpg
 	assetsDir := "./assets"
 	fs := http.FileServer(http.Dir(assetsDir))
 	r.PathPrefix("/assets/").Handler(http.StripPrefix("/assets/", fs))
 	log.Printf("Serving static files from %s at /assets/", assetsDir)
+
+	r.HandleFunc("/app-ads.txt", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/plain")
+		w.Write([]byte("google.com, pub-1167503921437683, DIRECT, f08c47fec0942fa0"))
+	})
+
+
+	r.HandleFunc("/app-ads.txt", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/plain")
+		w.Write([]byte("google.com, pub-1167503921437683, DIRECT, f08c47fec0942fa0"))
+	})
 
 
 	r.HandleFunc("/app-ads.txt", func(w http.ResponseWriter, r *http.Request) {
@@ -193,9 +214,25 @@ func main() {
 	protected.HandleFunc("/store/purchase/item", storeHandler.PurchaseStoreItem).Methods("POST")
 	// protected.HandleFunc("/store/purchase/gems", storeHandler.PurchaseGems).Methods("POST")
 
+	protected.HandleFunc("/notifications", notificationHandler.GetNotifications).Methods("GET")
+	protected.HandleFunc("/notifications/unread-count", notificationHandler.GetUnreadCount).Methods("GET")
+	protected.HandleFunc("/notifications/:id/read", notificationHandler.MarkAsRead).Methods("PUT")
+	protected.HandleFunc("/notifications/read-all", notificationHandler.MarkAllAsRead).Methods("PUT")
+	protected.HandleFunc("/notifications/:id", notificationHandler.DeleteNotification).Methods("DELETE")
+	protected.HandleFunc("/notifications/preferences", notificationHandler.GetPreferences).Methods("GET")
+	protected.HandleFunc("/notifications/preferences", notificationHandler.UpdatePreferences).Methods("PUT")
+	protected.HandleFunc("/notifications/register-device", notificationHandler.RegisterDevice).Methods("POST")
+	protected.HandleFunc("/notifications/test", notificationHandler.SendTestNotification).Methods("POST")
+
+	// protected.HandleFunc("/buddies-board", sideQuestHandler.GetBuddiesSideQuestBoard).Methods("GET")
+	// protected.HandleFunc("/random-board", sideQuestHandler.GetRandomSideQuestBoard).Methods("GET")
+	// protected.HandleFunc("/new-sidequest", sideQuestHandler.PostNewSideQuest).Methods("POST")
+	// protected.HandleFunc("/:id/complete", sideQuestHandler.PostCompletion).Methods("POST") //Up to 3 iamges(sending the pics to the user that has added the quest for aprovam, if aproved -> grand the gems(fromk the quester account) to the completer)
+	// protected.HandleFunc("/complete", sideQuestHandler.PostNewSideQuest).Methods("POST")
+
 	// CORS configuration
 	corsHandler := gorilllaHandlers.CORS(
-		gorilllaHandlers.AllowedOrigins([]string{"*"}), // Configure for production
+		gorilllaHandlers.AllowedOrigins([]string{"*"}),
 		gorilllaHandlers.AllowedMethods([]string{"GET", "POST", "PUT", "DELETE", "OPTIONS"}),
 		gorilllaHandlers.AllowedHeaders([]string{"Content-Type", "Authorization", "X-Pprof-Secret"}),
 		gorilllaHandlers.ExposedHeaders([]string{"Content-Length"}),
@@ -238,62 +275,4 @@ func main() {
 	}
 
 	log.Println("Server shutdown complete")
-}
-
-type visitor struct {
-	limiter  *rate.Limiter
-	lastSeen time.Time
-}
-
-var (
-	visitors = make(map[string]*visitor)
-	mu       sync.Mutex
-)
-
-func RateLimitMiddleware(next http.Handler) http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		ip := r.Header.Get("X-Forwarded-For")
-		if ip == "" {
-			ip, _, _ = net.SplitHostPort(r.RemoteAddr)
-		}
-
-		limiter := getLimiter(ip)
-
-		if !limiter.Allow() {
-			http.Error(w, "Too Many Requests", http.StatusTooManyRequests)
-			return
-		}
-
-		next.ServeHTTP(w, r)
-	})
-}
-
-func getLimiter(ip string) *rate.Limiter {
-	mu.Lock()
-	defer mu.Unlock()
-
-	v, exists := visitors[ip]
-	if !exists {
-
-		limiter := rate.NewLimiter(5, 30)
-
-		visitors[ip] = &visitor{limiter, time.Now()}
-		return limiter
-	}
-
-	v.lastSeen = time.Now()
-	return v.limiter
-}
-
-func cleanupVisitors() {
-	for {
-		time.Sleep(time.Minute)
-		mu.Lock()
-		for ip, v := range visitors {
-			if time.Since(v.lastSeen) > 3*time.Minute {
-				delete(visitors, ip)
-			}
-		}
-		mu.Unlock()
-	}
 }

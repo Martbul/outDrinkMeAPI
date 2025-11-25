@@ -4,7 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"net/http"
-	"outDrinkMeAPI/internal/store"
+	"outDrinkMeAPI/internal/types/store"
 	"outDrinkMeAPI/middleware"
 	"outDrinkMeAPI/services"
 	"time"

@@ -5,14 +5,15 @@ import (
 	"errors"
 	"fmt"
 	"log"
-	"outDrinkMeAPI/internal/achievement"
-	"outDrinkMeAPI/internal/calendar"
-	"outDrinkMeAPI/internal/collection"
-	"outDrinkMeAPI/internal/leaderboard"
-	"outDrinkMeAPI/internal/mix"
-	"outDrinkMeAPI/internal/stats"
-	"outDrinkMeAPI/internal/store"
-	"outDrinkMeAPI/internal/user"
+	"outDrinkMeAPI/internal/types/achievement"
+	"outDrinkMeAPI/internal/types/calendar"
+	"outDrinkMeAPI/internal/types/collection"
+	"outDrinkMeAPI/internal/types/leaderboard"
+	"outDrinkMeAPI/internal/types/mix"
+	"outDrinkMeAPI/internal/types/stats"
+	"outDrinkMeAPI/internal/types/store"
+	"outDrinkMeAPI/internal/types/user"
+	"outDrinkMeAPI/utils"
 	"strings"
 	"time"
 
@@ -22,11 +23,15 @@ import (
 )
 
 type UserService struct {
-	db *pgxpool.Pool
+	db           *pgxpool.Pool
+	notifService *NotificationService
 }
 
-func NewUserService(db *pgxpool.Pool) *UserService {
-	return &UserService{db: db}
+func NewUserService(db *pgxpool.Pool, notifService *NotificationService) *UserService {
+	return &UserService{
+		db:           db,
+		notifService: notifService,
+	}
 }
 
 func (s *UserService) CreateUser(ctx context.Context, req *user.CreateUserRequest) (*user.User, error) {
@@ -687,10 +692,11 @@ func (s *UserService) GetAchievements(ctx context.Context, clerkID string) ([]*a
 
 	return achievements, nil
 }
-
 func (s *UserService) AddDrinking(ctx context.Context, clerkID string, drankToday bool, imageUrl *string, locationText *string, clerkIDs []string, date time.Time) error {
 	var userID uuid.UUID
-	err := s.db.QueryRow(ctx, `SELECT id FROM users WHERE clerk_id = $1`, clerkID).Scan(&userID)
+	var username string 
+
+	err := s.db.QueryRow(ctx, `SELECT id, username FROM users WHERE clerk_id = $1`, clerkID).Scan(&userID, &username)
 	if err != nil {
 		return fmt.Errorf("user not found: %w", err)
 	}
@@ -712,6 +718,13 @@ func (s *UserService) AddDrinking(ctx context.Context, clerkID string, drankToda
 		return fmt.Errorf("failed to log drinking: %w", err)
 	}
 
+	if imageUrl != nil {
+		// Dereference the pointer to get the string value
+		actualURL := *imageUrl
+		
+		// Run in background
+		go utils.FriendPostedImageToMix(s.db, s.notifService, userID, username, actualURL)
+	}
 	return nil
 }
 
@@ -725,7 +738,8 @@ func (s *UserService) AddMixVideo(ctx context.Context, clerkID string, videoUrl 
 	query := `
         INSERT INTO mix_videos (user_id, video_url, caption, duration, chips)
         VALUES ($1, $2, $3, $4, 0)
-    `
+    
+		  `
 
 	_, err = s.db.Exec(ctx, query, userID, videoUrl, caption, duration)
 	if err != nil {

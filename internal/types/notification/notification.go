@@ -18,6 +18,7 @@ const (
 	TypeChallengeResult      NotificationType = "challenge_result"
 	TypeWeeklyRecap          NotificationType = "weekly_recap"
 	TypeDrunkThoughtReaction NotificationType = "drunk_thought_reaction"
+	TypeFriendPostedMix      NotificationType = "friend_posted_mix"
 )
 
 type NotificationPriority string
@@ -94,4 +95,3 @@ type NotificationTemplate struct {
 	CreatedAt       time.Time            `json:"created_at" db:"created_at"`
 	UpdatedAt       time.Time            `json:"updated_at" db:"updated_at"`
 }
-
