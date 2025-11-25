@@ -109,7 +109,7 @@ func main() {
 	userHandler := handlers.NewUserHandler(userService)
 	docHandler := handlers.NewDocHandler(docService)
 	storeHandler := handlers.NewStoreHandler(storeService)
-	sideQuestHandler := handlers.NewSideQuestHandler(sideQuestService)
+	// sideQuestHandler := handlers.NewSideQuestHandler(sideQuestService)
 	notificationHandler := handlers.NewNotificationHandler(notificationService)
 	webhookHandler := handlers.NewWebhookHandler(userService)
 
@@ -212,11 +212,11 @@ func main() {
 	protected.HandleFunc("/notifications/register-device", notificationHandler.RegisterDevice).Methods("POST")
 	protected.HandleFunc("/notifications/test", notificationHandler.SendTestNotification).Methods("POST")
 
-	protected.HandleFunc("/buddies-board", sideQuestHandler.GetBuddiesSideQuestBoard).Methods("GET")
-	protected.HandleFunc("/random-board", sideQuestHandler.GetRandomSideQuestBoard).Methods("GET")
-	protected.HandleFunc("/new-sidequest", sideQuestHandler.PostNewSideQuest).Methods("POST")
-	protected.HandleFunc("/:id/complete", sideQuestHandler.PostCompletion).Methods("POST") //Up to 3 iamges(sending the pics to the user that has added the quest for aprovam, if aproved -> grand the gems(fromk the quester account) to the completer)
-	protected.HandleFunc("/complete", sideQuestHandler.PostNewSideQuest).Methods("POST")
+	// protected.HandleFunc("/buddies-board", sideQuestHandler.GetBuddiesSideQuestBoard).Methods("GET")
+	// protected.HandleFunc("/random-board", sideQuestHandler.GetRandomSideQuestBoard).Methods("GET")
+	// protected.HandleFunc("/new-sidequest", sideQuestHandler.PostNewSideQuest).Methods("POST")
+	// protected.HandleFunc("/:id/complete", sideQuestHandler.PostCompletion).Methods("POST") //Up to 3 iamges(sending the pics to the user that has added the quest for aprovam, if aproved -> grand the gems(fromk the quester account) to the completer)
+	// protected.HandleFunc("/complete", sideQuestHandler.PostNewSideQuest).Methods("POST")
 
 	// CORS configuration
 	corsHandler := gorilllaHandlers.CORS(
