@@ -510,7 +510,6 @@ func (s *UserService) RemoveFriend(ctx context.Context, clerkID string, friendCl
 	log.Printf("RemoveFriend: Successfully removed friendship between %s and %s", clerkID, friendClerkID)
 	return nil
 }
-
 func (s *UserService) GetLeaderboards(ctx context.Context, clerkID string) (map[string]*leaderboard.Leaderboard, error) {
 	// 1. Get the current user's UUID
 	var userID uuid.UUID
@@ -522,6 +521,7 @@ func (s *UserService) GetLeaderboards(ctx context.Context, clerkID string) (map[
 	result := make(map[string]*leaderboard.Leaderboard)
 
 	// --- Global Leaderboard ---
+	// Directly uses the alcoholism_coefficient column which is updated by GetUserStats
 	globalQuery := `
 		SELECT 
 			u.id,
@@ -537,9 +537,10 @@ func (s *UserService) GetLeaderboards(ctx context.Context, clerkID string) (map[
 	if err != nil {
 		return nil, fmt.Errorf("failed to fetch global leaderboard: %w", err)
 	}
-	// We pass the rows directly to the helper
+
 	globalBoard, err := scanLeaderboardRows(globalRows, userID)
 	if err != nil {
+		globalRows.Close() // Ensure close on error
 		return nil, fmt.Errorf("failed to scan global leaderboard: %w", err)
 	}
 	result["global"] = globalBoard
@@ -562,9 +563,10 @@ func (s *UserService) GetLeaderboards(ctx context.Context, clerkID string) (map[
 	if err != nil {
 		return nil, fmt.Errorf("failed to fetch friends leaderboard: %w", err)
 	}
-	
+
 	friendsBoard, err := scanLeaderboardRows(friendsRows, userID)
 	if err != nil {
+		friendsRows.Close() // Ensure close on error
 		return nil, fmt.Errorf("failed to scan friends leaderboard: %w", err)
 	}
 	result["friends"] = friendsBoard
@@ -666,7 +668,7 @@ func (s *UserService) GetAchievements(ctx context.Context, clerkID string) ([]*a
 }
 func (s *UserService) AddDrinking(ctx context.Context, clerkID string, drankToday bool, imageUrl *string, locationText *string, clerkIDs []string, date time.Time) error {
 	var userID uuid.UUID
-	var username string 
+	var username string
 
 	err := s.db.QueryRow(ctx, `SELECT id, username FROM users WHERE clerk_id = $1`, clerkID).Scan(&userID, &username)
 	if err != nil {
@@ -693,7 +695,7 @@ func (s *UserService) AddDrinking(ctx context.Context, clerkID string, drankToda
 	if imageUrl != nil {
 		// Dereference the pointer to get the string value
 		actualURL := *imageUrl
-		
+
 		// Run in background
 		go utils.FriendPostedImageToMix(s.db, s.notifService, userID, username, actualURL)
 	}
@@ -1212,11 +1214,22 @@ func (s *UserService) GetUserStats(ctx context.Context, clerkID string) (*stats.
 	}
 
 	// Calculate alcoholism coefficient: currentStreak^2 + totalDays*0.3 + achievements*5
-	alcoholismScore := float64(stats.CurrentStreak*stats.CurrentStreak)*0.3 +
-		(float64(stats.TotalDaysDrank) * 0.05) +
-		(float64(stats.AchievementsCount) * 1)
+	stats.AlcoholismCoefficient = utils.CalculateAlcoholismScore(
+		stats.CurrentStreak,
+		stats.TotalDaysDrank,
+		stats.AchievementsCount,
+	)
 
-	stats.AlcoholismCoefficient = alcoholismScore
+	_, err = s.db.Exec(ctx, `
+		UPDATE users 
+		SET alcoholism_coefficient = $1 
+		WHERE id = $2
+	`, stats.AlcoholismCoefficient, userID)
+
+	if err != nil {
+		// Log error but don't fail the request, just means leaderboard might be slightly stale
+		fmt.Printf("failed to update alcoholism coefficient: %v\n", err)
+	}
 
 	// Calculate rank based on AlcoholismCoefficient
 	rankQuery := `
