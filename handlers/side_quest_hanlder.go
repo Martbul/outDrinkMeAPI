@@ -1,24 +1,44 @@
 package handlers
 
-// import (
-// 	"context"
-// 	"net/http"
-// 	"outDrinkMeAPI/middleware"
-// 	"outDrinkMeAPI/services"
-// 	"time"
-// )
+import (
+	"context"
+	"net/http"
+	"outDrinkMeAPI/middleware"
+	"outDrinkMeAPI/services"
+	"time"
+)
 
-// type SideQuestHandler struct {
-// 	sideQuestService *services.SideQuestService
-// }
+type SideQuestHandler struct {
+	sideQuestService *services.SideQuestService
+}
 
-// func NewSideQuestHandler(sideQuestService *services.SideQuestService) *SideQuestHandler {
-// 	return &SideQuestHandler{
-// 		sideQuestService: sideQuestService,
-// 	}
-// }
+func NewSideQuestHandler(sideQuestService *services.SideQuestService) *SideQuestHandler {
+	return &SideQuestHandler{
+		sideQuestService: sideQuestService,
+	}
+}
 
-// func (h *SideQuestHandler) GetBuddiesSideQuestBoard(w http.ResponseWriter, r *http.Request) {
+func (h *SideQuestHandler) GetSideQuestBoard(w http.ResponseWriter, r *http.Request) {
+	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
+	defer cancel()
+
+	clerkID, ok := middleware.GetClerkID(ctx)
+	if !ok {
+		respondWithError(w, http.StatusUnauthorized, "User not authenticated")
+		return
+	}
+
+	board, err := h.sideQuestService.GetSideQuestBoard(ctx, clerkID)
+	if err != nil {
+		respondWithError(w, http.StatusInternalServerError, "could not serve quest board")
+		return
+	}
+
+	respondWithJSON(w, http.StatusOK, board)
+
+}
+
+// func (h *SideQuestHandler) PostNewSideQuest(w http.ResponseWriter, r *http.Request) {
 // 	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
 // 	defer cancel()
 
@@ -28,12 +48,26 @@ package handlers
 // 		return
 // 	}
 
-// 	buddiesQuestBoard, err := h.sideQuestService.GetBuddiesSideQuestBoard(clerkID)
-// 	if err != nil {
-// 		respondWithError(w, http.StatusInternalServerError, "could not server buddies quest board")
+// 	var req struct {
+// 		Title       string
+// 		Description string
+// 		Reward      int
+// 		ExpiresAt   time.Time
+// 		IsPublic    bool
+// 		IsAnonymous bool
+// 	}
+
+// 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+// 		respondWithError(w, http.StatusBadRequest, "Invalid request body")
 // 		return
 // 	}
 
-// 	respondWithJSON(w, http.StatusOK, buddiesQuestBoard)
+// 	newPost, err := h.sideQuestService.PostNewSideQuest(ctx, clerkID, req.Title, req.Description, req.Reward, req.ExpiresAt, req.IsPublic, req.IsAnonymous)
+// 	if err != nil {
+// 		respondWithError(w, http.StatusInternalServerError, "could not post new quest")
+// 		return
+// 	}
+
+// 	respondWithJSON(w, http.StatusOK, newPost)
 
 // }

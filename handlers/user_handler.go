@@ -235,7 +235,7 @@ func (h *UserHandler) GetDiscovery(w http.ResponseWriter, r *http.Request) {
 	respondWithJSON(w, http.StatusOK, friends)
 }
 
-func (h *UserHandler) GetFriendsLeaderboard(w http.ResponseWriter, r *http.Request) {
+func (h *UserHandler) GetLeaderboards(w http.ResponseWriter, r *http.Request) {
 	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
 	defer cancel()
 
@@ -245,32 +245,13 @@ func (h *UserHandler) GetFriendsLeaderboard(w http.ResponseWriter, r *http.Reque
 		return
 	}
 
-	friendsLeaderboard, err := h.userService.GetFriendsLeaderboard(ctx, clearkID)
+	leaderboards, err := h.userService.GetLeaderboards(ctx, clearkID)
 	if err != nil {
 		respondWithError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
 
-	respondWithJSON(w, http.StatusOK, friendsLeaderboard)
-}
-
-func (h *UserHandler) GetGlobalLeaderboard(w http.ResponseWriter, r *http.Request) {
-	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
-	defer cancel()
-
-	clearkID, ok := middleware.GetClerkID(ctx)
-	if !ok {
-		respondWithError(w, http.StatusInternalServerError, "Error while getting global leaderboard")
-		return
-	}
-
-	globalLeaderboard, err := h.userService.GetGlobalLeaderboard(ctx, clearkID)
-	if err != nil {
-		respondWithError(w, http.StatusInternalServerError, err.Error())
-		return
-	}
-
-	respondWithJSON(w, http.StatusOK, globalLeaderboard)
+	respondWithJSON(w, http.StatusOK, leaderboards)
 }
 
 func (h *UserHandler) GetAchievements(w http.ResponseWriter, r *http.Request) {

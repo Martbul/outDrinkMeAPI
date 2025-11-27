@@ -511,102 +511,70 @@ func (s *UserService) RemoveFriend(ctx context.Context, clerkID string, friendCl
 	return nil
 }
 
-func (s *UserService) GetFriendsLeaderboard(ctx context.Context, clerkID string) (*leaderboard.Leaderboard, error) {
-	// Get user ID from clerk_id
+func (s *UserService) GetLeaderboards(ctx context.Context, clerkID string) (map[string]*leaderboard.Leaderboard, error) {
+	// 1. Get the current user's UUID
 	var userID uuid.UUID
 	err := s.db.QueryRow(ctx, `SELECT id FROM users WHERE clerk_id = $1`, clerkID).Scan(&userID)
 	if err != nil {
 		return nil, fmt.Errorf("user not found: %w", err)
 	}
 
-	query := `
-	SELECT 
-		u.id as user_id,
-		u.username,
-		u.image_url,
-		COALESCE(ws.days_drank, 0) as days_this_week,
-		RANK() OVER (ORDER BY COALESCE(ws.days_drank, 0) DESC) as rank,
-		COALESCE(s.current_streak, 0) as current_streak
-	FROM users u
-	INNER JOIN friendships f 
-		ON (f.friend_id = u.id AND f.user_id = $1 AND f.status = 'accepted')
-	LEFT JOIN weekly_stats ws 
-		ON u.id = ws.user_id 
-		AND ws.week_start = DATE_TRUNC('week', CURRENT_DATE)::DATE
-	LEFT JOIN streaks s 
-		ON u.id = s.user_id
-	ORDER BY days_this_week DESC, current_streak DESC
-	LIMIT 50
-`
+	result := make(map[string]*leaderboard.Leaderboard)
 
-	rows, err := s.db.Query(ctx, query, userID)
+	// --- Global Leaderboard ---
+	globalQuery := `
+		SELECT 
+			u.id,
+			u.username,
+			u.image_url,
+			COALESCE(u.alcoholism_coefficient, 0) as score,
+			RANK() OVER (ORDER BY COALESCE(u.alcoholism_coefficient, 0) DESC) as rank
+		FROM users u
+		ORDER BY score DESC
+		LIMIT 50
+	`
+	globalRows, err := s.db.Query(ctx, globalQuery)
 	if err != nil {
-		return nil, fmt.Errorf("failed to fetch leaderboard: %w", err)
+		return nil, fmt.Errorf("failed to fetch global leaderboard: %w", err)
 	}
-	defer rows.Close()
-
-	var entries []*leaderboard.LeaderboardEntry
-	var userPosition *leaderboard.LeaderboardEntry
-
-	for rows.Next() {
-		entry := &leaderboard.LeaderboardEntry{}
-		err := rows.Scan(
-			&entry.UserID,
-			&entry.Username,
-			&entry.ImageURL,
-			&entry.DaysThisWeek,
-			&entry.Rank,
-			&entry.CurrentStreak,
-		)
-		if err != nil {
-			return nil, fmt.Errorf("failed to scan row: %w", err)
-		}
-
-		entries = append(entries, entry)
-
-		if entry.UserID == userID {
-			userPosition = entry
-		}
+	// We pass the rows directly to the helper
+	globalBoard, err := scanLeaderboardRows(globalRows, userID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to scan global leaderboard: %w", err)
 	}
+	result["global"] = globalBoard
 
-	return &leaderboard.Leaderboard{
-		Entries:      entries,
-		UserPosition: userPosition,
-		TotalUsers:   len(entries),
-	}, nil
+	// --- Friends Leaderboard ---
+	friendsQuery := `
+		SELECT 
+			u.id,
+			u.username,
+			u.image_url,
+			COALESCE(u.alcoholism_coefficient, 0) as score,
+			RANK() OVER (ORDER BY COALESCE(u.alcoholism_coefficient, 0) DESC) as rank
+		FROM users u
+		INNER JOIN friendships f 
+			ON (f.friend_id = u.id AND f.user_id = $1 AND f.status = 'accepted')
+		ORDER BY score DESC
+		LIMIT 50
+	`
+	friendsRows, err := s.db.Query(ctx, friendsQuery, userID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to fetch friends leaderboard: %w", err)
+	}
+	
+	friendsBoard, err := scanLeaderboardRows(friendsRows, userID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to scan friends leaderboard: %w", err)
+	}
+	result["friends"] = friendsBoard
+
+	return result, nil
 }
 
-func (s *UserService) GetGlobalLeaderboard(ctx context.Context, clerkID string) (*leaderboard.Leaderboard, error) {
-	// Get user ID from clerk_id
-	var userID uuid.UUID
-	err := s.db.QueryRow(ctx, `SELECT id FROM users WHERE clerk_id = $1`, clerkID).Scan(&userID)
-	if err != nil {
-		return nil, fmt.Errorf("user not found: %w", err)
-	}
-
-	query := `
-	SELECT 
-		u.id AS user_id,
-		u.username,
-		u.image_url,
-		COALESCE(ws.days_drank, 0) AS days_this_week,
-		RANK() OVER (ORDER BY COALESCE(ws.days_drank, 0) DESC) AS rank,
-		COALESCE(s.current_streak, 0) AS current_streak
-	FROM users u
-	LEFT JOIN weekly_stats ws 
-		ON u.id = ws.user_id 
-		AND ws.week_start = DATE_TRUNC('week', CURRENT_DATE)::DATE
-	LEFT JOIN streaks s 
-		ON u.id = s.user_id
-	ORDER BY days_this_week DESC, current_streak DESC
-	LIMIT 50
-`
-
-	rows, err := s.db.Query(ctx, query, userID)
-	if err != nil {
-		return nil, fmt.Errorf("failed to fetch leaderboard: %w", err)
-	}
-	defer rows.Close()
+// Helper function updated to accept pgx.Rows
+func scanLeaderboardRows(rows pgx.Rows, currentUserID uuid.UUID) (*leaderboard.Leaderboard, error) {
+	defer rows.Close() // pgx.Rows should be closed
 
 	var entries []*leaderboard.LeaderboardEntry
 	var userPosition *leaderboard.LeaderboardEntry
@@ -617,19 +585,23 @@ func (s *UserService) GetGlobalLeaderboard(ctx context.Context, clerkID string) 
 			&entry.UserID,
 			&entry.Username,
 			&entry.ImageURL,
-			&entry.DaysThisWeek,
+			&entry.AlcoholismCoefficient,
 			&entry.Rank,
-			&entry.CurrentStreak,
 		)
 		if err != nil {
-			return nil, fmt.Errorf("failed to scan row: %w", err)
+			return nil, err
 		}
 
 		entries = append(entries, entry)
 
-		if entry.UserID == userID {
+		// Check if this row is the current user to populate UserPosition
+		if entry.UserID == currentUserID {
 			userPosition = entry
 		}
+	}
+
+	if err := rows.Err(); err != nil {
+		return nil, err
 	}
 
 	return &leaderboard.Leaderboard{
