@@ -539,9 +539,13 @@ func (s *UserService) GetLeaderboards(ctx context.Context, clerkID string) (map[
 			u.image_url,
 			COALESCE(u.alcoholism_coefficient, 0) as score,
 			RANK() OVER (ORDER BY COALESCE(u.alcoholism_coefficient, 0) DESC) as rank
-		FROM users u
-		INNER JOIN friendships f 
-			ON (f.friend_id = u.id AND f.user_id = $1 AND f.status = 'accepted')
+		 FROM users u
+    INNER JOIN friendships f ON (
+        (f.user_id = u.id AND f.friend_id = (SELECT id FROM users WHERE clerk_id = $1))
+        OR
+        (f.friend_id = u.id AND f.user_id = (SELECT id FROM users WHERE clerk_id = $1))
+    )
+    WHERE f.status = 'accepted'
 		ORDER BY score DESC
 		LIMIT 50
 	`
@@ -552,7 +556,7 @@ func (s *UserService) GetLeaderboards(ctx context.Context, clerkID string) (map[
 
 	friendsBoard, err := scanLeaderboardRows(friendsRows, userID)
 	if err != nil {
-		friendsRows.Close() 
+		friendsRows.Close()
 		return nil, fmt.Errorf("failed to scan friends leaderboard: %w", err)
 	}
 	result["friends"] = friendsBoard
@@ -561,7 +565,7 @@ func (s *UserService) GetLeaderboards(ctx context.Context, clerkID string) (map[
 }
 
 func scanLeaderboardRows(rows pgx.Rows, currentUserID uuid.UUID) (*leaderboard.Leaderboard, error) {
-	defer rows.Close() 
+	defer rows.Close()
 
 	var entries []*leaderboard.LeaderboardEntry
 	var userPosition *leaderboard.LeaderboardEntry
@@ -1198,7 +1202,6 @@ func (s *UserService) GetUserStats(ctx context.Context, clerkID string) (*stats.
 		stats.TotalDaysDrank,
 		stats.AchievementsCount,
 	)
-	
 
 	_, err = s.db.Exec(ctx, `
 		UPDATE users 
