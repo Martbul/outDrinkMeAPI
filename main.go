@@ -31,6 +31,7 @@ var (
 	sideQuestService    *services.SideQuestService
 	notificationService *services.NotificationService
 	fcmService          *notification.FCMService
+	photoDumpService    *services.PhotoDumpService
 )
 
 func init() {
@@ -88,6 +89,7 @@ func init() {
 	userService = services.NewUserService(dbPool, notificationService)
 	storeService = services.NewStoreService(dbPool)
 	sideQuestService = services.NewSideQuestService(dbPool, notificationService)
+	photoDumpService = services.NewPhotoDumpService(dbPool)
 	fcmService, err = notification.NewFCMService("./serviceAccountKey.json")
 
 	if err != nil {
@@ -112,6 +114,7 @@ func main() {
 	sideQuestHandler := handlers.NewSideQuestHandler(sideQuestService)
 	notificationHandler := handlers.NewNotificationHandler(notificationService)
 	webhookHandler := handlers.NewWebhookHandler(userService)
+	photoDumpHandler := handlers.NewPhotoDumpHandler(photoDumpService)
 
 	r := mux.NewRouter()
 
@@ -215,6 +218,11 @@ func main() {
 	protected.HandleFunc("/sidequest", sideQuestHandler.PostNewSideQuest).Methods("POST")
 	// protected.HandleFunc("sidequest/:id/complete", sideQuestHandler.PostCompletion).Methods("POST") //Up to 3 iamges(sending the pics to the user that has added the quest for aprovam, if aproved -> grand the gems(fromk the quester account) to the completer)
 	// protected.HandleFunc("sidequest/:id/complete", sideQuestHandler.PostNewSideQuest).Methods("POST")
+
+	protected.HandleFunc("/photo-dump/generate", photoDumpHandler.GenerateQrCode).Methods("GET")
+	protected.HandleFunc("/photo-dump/scan", photoDumpHandler.JoinViaQrCode).Methods("POST")
+	protected.HandleFunc("/photo-dump/:sesionId", photoDumpHandler.GetSessionData).Methods("GET")
+	protected.HandleFunc("/photo-dump/:sesionId", photoDumpHandler.AddImages).Methods("POST")
 
 	// CORS configuration
 	corsHandler := gorilllaHandlers.CORS(

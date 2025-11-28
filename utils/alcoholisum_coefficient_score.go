@@ -16,12 +16,12 @@ func CalculateAlcoholismScore(currentStreak, totalDays, achievementsCount int) f
 	return float64(normilizedCoeff)
 }
 
-// GetNormalizedScore transforms the raw coefficient into a 0-100 scale using an inverse exponential curve.
+// GetNormalizedScore transforms the raw coefficient into a 1-100 scale using an inverse exponential curve.
 // Logic matches: 100 * (1 - e^(-0.05 * raw))
 func GetNormalizedScore(rawCoef float64) int {
-	// If rawCoef is 0 (new user with no drinking data), return 0
+	// If rawCoef is 0 or negative, we default to the minimum score of 1.
 	if rawCoef <= 0 {
-		return 0
+		return 1
 	}
 
 	// Transform using inverse exponential
@@ -32,9 +32,10 @@ func GetNormalizedScore(rawCoef float64) int {
 	// Round to nearest integer
 	coef := int(math.Round(transformedScore))
 
-	// Normalize to 0-100 range
-	if coef < 0 {
-		return 0
+	// Normalize to 1-100 range
+	// We check specifically if the result is less than 1 (which handles rounding down of small numbers)
+	if coef < 1 {
+		return 1
 	}
 	if coef > 100 {
 		return 100

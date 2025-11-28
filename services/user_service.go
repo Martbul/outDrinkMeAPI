@@ -561,7 +561,7 @@ func (s *UserService) GetLeaderboards(ctx context.Context, clerkID string) (map[
 			RANK() OVER (ORDER BY COALESCE(u.alcoholism_coefficient, 0) DESC) as rank
 		FROM users u
 		INNER JOIN my_circle mc ON u.id = mc.uid
-		WHERE u.alcoholism_coefficient > 0
+				WHERE u.alcoholism_coefficient > 0
 		ORDER BY score DESC
 		LIMIT 50
 	`
