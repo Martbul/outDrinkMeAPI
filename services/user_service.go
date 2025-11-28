@@ -500,7 +500,9 @@ func (s *UserService) RemoveFriend(ctx context.Context, clerkID string, friendCl
 	log.Printf("RemoveFriend: Successfully removed friendship between %s and %s", clerkID, friendClerkID)
 	return nil
 }
+
 func (s *UserService) GetLeaderboards(ctx context.Context, clerkID string) (map[string]*leaderboard.Leaderboard, error) {
+	// 1. Get the internal UUID for the user
 	var userID uuid.UUID
 	err := s.db.QueryRow(ctx, `SELECT id FROM users WHERE clerk_id = $1`, clerkID).Scan(&userID)
 	if err != nil {
@@ -509,6 +511,7 @@ func (s *UserService) GetLeaderboards(ctx context.Context, clerkID string) (map[
 
 	result := make(map[string]*leaderboard.Leaderboard)
 
+	// --- Global Leaderboard (Unchanged) ---
 	globalQuery := `
 		SELECT 
 			u.id,
@@ -524,14 +527,15 @@ func (s *UserService) GetLeaderboards(ctx context.Context, clerkID string) (map[
 	if err != nil {
 		return nil, fmt.Errorf("failed to fetch global leaderboard: %w", err)
 	}
-
+	// Make sure to close rows if scanning fails, usually done inside the scan function or defer
 	globalBoard, err := scanLeaderboardRows(globalRows, userID)
 	if err != nil {
-		globalRows.Close()
 		return nil, fmt.Errorf("failed to scan global leaderboard: %w", err)
 	}
 	result["global"] = globalBoard
 
+	// --- Friends Leaderboard (FIXED) ---
+	// Logic: Select users where ID is MINE OR ID is in my CONFIRMED friends list
 	friendsQuery := `
 		SELECT 
 			u.id,
@@ -539,16 +543,22 @@ func (s *UserService) GetLeaderboards(ctx context.Context, clerkID string) (map[
 			u.image_url,
 			COALESCE(u.alcoholism_coefficient, 0) as score,
 			RANK() OVER (ORDER BY COALESCE(u.alcoholism_coefficient, 0) DESC) as rank
-		 FROM users u
-    INNER JOIN friendships f ON (
-        (f.user_id = u.id AND f.friend_id = (SELECT id FROM users WHERE clerk_id = $1))
-        OR
-        (f.friend_id = u.id AND f.user_id = (SELECT id FROM users WHERE clerk_id = $1))
-    )
-    WHERE f.status = 'accepted'
+		FROM users u
+		WHERE 
+			-- Include Myself
+			u.id = $1 
+			OR 
+			-- Include Friends (Check both directions)
+			u.id IN (
+				SELECT friend_id FROM friendships WHERE user_id = $1 AND status = 'accepted'
+				UNION
+				SELECT user_id FROM friendships WHERE friend_id = $1 AND status = 'accepted'
+			)
 		ORDER BY score DESC
 		LIMIT 50
 	`
+
+	// We pass 'userID' (the UUID), and the SQL now expects 'u.id = $1' (UUID comparison)
 	friendsRows, err := s.db.Query(ctx, friendsQuery, userID)
 	if err != nil {
 		return nil, fmt.Errorf("failed to fetch friends leaderboard: %w", err)
@@ -556,14 +566,12 @@ func (s *UserService) GetLeaderboards(ctx context.Context, clerkID string) (map[
 
 	friendsBoard, err := scanLeaderboardRows(friendsRows, userID)
 	if err != nil {
-		friendsRows.Close()
 		return nil, fmt.Errorf("failed to scan friends leaderboard: %w", err)
 	}
 	result["friends"] = friendsBoard
 
 	return result, nil
 }
-
 func scanLeaderboardRows(rows pgx.Rows, currentUserID uuid.UUID) (*leaderboard.Leaderboard, error) {
 	defer rows.Close()
 

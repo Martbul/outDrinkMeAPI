@@ -50,12 +50,12 @@ func (h *SideQuestHandler) PostNewSideQuest(w http.ResponseWriter, r *http.Reque
 	}
 
 	var req struct {
-		Title       string
-		Description string
-		Reward      int
-		ExpiresAt   time.Time
-		IsPublic    bool
-		IsAnonymous bool
+		Title         string    `json:"title"`
+		Description   string    `json:"description"`
+		Reward        int       `json:"reward"`
+		DurationHours time.Time `json:"duration_hours"`
+		IsPublic      bool      `json:"is_public"`
+		IsAnonymous   bool      `json:"is_anonymous"`
 	}
 
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
@@ -63,7 +63,7 @@ func (h *SideQuestHandler) PostNewSideQuest(w http.ResponseWriter, r *http.Reque
 		return
 	}
 
-	newPost, err := h.sideQuestService.PostNewSideQuest(ctx, clerkID, req.Title, req.Description, req.Reward, req.ExpiresAt, req.IsPublic, req.IsAnonymous)
+	newPost, err := h.sideQuestService.PostNewSideQuest(ctx, clerkID, req.Title, req.Description, req.Reward, req.DurationHours, req.IsPublic, req.IsAnonymous)
 	if err != nil {
 		respondWithError(w, http.StatusInternalServerError, "could not post new quest")
 		return
