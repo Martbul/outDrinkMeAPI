@@ -212,7 +212,7 @@ func main() {
 	protected.HandleFunc("/notifications/test", notificationHandler.SendTestNotification).Methods("POST")
 
 	protected.HandleFunc("/sidequest/board", sideQuestHandler.GetSideQuestBoard).Methods("GET")
-	// protected.HandleFunc("/sidequest", sideQuestHandler.PostNewSideQuest).Methods("POST")
+	protected.HandleFunc("/sidequest", sideQuestHandler.PostNewSideQuest).Methods("POST")
 	// protected.HandleFunc("sidequest/:id/complete", sideQuestHandler.PostCompletion).Methods("POST") //Up to 3 iamges(sending the pics to the user that has added the quest for aprovam, if aproved -> grand the gems(fromk the quester account) to the completer)
 	// protected.HandleFunc("sidequest/:id/complete", sideQuestHandler.PostNewSideQuest).Methods("POST")
 

@@ -5,8 +5,11 @@ import (
 	"fmt"
 	"log"
 	sidequest "outDrinkMeAPI/internal/types/side_quest"
+	"outDrinkMeAPI/utils"
 	"strings"
+	"time"
 
+	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
@@ -125,21 +128,113 @@ func (s *SideQuestService) GetSideQuestBoard(ctx context.Context, clerkID string
 	return result, nil
 }
 
-// func (s *SideQuestService) PostNewSideQuest(ctx context.Context, clerkID string, title string, description string, reward int, expiresAt time.Time, isPublic bool, iAnonymously bool) (map[string][]*store.Item, error) {
-// 	var userID string
-// 	var userGems int
-// 	err := s.db.QueryRow(ctx, "SELECT id,gems FROM users WHERE clerk_id = $1", clerkID).Scan(&userID, &userGems)
-// 	if err != nil {
-// 		log.Printf("Error finding user ID: %v", err)
-// 		return nil, err
-// 	}
+func (s *SideQuestService) PostNewSideQuest(ctx context.Context, clerkID string, title string, description string, reward int, expiresAt time.Time, isPublic bool, isAnonymous bool) (map[string][]*sidequest.SideQuest, error) {
+	// 1. Begin Transaction
+	tx, err := s.db.Begin(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to begin transaction: %w", err)
+	}
+	defer tx.Rollback(ctx)
 
-// 	// db call(check if user has gems to offer a reward)
+	// 2. Get User ID, Gems, and Username (Username is needed for the notification)
+	var userID string
+	var userGems int
+	var userName string 
+	
+	// Added 'username' to the query so we can say "John posted a quest"
+	err = tx.QueryRow(ctx, "SELECT id, gems, username FROM users WHERE clerk_id = $1 FOR UPDATE", clerkID).Scan(&userID, &userGems, &userName)
+	if err != nil {
+		log.Printf("Error finding user ID: %v", err)
+		return nil, fmt.Errorf("user not found: %w", err)
+	}
 
-// 	// db creation call
-// 	// friends notificaion
+	// 3. Validate Balance
+	if reward > userGems {
+		return nil, fmt.Errorf("insufficient funds: you have %d gems, but reward is %d", userGems, reward)
+	}
 
-// }
+	// 4. Deduct Gems
+	_, err = tx.Exec(ctx, "UPDATE users SET gems = gems - $1 WHERE id = $2", reward, userID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to deduct gems: %w", err)
+	}
+
+	// 5. Insert New Side Quest
+	createPostSQL := `
+		INSERT INTO side_quests (
+			issuer_id, 
+			title, 
+			description, 
+			reward_amount, 
+			is_locked, 
+			is_public, 
+			is_anonymous, 
+			status, 
+			expires_at, 
+			created_at, 
+			submission_count
+		) VALUES (
+			$1, $2, $3, $4, $5, $6, $7, $8, $9, NOW(), 0
+		)
+		RETURNING id, created_at, status
+	`
+
+	newQuest := &sidequest.SideQuest{
+		IssuerID:     userID,
+		IssuerName:   &userName, // Populating this pointer for the response
+		Title:        title,
+		Description:  description,
+		RewardAmount: float64(reward),
+		IsLocked:     true,
+		IsPublic:     isPublic,
+		IsAnonymous:  isAnonymous,
+		ExpiresAt:    expiresAt,
+		SubmissionCount: 0,
+	}
+
+	err = tx.QueryRow(ctx, createPostSQL,
+		newQuest.IssuerID,
+		newQuest.Title,
+		newQuest.Description,
+		newQuest.RewardAmount,
+		newQuest.IsLocked,
+		newQuest.IsPublic,
+		newQuest.IsAnonymous,
+		sidequest.QuestStatusOpen,
+		newQuest.ExpiresAt,
+	).Scan(&newQuest.ID, &newQuest.CreatedAt, &newQuest.Status)
+
+	if err != nil {
+		return nil, fmt.Errorf("failed to insert side quest: %w", err)
+	}
+
+	// 6. Commit Transaction
+	if err := tx.Commit(ctx); err != nil {
+		return nil, fmt.Errorf("failed to commit transaction: %w", err)
+	}
+
+	// 7. Trigger Notifications (Async)
+	// Only send if the quest is NOT anonymous and IS public (usually logic implies friends see it unless it's private)
+	if !isAnonymous && s.notifService != nil {
+		// Convert string ID to UUID for the notification system
+		issuerUUID, parseErr := uuid.Parse(userID)
+		
+		if parseErr == nil {
+			go func() {
+				// We create a detached context because 'ctx' might be cancelled when the HTTP request finishes
+				// utils.FriendPostedQuest handles the friend lookup and notification creation
+				utils.FriendPostedQuest(s.db, s.notifService, issuerUUID, userName, newQuest)
+			}()
+		} else {
+			log.Printf("Notification skipped: could not parse userID '%s' to UUID: %v", userID, parseErr)
+		}
+	}
+
+	// 8. Return Result
+	return map[string][]*sidequest.SideQuest{
+		"quest": {newQuest},
+	}, nil
+}
 
 // func (s *SideQuestService) PostCompletion(ctx context.Context, clerkID string, title string, description string, reward int, expiresAt time.Time, isPublic bool, iAnonymously bool) (map[string][]*store.Item, error) {
 // 	// db create call

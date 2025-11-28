@@ -45,6 +45,8 @@ func (s *NotificationService) getUserID(ctx context.Context, clerkID string) (uu
 func (s *NotificationService) GetUserIDFromClerkID(ctx context.Context, clerkID string) (uuid.UUID, error) {
 	return s.getUserID(ctx, clerkID)
 }
+
+
 func (s *NotificationService) CreateNotification(ctx context.Context, req *notification.CreateNotificationRequest) (*notification.Notification, error) {
 	// 1. Get Template from DB
 	template, err := s.getTemplate(ctx, req.Type)

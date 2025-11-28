@@ -19,6 +19,7 @@ const (
 	TypeWeeklyRecap          NotificationType = "weekly_recap"
 	TypeDrunkThoughtReaction NotificationType = "drunk_thought_reaction"
 	TypeFriendPostedMix      NotificationType = "friend_posted_mix"
+	TypeFriendPostedQuest    NotificationType = "quest_invite"
 )
 
 type NotificationPriority string

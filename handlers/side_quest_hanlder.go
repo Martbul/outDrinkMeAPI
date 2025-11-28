@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"context"
+	"encoding/json"
 	"net/http"
 	"outDrinkMeAPI/middleware"
 	"outDrinkMeAPI/services"
@@ -38,36 +39,36 @@ func (h *SideQuestHandler) GetSideQuestBoard(w http.ResponseWriter, r *http.Requ
 
 }
 
-// func (h *SideQuestHandler) PostNewSideQuest(w http.ResponseWriter, r *http.Request) {
-// 	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
-// 	defer cancel()
+func (h *SideQuestHandler) PostNewSideQuest(w http.ResponseWriter, r *http.Request) {
+	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
+	defer cancel()
 
-// 	clerkID, ok := middleware.GetClerkID(ctx)
-// 	if !ok {
-// 		respondWithError(w, http.StatusUnauthorized, "User not authenticated")
-// 		return
-// 	}
+	clerkID, ok := middleware.GetClerkID(ctx)
+	if !ok {
+		respondWithError(w, http.StatusUnauthorized, "User not authenticated")
+		return
+	}
 
-// 	var req struct {
-// 		Title       string
-// 		Description string
-// 		Reward      int
-// 		ExpiresAt   time.Time
-// 		IsPublic    bool
-// 		IsAnonymous bool
-// 	}
+	var req struct {
+		Title       string
+		Description string
+		Reward      int
+		ExpiresAt   time.Time
+		IsPublic    bool
+		IsAnonymous bool
+	}
 
-// 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-// 		respondWithError(w, http.StatusBadRequest, "Invalid request body")
-// 		return
-// 	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		respondWithError(w, http.StatusBadRequest, "Invalid request body")
+		return
+	}
 
-// 	newPost, err := h.sideQuestService.PostNewSideQuest(ctx, clerkID, req.Title, req.Description, req.Reward, req.ExpiresAt, req.IsPublic, req.IsAnonymous)
-// 	if err != nil {
-// 		respondWithError(w, http.StatusInternalServerError, "could not post new quest")
-// 		return
-// 	}
+	newPost, err := h.sideQuestService.PostNewSideQuest(ctx, clerkID, req.Title, req.Description, req.Reward, req.ExpiresAt, req.IsPublic, req.IsAnonymous)
+	if err != nil {
+		respondWithError(w, http.StatusInternalServerError, "could not post new quest")
+		return
+	}
 
-// 	respondWithJSON(w, http.StatusOK, newPost)
+	respondWithJSON(w, http.StatusOK, newPost)
 
-// }
+}
