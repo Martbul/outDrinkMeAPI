@@ -500,6 +500,7 @@ func (s *UserService) RemoveFriend(ctx context.Context, clerkID string, friendCl
 	log.Printf("RemoveFriend: Successfully removed friendship between %s and %s", clerkID, friendClerkID)
 	return nil
 }
+
 func (s *UserService) GetLeaderboards(ctx context.Context, clerkID string) (map[string]*leaderboard.Leaderboard, error) {
 	// 1. Get YOUR internal UUID (Essential for the rest to work)
 	var userID uuid.UUID
@@ -517,6 +518,7 @@ func (s *UserService) GetLeaderboards(ctx context.Context, clerkID string) (map[
 			COALESCE(u.alcoholism_coefficient, 0) as score,
 			RANK() OVER (ORDER BY COALESCE(u.alcoholism_coefficient, 0) DESC) as rank
 		FROM users u
+		WHERE u.alcoholism_coefficient > 0
 		ORDER BY score DESC
 		LIMIT 50
 	`
@@ -533,7 +535,7 @@ func (s *UserService) GetLeaderboards(ctx context.Context, clerkID string) (map[
 	result["global"] = globalBoard
 
 	// --- Friends Leaderboard (THE FIX) ---
-	
+
 	friendsQuery := `
 		WITH my_circle AS (
 			-- 1. Get IDs where YOU are the 'user_id' (e.g. Row 1, 3 in your screenshot)
@@ -559,6 +561,7 @@ func (s *UserService) GetLeaderboards(ctx context.Context, clerkID string) (map[
 			RANK() OVER (ORDER BY COALESCE(u.alcoholism_coefficient, 0) DESC) as rank
 		FROM users u
 		INNER JOIN my_circle mc ON u.id = mc.uid
+		WHERE u.alcoholism_coefficient > 0
 		ORDER BY score DESC
 		LIMIT 50
 	`
@@ -578,7 +581,6 @@ func (s *UserService) GetLeaderboards(ctx context.Context, clerkID string) (map[
 
 	return result, nil
 }
-
 
 func scanLeaderboardRows(rows pgx.Rows, currentUserID uuid.UUID) (*leaderboard.Leaderboard, error) {
 	defer rows.Close()
