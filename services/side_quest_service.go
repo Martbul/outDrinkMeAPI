@@ -24,10 +24,9 @@ func NewSideQuestService(db *pgxpool.Pool, notifService *NotificationService) *S
 		notifService: notifService,
 	}
 }
-
-// ! Chekc if it works
 func (s *SideQuestService) GetSideQuestBoard(ctx context.Context, clerkID string) (map[string][]sidequest.SideQuest, error) {
 	result := make(map[string][]sidequest.SideQuest)
+	// Initialize slices so JSON returns [] instead of null
 	result["buddies"] = []sidequest.SideQuest{}
 	result["random"] = []sidequest.SideQuest{}
 
@@ -38,15 +37,14 @@ func (s *SideQuestService) GetSideQuestBoard(ctx context.Context, clerkID string
 		return nil, err
 	}
 
+	// 1. Get Friend IDs (Bidirectional) - This logic is GOOD
 	queryUserFriends := `
 		SELECT friend_id FROM friendships WHERE user_id = $1 AND status = 'accepted'
 		UNION
 		SELECT user_id FROM friendships WHERE friend_id = $1 AND status = 'accepted'
 	`
-
 	rows, err := s.db.Query(ctx, queryUserFriends, userID)
 	if err != nil {
-		log.Printf("Error fetching friends: %v", err)
 		return nil, err
 	}
 	defer rows.Close()
@@ -59,6 +57,9 @@ func (s *SideQuestService) GetSideQuestBoard(ctx context.Context, clerkID string
 		}
 	}
 
+	// ========================================================================
+	// STEP 2: Get BUDDIES Quests
+	// ========================================================================
 	if len(friendIDs) > 0 {
 		placeholders := make([]string, len(friendIDs))
 		args := make([]interface{}, len(friendIDs))
@@ -67,33 +68,43 @@ func (s *SideQuestService) GetSideQuestBoard(ctx context.Context, clerkID string
 			args[i] = id
 		}
 
+		// FIX: Joined users table to get username/image
+		// FIX: Filtered by status = 'OPEN'
 		queryFriendSideQuests := fmt.Sprintf(`
-			SELECT id, user_id, username, user_image_url, title, description, reward_amount, is_locked, is_public, is_anonymous, status, expires_at,created_at,submission_count
-			FROM side_quests 
-			WHERE user_id IN (%s) 
-			ORDER BY created_at DESC 
+			SELECT 
+				sq.id, sq.issuer_id, u.username, u.image_url, 
+				sq.title, sq.description, sq.reward_amount, sq.is_locked, 
+				sq.is_public, sq.is_anonymous, sq.status, sq.expires_at, 
+				sq.created_at, sq.submission_count
+			FROM side_quests sq
+			INNER JOIN users u ON sq.issuer_id = u.id
+			WHERE sq.issuer_id IN (%s)
+			AND sq.status = 'OPEN' 
+			ORDER BY sq.created_at DESC 
 			LIMIT 20`,
 			strings.Join(placeholders, ","))
 
 		fRows, err := s.db.Query(ctx, queryFriendSideQuests, args...)
-		if err == nil {
-			defer fRows.Close()
-			for fRows.Next() {
-				var q sidequest.SideQuest
-				if err := fRows.Scan(&q.ID, &q.IssuerID, &q.IssuerName, &q.IssuerImage, &q.Title, &q.Description, &q.RewardAmount, &q.IsLocked, &q.IsPublic, &q.IsAnonymous, &q.Status, &q.ExpiresAt, &q.CreatedAt, &q.SubmissionCount); err == nil {
-					result["buddies"] = append(result["buddies"], q)
-				}
-			}
-		} else {
+		if err != nil {
 			log.Printf("Error fetching friend quests: %v", err)
+			return nil, err
+		}
+		defer fRows.Close()
+
+		for fRows.Next() {
+			var q sidequest.SideQuest
+			// Note: scanning u.username into IssuerName and u.image_url into IssuerImage
+			if err := fRows.Scan(&q.ID, &q.IssuerID, &q.IssuerName, &q.IssuerImage, &q.Title, &q.Description, &q.RewardAmount, &q.IsLocked, &q.IsPublic, &q.IsAnonymous, &q.Status, &q.ExpiresAt, &q.CreatedAt, &q.SubmissionCount); err == nil {
+				result["buddies"] = append(result["buddies"], q)
+			}
 		}
 	}
 
 	// ========================================================================
-	// STEP 4: Get Random Quests posted by others (LIMIT 100)
+	// STEP 3: Get RANDOM Quests
 	// ========================================================================
 
-	// Exclude user and their friends
+	// Exclude User + Friends
 	excludedIDs := append(friendIDs, userID)
 
 	placeholdersRand := make([]string, len(excludedIDs))
@@ -103,26 +114,36 @@ func (s *SideQuestService) GetSideQuestBoard(ctx context.Context, clerkID string
 		argsRand[i] = id
 	}
 
+	// FIX: Added check for is_public = true
+	// FIX: Added JOIN users
+	// FIX: Corrected table name (side_quests)
 	queryRandom := fmt.Sprintf(`
-		SELECT id, user_id, username, user_image_url, title, description, reward_amount, is_locked, is_public, is_anonymous, status, expires_at,created_at,submission_count
-		FROM side_quest 
-		WHERE user_id NOT IN (%s) 
+		SELECT 
+			sq.id, sq.issuer_id, u.username, u.image_url, 
+			sq.title, sq.description, sq.reward_amount, sq.is_locked, 
+			sq.is_public, sq.is_anonymous, sq.status, sq.expires_at, 
+			sq.created_at, sq.submission_count
+		FROM side_quests sq
+		INNER JOIN users u ON sq.issuer_id = u.id
+		WHERE sq.issuer_id NOT IN (%s) 
+		AND sq.is_public = true
+		AND sq.status = 'OPEN'
 		ORDER BY RANDOM() 
 		LIMIT 100`,
 		strings.Join(placeholdersRand, ","))
 
 	rRows, err := s.db.Query(ctx, queryRandom, argsRand...)
-	if err == nil {
-		defer rRows.Close()
-		for rRows.Next() {
-			var q sidequest.SideQuest
-			if err := rRows.Scan(&q.ID, &q.IssuerID, &q.IssuerName, &q.IssuerImage, &q.Title, &q.Description, &q.RewardAmount, &q.IsLocked, &q.IsPublic, &q.IsAnonymous, &q.Status, &q.ExpiresAt, &q.CreatedAt, &q.SubmissionCount); err == nil {
-				// FIX: Append to slice (removed logical check on map key)
-				result["random"] = append(result["random"], q)
-			}
-		}
-	} else {
+	if err != nil {
 		log.Printf("Error fetching random quests: %v", err)
+		return nil, err
+	}
+	defer rRows.Close()
+
+	for rRows.Next() {
+		var q sidequest.SideQuest
+		if err := rRows.Scan(&q.ID, &q.IssuerID, &q.IssuerName, &q.IssuerImage, &q.Title, &q.Description, &q.RewardAmount, &q.IsLocked, &q.IsPublic, &q.IsAnonymous, &q.Status, &q.ExpiresAt, &q.CreatedAt, &q.SubmissionCount); err == nil {
+			result["random"] = append(result["random"], q)
+		}
 	}
 
 	return result, nil
