@@ -32,6 +32,7 @@ var (
 	notificationService *services.NotificationService
 	fcmService          *notification.FCMService
 	photoDumpService    *services.PhotoDumpService
+	gameManager         *services.DrinnkingGameManager
 )
 
 func init() {
@@ -91,6 +92,7 @@ func init() {
 	sideQuestService = services.NewSideQuestService(dbPool, notificationService)
 	photoDumpService = services.NewPhotoDumpService(dbPool)
 	fcmService, err = notification.NewFCMService("./serviceAccountKey.json")
+	gameManager = services.NewDrinnkingGameManager()
 
 	if err != nil {
 		log.Printf("WARNING: FCM not initialized: %v", err)
@@ -115,10 +117,12 @@ func main() {
 	notificationHandler := handlers.NewNotificationHandler(notificationService)
 	webhookHandler := handlers.NewWebhookHandler(userService)
 	photoDumpHandler := handlers.NewPhotoDumpHandler(photoDumpService)
+	drinkingGameHandler := handlers.NewDrinkingGamesHandler(gameManager)
 
 	r := mux.NewRouter()
 
 	go middleware.CleanupVisitors()
+
 	r.Use(middleware.RateLimitMiddleware)
 
 	r.Use(middleware.MonitorMiddleware)
@@ -158,12 +162,12 @@ func main() {
 
 	api := r.PathPrefix("/api/v1").Subrouter()
 
+
 	api.HandleFunc("/privacy-policy", docHandler.ServePrivacyPolicy).Methods("GET")
 	api.HandleFunc("/terms-of-services", docHandler.ServeTermsOfServices).Methods("GET")
 	api.HandleFunc("/delete-account-webpage", userHandler.DeleteAccountPage).Methods("GET")
 	api.HandleFunc("/delete-account-details-webpage", userHandler.UpdateAccountPage).Methods("GET")
 
-	// Protected API routes (auth required)
 	protected := api.PathPrefix("").Subrouter()
 	protected.Use(middleware.ClerkAuthMiddleware)
 
@@ -224,6 +228,48 @@ func main() {
 	protected.HandleFunc("/photo-dump/:sesionId", photoDumpHandler.GetSessionData).Methods("GET")
 	protected.HandleFunc("/photo-dump/:sesionId", photoDumpHandler.AddImages).Methods("POST")
 
+	protected.HandleFunc("/drinking-games/{gameType}/create", drinkingGameHandler.CreateDrinkingGame).Methods("POST")
+
+
+    // --- WEBSOCKET ROUTES (Join the game) ---
+    // Note: Use handleFunc, not Handle, to access vars easily
+    
+    // Using a separate route for WS prevents Middleware conflict if needed, 
+    // but here we attach to the main router.
+    protected.HandleFunc("/api/v1/games/ws/{sessionID}",drinkingGameHandler.JoinDrinkingGame).Methods("GET") // .Methods("GET") is implied for WS
+	 
+//  r.HandleFunc("/api/v1/games/ws/{sessionID}", func(w http.ResponseWriter, r *http.Request) {
+//         vars := mux.Vars(r)
+//         sessionID := vars["sessionID"]
+
+//         // 1. Validate Session Exists
+//         session, exists := gameManager.GetSession(sessionID)
+//         if !exists {
+//             http.Error(w, "Game session not found", http.StatusNotFound)
+//             return
+//         }
+
+//         // 2. Upgrade Connection
+//         conn, err := upgrader.Upgrade(w, r, nil)
+//         if err != nil {
+//             log.Println(err)
+//             return
+//         }
+
+//         // 3. Register User to Session
+//         client := &game.Client{
+//             Session: session,
+//             Conn:    conn,
+//             Send:    make(chan []byte, 256),
+//         }
+        
+//         // Start Pumps
+//         client.Session.Register <- client
+//         go client.WritePump()
+//         go client.ReadPump()
+
+//     }) // .Methods("GET") is implied for WS
+	 
 	// CORS configuration
 	corsHandler := gorilllaHandlers.CORS(
 		gorilllaHandlers.AllowedOrigins([]string{"*"}),
