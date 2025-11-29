@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"context"
+	"encoding/json"
 	"log"
 	"net/http"
 	"outDrinkMeAPI/services"
@@ -40,12 +41,19 @@ func (h *DrinkingGamesHandler) CreateDrinkingGame(w http.ResponseWriter, r *http
 	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
 	defer cancel()
 
-	vars := mux.Vars(r)
-	gameType := vars["gameType"]
+	var req struct {
+		GameType       string    `json:"game_type"`
+	
+	}
+
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "invalid request body", http.StatusBadRequest)
+		return
+	}
 
 	sessionID := uuid.New().String()
 
-	h.gameManager.CreateSession(ctx, sessionID, gameType)
+	h.gameManager.CreateSession(ctx, sessionID, req.GameType)
 
 	response := map[string]string{
 		"sessionId": sessionID,

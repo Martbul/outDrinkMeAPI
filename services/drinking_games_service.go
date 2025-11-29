@@ -4,8 +4,23 @@ import (
 	"context"
 	"log"
 	"sync"
+	"time"
 
 	"github.com/gorilla/websocket"
+)
+
+const (
+	// Time allowed to write a message to the peer.
+	writeWait = 10 * time.Second
+
+	// Time allowed to read the next pong message from the peer.
+	pongWait = 60 * time.Second
+
+	// Send pings to peer with this period. Must be less than pongWait.
+	pingPeriod = (pongWait * 9) / 10
+
+	// Maximum message size allowed from peer.
+	maxMessageSize = 512
 )
 
 type Session struct {
@@ -118,35 +133,67 @@ type Client struct {
 	Send    chan []byte
 }
 
-
 func (c *Client) ReadPump() {
 	defer func() {
 		c.Session.Unregister <- c
 		c.Conn.Close()
 	}()
-	// ... (Standard read limits and pong handlers here) ...
+	
+	// Standard configuration to ensure connection health
+	c.Conn.SetReadLimit(maxMessageSize)
+	c.Conn.SetReadDeadline(time.Now().Add(pongWait))
+	c.Conn.SetPongHandler(func(string) error { 
+		c.Conn.SetReadDeadline(time.Now().Add(pongWait))
+		return nil 
+	})
+
 	for {
 		_, message, err := c.Conn.ReadMessage()
 		if err != nil {
+			if websocket.IsUnexpectedCloseError(err, websocket.CloseGoingAway, websocket.CloseAbnormalClosure) {
+				log.Printf("WS Error: %v", err)
+			}
 			break
 		}
-		// Broadcast to others in the room
+		// Send message to the session to be broadcasted
 		c.Session.Broadcast <- message
 	}
 }
 
-
+// WritePump handles messages going TO the frontend
 func (c *Client) WritePump() {
-	// ... (Standard write logic with tickers here) ...
-	// refer to previous answer for full implementation
+	ticker := time.NewTicker(pingPeriod)
+	defer func() {
+		ticker.Stop()
+		c.Conn.Close()
+	}()
+
 	for {
 		select {
 		case message, ok := <-c.Send:
+			c.Conn.SetWriteDeadline(time.Now().Add(writeWait))
 			if !ok {
+				// The session closed the channel.
 				c.Conn.WriteMessage(websocket.CloseMessage, []byte{})
 				return
 			}
-			c.Conn.WriteMessage(websocket.TextMessage, message)
+
+			w, err := c.Conn.NextWriter(websocket.TextMessage)
+			if err != nil {
+				return
+			}
+			w.Write(message)
+
+			if err := w.Close(); err != nil {
+				return
+			}
+
+		case <-ticker.C:
+			// Heartbeat: keep connection alive
+			c.Conn.SetWriteDeadline(time.Now().Add(writeWait))
+			if err := c.Conn.WriteMessage(websocket.PingMessage, nil); err != nil {
+				return
+			}
 		}
 	}
 }

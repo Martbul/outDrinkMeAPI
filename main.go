@@ -228,7 +228,7 @@ func main() {
 	protected.HandleFunc("/photo-dump/:sesionId", photoDumpHandler.GetSessionData).Methods("GET")
 	protected.HandleFunc("/photo-dump/:sesionId", photoDumpHandler.AddImages).Methods("POST")
 
-	protected.HandleFunc("/drinking-games/{gameType}/create", drinkingGameHandler.CreateDrinkingGame).Methods("POST")
+	protected.HandleFunc("/drinking-games/create", drinkingGameHandler.CreateDrinkingGame).Methods("POST")
 
 
     // --- WEBSOCKET ROUTES (Join the game) ---
