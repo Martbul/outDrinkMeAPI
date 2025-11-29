@@ -126,6 +126,8 @@ func main() {
 	r.Use(middleware.RateLimitMiddleware)
 
 	r.Use(middleware.MonitorMiddleware)
+	
+	r.HandleFunc("/api/v1/games/ws/{sessionID}", drinkingGameHandler.JoinDrinkingGame).Methods("GET")
 
 	r.Handle("/metrics", middleware.BasicAuthMiddleware(promhttp.Handler()))
 
