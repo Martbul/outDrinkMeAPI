@@ -1,7 +1,5 @@
 package services
 
-
-// --- King's Cup Logic ---
 type KingsCupLogic struct{}
 
 func (g *KingsCupLogic) InitState() interface{} {
@@ -13,7 +11,6 @@ func (g *KingsCupLogic) HandleMessage(s *Session, sender *Client, msg []byte) {
 	s.Broadcast <- msg 
 }
 
-// --- Burn Book Logic ---
 type BurnBookLogic struct{}
 
 func (g *BurnBookLogic) InitState() interface{} {

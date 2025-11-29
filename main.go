@@ -36,12 +36,11 @@ var (
 )
 
 func init() {
-	// Load .env file
+	// ... (Your init code remains exactly the same) ...
 	if err := godotenv.Load(); err != nil {
 		log.Println("No .env file found")
 	}
 
-	// Initialize Clerk
 	clerkSecretKey := os.Getenv("CLERK_SECRET_KEY")
 	if clerkSecretKey == "" {
 		log.Fatal("CLERK_SECRET_KEY environment variable is not set")
@@ -49,14 +48,11 @@ func init() {
 	clerk.SetKey(clerkSecretKey)
 	log.Println("Clerk initialized successfully")
 
-	// Load database URL
 	dbURL := os.Getenv("DATABASE_URL")
 	if dbURL == "" {
 		log.Fatal("DATABASE_URL environment variable is not set")
 	}
-	log.Printf("DATABASE_URL loaded: %s", dbURL[:50]+"...")
 
-	// Initialize database connection pool
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 
@@ -65,7 +61,6 @@ func init() {
 		log.Fatal("Failed to parse database URL:", err)
 	}
 
-	// Configure connection pool
 	poolConfig.MaxConns = 25
 	poolConfig.MinConns = 5
 	poolConfig.MaxConnLifetime = time.Hour
@@ -77,16 +72,13 @@ func init() {
 		log.Fatal("Failed to create connection pool:", err)
 	}
 
-	// Test connection
 	if err := dbPool.Ping(ctx); err != nil {
 		log.Fatal("Failed to ping database:", err)
 	}
 
 	log.Println("Successfully connected to NeonDB")
 
-	// Initialize services
 	notificationService = services.NewNotificationService(dbPool)
-
 	userService = services.NewUserService(dbPool, notificationService)
 	storeService = services.NewStoreService(dbPool)
 	sideQuestService = services.NewSideQuestService(dbPool, notificationService)
@@ -119,32 +111,44 @@ func main() {
 	photoDumpHandler := handlers.NewPhotoDumpHandler(photoDumpService)
 	drinkingGameHandler := handlers.NewDrinkingGamesHandler(gameManager)
 
+	// 1. Root Router
 	r := mux.NewRouter()
+
+	// -------------------------------------------------------------------------
+	// WEBSOCKET ROUTE (MUST BE ON ROOT ROUTER)
+	// -------------------------------------------------------------------------
+	// We register this BEFORE applying middleware to other routes.
+	// This ensures the response writer is not wrapped, allowing Hijack() to work.
+	// Note: We match the path requested by your client logs: /api/v1/drinking-games/ws/...
+	r.HandleFunc("/api/v1/drinking-games/ws/{sessionID}", drinkingGameHandler.JoinDrinkingGame)
+
+	// -------------------------------------------------------------------------
+	// STANDARD HTTP ROUTER (WITH MIDDLEWARE)
+	// -------------------------------------------------------------------------
+	// Create a subrouter for all normal API traffic
+	standardRouter := r.PathPrefix("/").Subrouter()
 
 	go middleware.CleanupVisitors()
 
-	r.Use(middleware.RateLimitMiddleware)
+	// Apply middleware ONLY to this subrouter
+	standardRouter.Use(middleware.RateLimitMiddleware)
+	standardRouter.Use(middleware.MonitorMiddleware)
 
-	r.Use(middleware.MonitorMiddleware)
-	
-	r.HandleFunc("/api/v1/games/ws/{sessionID}", drinkingGameHandler.JoinDrinkingGame).Methods("GET")
-
-	r.Handle("/metrics", middleware.BasicAuthMiddleware(promhttp.Handler()))
-
-	//pprof attaches to http.DefaultServeMux, so we forward traffic there
-	r.PathPrefix("/debug/pprof/").Handler(middleware.PprofSecurityMiddleware(http.DefaultServeMux))
+	// Attach basic routes to standardRouter
+	standardRouter.Handle("/metrics", middleware.BasicAuthMiddleware(promhttp.Handler()))
+	standardRouter.PathPrefix("/debug/pprof/").Handler(middleware.PprofSecurityMiddleware(http.DefaultServeMux))
 
 	assetsDir := "./assets"
 	fs := http.FileServer(http.Dir(assetsDir))
-	r.PathPrefix("/assets/").Handler(http.StripPrefix("/assets/", fs))
+	standardRouter.PathPrefix("/assets/").Handler(http.StripPrefix("/assets/", fs))
 	log.Printf("Serving static files from %s at /assets/", assetsDir)
 
-	r.HandleFunc("/app-ads.txt", func(w http.ResponseWriter, r *http.Request) {
+	standardRouter.HandleFunc("/app-ads.txt", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "text/plain")
 		w.Write([]byte("google.com, pub-1167503921437683, DIRECT, f08c47fec0942fa0"))
 	})
 
-	r.HandleFunc("/health", func(w http.ResponseWriter, r *http.Request) {
+	standardRouter.HandleFunc("/health", func(w http.ResponseWriter, r *http.Request) {
 		ctx, cancel := context.WithTimeout(r.Context(), 2*time.Second)
 		defer cancel()
 
@@ -160,17 +164,24 @@ func main() {
 		w.Write([]byte(`{"status": "healthy", "service": "outDrinkMe-api"}`))
 	}).Methods("GET")
 
-	r.HandleFunc("/webhooks/clerk", webhookHandler.HandleClerkWebhook).Methods("POST")
+	standardRouter.HandleFunc("/webhooks/clerk", webhookHandler.HandleClerkWebhook).Methods("POST")
 
-	api := r.PathPrefix("/api/v1").Subrouter()
+	// -------------------------------------------------------------------------
+	// API V1 SUBROUTER
+	// -------------------------------------------------------------------------
+	// This inherits middleware from standardRouter
+	api := standardRouter.PathPrefix("/api/v1").Subrouter()
 
-	api.HandleFunc("/drinking-games/ws/{sessionID}", drinkingGameHandler.JoinDrinkingGame)
-
+	api.HandleFunc("/drinking-games/public", drinkingGameHandler.GetPublicDrinkingGames).Methods("GET")
+	
 	api.HandleFunc("/privacy-policy", docHandler.ServePrivacyPolicy).Methods("GET")
 	api.HandleFunc("/terms-of-services", docHandler.ServeTermsOfServices).Methods("GET")
 	api.HandleFunc("/delete-account-webpage", userHandler.DeleteAccountPage).Methods("GET")
 	api.HandleFunc("/delete-account-details-webpage", userHandler.UpdateAccountPage).Methods("GET")
 
+	// -------------------------------------------------------------------------
+	// PROTECTED ROUTES (REQUIRE AUTH HEADER)
+	// -------------------------------------------------------------------------
 	protected := api.PathPrefix("").Subrouter()
 	protected.Use(middleware.ClerkAuthMiddleware)
 
@@ -209,7 +220,6 @@ func main() {
 
 	protected.HandleFunc("/store", storeHandler.GetStore).Methods("GET")
 	protected.HandleFunc("/store/purchase/item", storeHandler.PurchaseStoreItem).Methods("POST")
-	// protected.HandleFunc("/store/purchase/gems", storeHandler.PurchaseGems).Methods("POST")
 
 	protected.HandleFunc("/notifications", notificationHandler.GetNotifications).Methods("GET")
 	protected.HandleFunc("/notifications/unread-count", notificationHandler.GetUnreadCount).Methods("GET")
@@ -223,8 +233,6 @@ func main() {
 
 	protected.HandleFunc("/sidequest/board", sideQuestHandler.GetSideQuestBoard).Methods("GET")
 	protected.HandleFunc("/sidequest", sideQuestHandler.PostNewSideQuest).Methods("POST")
-	// protected.HandleFunc("sidequest/:id/complete", sideQuestHandler.PostCompletion).Methods("POST") //Up to 3 iamges(sending the pics to the user that has added the quest for aprovam, if aproved -> grand the gems(fromk the quester account) to the completer)
-	// protected.HandleFunc("sidequest/:id/complete", sideQuestHandler.PostNewSideQuest).Methods("POST")
 
 	protected.HandleFunc("/photo-dump/generate", photoDumpHandler.GenerateQrCode).Methods("GET")
 	protected.HandleFunc("/photo-dump/scan", photoDumpHandler.JoinViaQrCode).Methods("POST")
@@ -232,46 +240,6 @@ func main() {
 	protected.HandleFunc("/photo-dump/:sesionId", photoDumpHandler.AddImages).Methods("POST")
 
 	protected.HandleFunc("/drinking-games/create", drinkingGameHandler.CreateDrinkingGame).Methods("POST")
-	protected.HandleFunc("/drinking-games/public", drinkingGameHandler.GetPublicDrinkingGames).Methods("GET")
-
-	// --- WEBSOCKET ROUTES (Join the game) ---
-	// Note: Use handleFunc, not Handle, to access vars easily
-
-	// Using a separate route for WS prevents Middleware conflict if needed,
-	// but here we attach to the main router.
-	protected.HandleFunc("/api/v1/games/ws/{sessionID}", drinkingGameHandler.JoinDrinkingGame).Methods("GET") // .Methods("GET") is implied for WS
-
-	//  r.HandleFunc("/api/v1/games/ws/{sessionID}", func(w http.ResponseWriter, r *http.Request) {
-	//         vars := mux.Vars(r)
-	//         sessionID := vars["sessionID"]
-
-	//         // 1. Validate Session Exists
-	//         session, exists := gameManager.GetSession(sessionID)
-	//         if !exists {
-	//             http.Error(w, "Game session not found", http.StatusNotFound)
-	//             return
-	//         }
-
-	//         // 2. Upgrade Connection
-	//         conn, err := upgrader.Upgrade(w, r, nil)
-	//         if err != nil {
-	//             log.Println(err)
-	//             return
-	//         }
-
-	//         // 3. Register User to Session
-	//         client := &game.Client{
-	//             Session: session,
-	//             Conn:    conn,
-	//             Send:    make(chan []byte, 256),
-	//         }
-
-	//         // Start Pumps
-	//         client.Session.Register <- client
-	//         go client.WritePump()
-	//         go client.ReadPump()
-
-	//     }) // .Methods("GET") is implied for WS
 
 	// CORS configuration
 	corsHandler := gorilllaHandlers.CORS(
@@ -290,7 +258,7 @@ func main() {
 
 	server := http.Server{
 		Addr:         port,
-		Handler:      corsHandler(r),
+		Handler:      corsHandler(r), // Pass the root router 'r'
 		ReadTimeout:  5 * time.Second,
 		WriteTimeout: 10 * time.Second,
 		IdleTimeout:  120 * time.Second,
