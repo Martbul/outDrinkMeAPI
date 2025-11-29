@@ -1,3 +1,7 @@
+// Session handles networking(sending messages), game engine hanlders the rules of the game, manager - destroying the seesion when t is empty,
+// register chan - When a user connects via WebSocket, they aren't added to the Clients map immediately. They are pushed into this channel. The Session's Run() loop picks them up one by one and safely adds them to the map.,
+// unregiesr - the oposite of register 
+//broadcast chan - > you put message into it, then run() pics it up and sends it to every client
 package services
 
 import (

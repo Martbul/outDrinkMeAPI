@@ -162,7 +162,7 @@ func main() {
 
 	api := r.PathPrefix("/api/v1").Subrouter()
 
-	api.HandleFunc("/games/ws/{sessionID}", drinkingGameHandler.JoinDrinkingGame)
+	api.HandleFunc("/drinking-games/ws/{sessionID}", drinkingGameHandler.JoinDrinkingGame)
 
 	api.HandleFunc("/privacy-policy", docHandler.ServePrivacyPolicy).Methods("GET")
 	api.HandleFunc("/terms-of-services", docHandler.ServeTermsOfServices).Methods("GET")
