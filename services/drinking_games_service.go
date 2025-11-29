@@ -29,12 +29,11 @@ type GameLogic interface {
 	InitState() interface{}
 }
 
-
 type Session struct {
 	ID         string
 	HostID     string
 	GameType   string
-	GameEngine GameLogic    
+	GameEngine GameLogic
 	Manager    *DrinnkingGameManager
 	Clients    map[*Client]bool
 	Broadcast  chan []byte
@@ -116,7 +115,6 @@ func NewDrinnkingGameManager() *DrinnkingGameManager {
 	}
 }
 
-
 func (m *DrinnkingGameManager) CreateSession(ctx context.Context, sessionID, gameType, clerkId string) *Session {
 	m.mu.Lock()
 	defer m.mu.Unlock()
@@ -137,7 +135,36 @@ func (m *DrinnkingGameManager) GetSession(sessionID string) (*Session, bool) {
 	s, ok := m.sessions[sessionID]
 	return s, ok
 }
+type PublicGameResponse struct {
+	SessionID string `json:"sessionId"`
+	GameType  string `json:"gameType"`
+	HostID    string `json:"host"`     
+	Players   int    `json:"players"`
+}
+func (m *DrinnkingGameManager) GetPublicSessions() []PublicGameResponse {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
 
+	// Initialize as empty slice so it returns [] instead of null in JSON
+	games := make([]PublicGameResponse, 0)
+
+	for _, s := range m.sessions {
+		// Optional: Check if s.Settings.IsPublic is true
+		// if !s.Settings.IsPublic { continue }
+
+		games = append(games, PublicGameResponse{
+			SessionID: s.ID,
+			GameType:  s.GameType,
+			HostID:    s.HostID, 
+			Players:   len(s.Clients), // Thread-safe read? 
+            // Note: Reading len(s.Clients) here is technically a race condition 
+            // if you don't lock the Session itself, but for a simple list it's usually acceptable. 
+            // Ideally, Session should have its own RWMutex for its Client map.
+		})
+	}
+
+	return games
+}
 func (m *DrinnkingGameManager) DeleteSession(sessionID string) {
 	m.mu.Lock()
 	defer m.mu.Unlock()

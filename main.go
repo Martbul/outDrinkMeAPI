@@ -162,6 +162,7 @@ func main() {
 
 	api := r.PathPrefix("/api/v1").Subrouter()
 
+	api.HandleFunc("/games/ws/{sessionID}", drinkingGameHandler.JoinDrinkingGame)
 
 	api.HandleFunc("/privacy-policy", docHandler.ServePrivacyPolicy).Methods("GET")
 	api.HandleFunc("/terms-of-services", docHandler.ServeTermsOfServices).Methods("GET")
@@ -229,48 +230,47 @@ func main() {
 	protected.HandleFunc("/photo-dump/:sesionId", photoDumpHandler.AddImages).Methods("POST")
 
 	protected.HandleFunc("/drinking-games/create", drinkingGameHandler.CreateDrinkingGame).Methods("POST")
-	// protected.HandleFunc("/drinking-games/public", drinkingGameHandler.GetPublicDrinkingGames).Methods("GET")
+	protected.HandleFunc("/drinking-games/public", drinkingGameHandler.GetPublicDrinkingGames).Methods("GET")
 
+	// --- WEBSOCKET ROUTES (Join the game) ---
+	// Note: Use handleFunc, not Handle, to access vars easily
 
-    // --- WEBSOCKET ROUTES (Join the game) ---
-    // Note: Use handleFunc, not Handle, to access vars easily
-    
-    // Using a separate route for WS prevents Middleware conflict if needed, 
-    // but here we attach to the main router.
-    protected.HandleFunc("/api/v1/games/ws/{sessionID}",drinkingGameHandler.JoinDrinkingGame).Methods("GET") // .Methods("GET") is implied for WS
-	 
-//  r.HandleFunc("/api/v1/games/ws/{sessionID}", func(w http.ResponseWriter, r *http.Request) {
-//         vars := mux.Vars(r)
-//         sessionID := vars["sessionID"]
+	// Using a separate route for WS prevents Middleware conflict if needed,
+	// but here we attach to the main router.
+	protected.HandleFunc("/api/v1/games/ws/{sessionID}", drinkingGameHandler.JoinDrinkingGame).Methods("GET") // .Methods("GET") is implied for WS
 
-//         // 1. Validate Session Exists
-//         session, exists := gameManager.GetSession(sessionID)
-//         if !exists {
-//             http.Error(w, "Game session not found", http.StatusNotFound)
-//             return
-//         }
+	//  r.HandleFunc("/api/v1/games/ws/{sessionID}", func(w http.ResponseWriter, r *http.Request) {
+	//         vars := mux.Vars(r)
+	//         sessionID := vars["sessionID"]
 
-//         // 2. Upgrade Connection
-//         conn, err := upgrader.Upgrade(w, r, nil)
-//         if err != nil {
-//             log.Println(err)
-//             return
-//         }
+	//         // 1. Validate Session Exists
+	//         session, exists := gameManager.GetSession(sessionID)
+	//         if !exists {
+	//             http.Error(w, "Game session not found", http.StatusNotFound)
+	//             return
+	//         }
 
-//         // 3. Register User to Session
-//         client := &game.Client{
-//             Session: session,
-//             Conn:    conn,
-//             Send:    make(chan []byte, 256),
-//         }
-        
-//         // Start Pumps
-//         client.Session.Register <- client
-//         go client.WritePump()
-//         go client.ReadPump()
+	//         // 2. Upgrade Connection
+	//         conn, err := upgrader.Upgrade(w, r, nil)
+	//         if err != nil {
+	//             log.Println(err)
+	//             return
+	//         }
 
-//     }) // .Methods("GET") is implied for WS
-	 
+	//         // 3. Register User to Session
+	//         client := &game.Client{
+	//             Session: session,
+	//             Conn:    conn,
+	//             Send:    make(chan []byte, 256),
+	//         }
+
+	//         // Start Pumps
+	//         client.Session.Register <- client
+	//         go client.WritePump()
+	//         go client.ReadPump()
+
+	//     }) // .Methods("GET") is implied for WS
+
 	// CORS configuration
 	corsHandler := gorilllaHandlers.CORS(
 		gorilllaHandlers.AllowedOrigins([]string{"*"}),

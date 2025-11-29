@@ -14,6 +14,7 @@ import (
 	"github.com/gorilla/websocket"
 )
 
+
 var upgrader = websocket.Upgrader{
 	CheckOrigin: func(r *http.Request) bool { return true },
 }
@@ -50,14 +51,13 @@ func (h *DrinkingGamesHandler) CreateDrinkingGame(w http.ResponseWriter, r *http
 
 	// Structure matches the frontend JSON
 	var req struct {
-		GameType string                `json:"game_type"`
+		GameType string `json:"game_type"`
 	}
 
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		http.Error(w, "invalid request body", http.StatusBadRequest)
 		return
 	}
-
 
 	sessionID := uuid.New().String()
 
@@ -72,44 +72,21 @@ func (h *DrinkingGamesHandler) CreateDrinkingGame(w http.ResponseWriter, r *http
 	respondWithJSON(w, http.StatusOK, response)
 }
 
-// func (h *DrinkingGamesHandler) GetPublicDrinkingGames(w http.ResponseWriter, r *http.Request) {
-// 	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
-// 	defer cancel()
+func (h *DrinkingGamesHandler) GetPublicDrinkingGames(w http.ResponseWriter, r *http.Request) {
+	games := h.gameManager.GetPublicSessions()
 
-// 	clerkId, ok := middleware.GetClerkID(ctx)
-// 	if !ok {
-// 		respondWithError(w, http.StatusInternalServerError, "Error while getting friends leaderboard")
-// 		return
-// 	}
-
-// 	var req struct {
-// 		GameType string `json:"game_type"`
-// 	}
-
-// 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-// 		http.Error(w, "invalid request body", http.StatusBadRequest)
-// 		return
-// 	}
-
-// 	sessionID := uuid.New().String()
-
-// 	// h.gameManager.CreateSession(ctx, sessionID, req.GameType, clerkId)
-
-// 	response := map[string]string{
-// 		"sessionId": sessionID,
-// 		"wsUrl":     "/api/v1/games/ws/" + sessionID,
-// 	}
-
-// 	respondWithJSON(w, http.StatusOK, response)
-
-// }
-
-
-
+	respondWithJSON(w, http.StatusOK, games)
+}
 
 func (h *DrinkingGamesHandler) JoinDrinkingGame(w http.ResponseWriter, r *http.Request) {
 	// ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
 	// defer cancel()
+
+	token := r.URL.Query().Get("token")
+	if token == "" {
+		http.Error(w, "Unauthorized", http.StatusUnauthorized)
+		return
+	}
 
 	vars := mux.Vars(r)
 	sessionID := vars["sessionID"]
