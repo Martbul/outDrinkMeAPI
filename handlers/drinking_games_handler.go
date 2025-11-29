@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"log"
 	"net/http"
+	"outDrinkMeAPI/middleware"
 	"outDrinkMeAPI/services"
 	"time"
 
@@ -41,9 +42,14 @@ func (h *DrinkingGamesHandler) CreateDrinkingGame(w http.ResponseWriter, r *http
 	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
 	defer cancel()
 
+	clearkID, ok := middleware.GetClerkID(ctx)
+	if !ok {
+		respondWithError(w, http.StatusInternalServerError, "Error while getting friends leaderboard")
+		return
+	}
+
 	var req struct {
-		GameType       string    `json:"game_type"`
-	
+		GameType string `json:"game_type"`
 	}
 
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
@@ -53,7 +59,7 @@ func (h *DrinkingGamesHandler) CreateDrinkingGame(w http.ResponseWriter, r *http
 
 	sessionID := uuid.New().String()
 
-	h.gameManager.CreateSession(ctx, sessionID, req.GameType)
+	h.gameManager.CreateSession(ctx, sessionID, req.GameType, clearkID)
 
 	response := map[string]string{
 		"sessionId": sessionID,

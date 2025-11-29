@@ -24,20 +24,20 @@ const (
 )
 
 type Session struct {
-	ID       string
-	GameType string // "poker", "racing", "trivia"
-	Manager  *DrinnkingGameManager
-
-	// Registered clients in this specific session
+	ID         string
+	Host       string
+	GameType   string
+	Manager    *DrinnkingGameManager
 	Clients    map[*Client]bool
 	Broadcast  chan []byte
 	Register   chan *Client
 	Unregister chan *Client
 }
 
-func NewSession(id, gameType string, manager *DrinnkingGameManager) *Session {
+func NewSession(id, gameType, clearkID string, manager *DrinnkingGameManager) *Session {
 	return &Session{
 		ID:         id,
+		Host:       clearkID,
 		GameType:   gameType,
 		Manager:    manager,
 		Clients:    make(map[*Client]bool),
@@ -99,7 +99,7 @@ func NewDrinnkingGameManager() *DrinnkingGameManager {
 	}
 }
 
-func (m *DrinnkingGameManager) CreateSession(ctx context.Context ,sessionID, gameType string) *Session {
+func (m *DrinnkingGameManager) CreateSession(ctx context.Context, sessionID, gameType, clerkId string) *Session {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
@@ -107,7 +107,7 @@ func (m *DrinnkingGameManager) CreateSession(ctx context.Context ,sessionID, gam
 		return s
 	}
 
-	s := NewSession(sessionID, gameType, m)
+	s := NewSession(sessionID, gameType, clerkId, m)
 	m.sessions[sessionID] = s
 	go s.Run() // Start the session's background worker
 	return s
@@ -138,13 +138,13 @@ func (c *Client) ReadPump() {
 		c.Session.Unregister <- c
 		c.Conn.Close()
 	}()
-	
+
 	// Standard configuration to ensure connection health
 	c.Conn.SetReadLimit(maxMessageSize)
 	c.Conn.SetReadDeadline(time.Now().Add(pongWait))
-	c.Conn.SetPongHandler(func(string) error { 
+	c.Conn.SetPongHandler(func(string) error {
 		c.Conn.SetReadDeadline(time.Now().Add(pongWait))
-		return nil 
+		return nil
 	})
 
 	for {
