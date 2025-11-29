@@ -82,11 +82,11 @@ func (h *DrinkingGamesHandler) JoinDrinkingGame(w http.ResponseWriter, r *http.R
 	// ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
 	// defer cancel()
 
-	token := r.URL.Query().Get("token")
-	if token == "" {
-		http.Error(w, "Unauthorized", http.StatusUnauthorized)
-		return
-	}
+	// token := r.URL.Query().Get("token")
+	// if token == "" {
+	// 	http.Error(w, "Unauthorized", http.StatusUnauthorized)
+	// 	return
+	// }
 
 	vars := mux.Vars(r)
 	sessionID := vars["sessionID"]

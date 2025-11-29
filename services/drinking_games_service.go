@@ -139,12 +139,14 @@ func (m *DrinnkingGameManager) GetSession(sessionID string) (*Session, bool) {
 	s, ok := m.sessions[sessionID]
 	return s, ok
 }
+
 type PublicGameResponse struct {
 	SessionID string `json:"sessionId"`
 	GameType  string `json:"gameType"`
 	HostID    string `json:"host"`     
 	Players   int    `json:"players"`
 }
+
 func (m *DrinnkingGameManager) GetPublicSessions() []PublicGameResponse {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
