@@ -23,10 +23,25 @@ const (
 	maxMessageSize = 512
 )
 
+type GameSettings struct {
+	MaxPlayers int `json:"max_players"`
+	Rounds     int `json:"rounds"` // 0 = Infinite
+	// IsPublic   bool `json:"is_public"` // Shows in public list
+}
+
+// --- 2. The Game Logic Interface (Strategy Pattern) ---
+type GameLogic interface {
+	HandleMessage(session *Session, sender *Client, message []byte)
+	InitState() interface{}
+}
+
+
 type Session struct {
 	ID         string
-	Host       string
+	HostID     string
 	GameType   string
+	Settings   GameSettings
+	GameEngine GameLogic    
 	Manager    *DrinnkingGameManager
 	Clients    map[*Client]bool
 	Broadcast  chan []byte
@@ -34,11 +49,24 @@ type Session struct {
 	Unregister chan *Client
 }
 
-func NewSession(id, gameType, clearkID string, manager *DrinnkingGameManager) *Session {
+func NewGameLogic(gameType string) GameLogic {
+	switch gameType {
+	case "kings-cup":
+		return &KingsCupLogic{}
+	case "burn-book":
+		return &BurnBookLogic{}
+	default:
+		return &KingsCupLogic{}
+	}
+}
+
+func NewSession(id, gameType, hostID string, settings GameSettings, manager *DrinnkingGameManager) *Session {
 	return &Session{
 		ID:         id,
-		Host:       clearkID,
+		HostID:     hostID,
 		GameType:   gameType,
+		Settings:   settings,
+		GameEngine: NewGameLogic(gameType),
 		Manager:    manager,
 		Clients:    make(map[*Client]bool),
 		Broadcast:  make(chan []byte),
@@ -49,7 +77,6 @@ func NewSession(id, gameType, clearkID string, manager *DrinnkingGameManager) *S
 
 func (s *Session) Run() {
 	defer func() {
-		// Cleanup when the loop ends
 		close(s.Broadcast)
 		close(s.Register)
 		close(s.Unregister)
@@ -66,11 +93,10 @@ func (s *Session) Run() {
 				delete(s.Clients, client)
 				close(client.Send)
 			}
-			// If session is empty, remove it from the manager to save memory
 			if len(s.Clients) == 0 {
-				log.Printf("[Session %s] Empty, destroying session.", s.ID)
+				log.Printf("[Session %s] Empty, destroying.", s.ID)
 				s.Manager.DeleteSession(s.ID)
-				return // Stop this goroutine
+				return
 			}
 
 		case message := <-s.Broadcast:
@@ -84,7 +110,6 @@ func (s *Session) Run() {
 			}
 		}
 	}
-
 }
 
 // The Manager holds all active games
@@ -99,7 +124,8 @@ func NewDrinnkingGameManager() *DrinnkingGameManager {
 	}
 }
 
-func (m *DrinnkingGameManager) CreateSession(ctx context.Context, sessionID, gameType, clerkId string) *Session {
+
+func (m *DrinnkingGameManager) CreateSession(ctx context.Context, sessionID, gameType, clerkId string, settings GameSettings) *Session {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
@@ -107,9 +133,9 @@ func (m *DrinnkingGameManager) CreateSession(ctx context.Context, sessionID, gam
 		return s
 	}
 
-	s := NewSession(sessionID, gameType, clerkId, m)
+	s := NewSession(sessionID, gameType, clerkId, settings, m)
 	m.sessions[sessionID] = s
-	go s.Run() // Start the session's background worker
+	go s.Run()
 	return s
 }
 

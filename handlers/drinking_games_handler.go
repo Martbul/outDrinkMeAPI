@@ -42,14 +42,16 @@ func (h *DrinkingGamesHandler) CreateDrinkingGame(w http.ResponseWriter, r *http
 	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
 	defer cancel()
 
-	clearkID, ok := middleware.GetClerkID(ctx)
+	clerkID, ok := middleware.GetClerkID(ctx)
 	if !ok {
-		respondWithError(w, http.StatusInternalServerError, "Error while getting friends leaderboard")
+		http.Error(w, "Unauthorized", http.StatusUnauthorized)
 		return
 	}
 
+	// Structure matches the frontend JSON
 	var req struct {
-		GameType string `json:"game_type"`
+		GameType string                `json:"game_type"`
+		Settings services.GameSettings `json:"settings"`
 	}
 
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
@@ -57,9 +59,15 @@ func (h *DrinkingGamesHandler) CreateDrinkingGame(w http.ResponseWriter, r *http
 		return
 	}
 
+	// Validate (Example)
+	if req.Settings.MaxPlayers < 2 {
+		req.Settings.MaxPlayers = 20 // Default
+	}
+
 	sessionID := uuid.New().String()
 
-	h.gameManager.CreateSession(ctx, sessionID, req.GameType, clearkID)
+	// Pass the decoded settings to the manager
+	h.gameManager.CreateSession(ctx, sessionID, req.GameType, clerkID, req.Settings)
 
 	response := map[string]string{
 		"sessionId": sessionID,
@@ -67,8 +75,42 @@ func (h *DrinkingGamesHandler) CreateDrinkingGame(w http.ResponseWriter, r *http
 	}
 
 	respondWithJSON(w, http.StatusOK, response)
-
 }
+
+// func (h *DrinkingGamesHandler) GetPublicDrinkingGames(w http.ResponseWriter, r *http.Request) {
+// 	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
+// 	defer cancel()
+
+// 	clerkId, ok := middleware.GetClerkID(ctx)
+// 	if !ok {
+// 		respondWithError(w, http.StatusInternalServerError, "Error while getting friends leaderboard")
+// 		return
+// 	}
+
+// 	var req struct {
+// 		GameType string `json:"game_type"`
+// 	}
+
+// 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+// 		http.Error(w, "invalid request body", http.StatusBadRequest)
+// 		return
+// 	}
+
+// 	sessionID := uuid.New().String()
+
+// 	// h.gameManager.CreateSession(ctx, sessionID, req.GameType, clerkId)
+
+// 	response := map[string]string{
+// 		"sessionId": sessionID,
+// 		"wsUrl":     "/api/v1/games/ws/" + sessionID,
+// 	}
+
+// 	respondWithJSON(w, http.StatusOK, response)
+
+// }
+
+
+
 
 func (h *DrinkingGamesHandler) JoinDrinkingGame(w http.ResponseWriter, r *http.Request) {
 	// ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
