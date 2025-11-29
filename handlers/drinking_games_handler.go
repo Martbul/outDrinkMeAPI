@@ -51,7 +51,6 @@ func (h *DrinkingGamesHandler) CreateDrinkingGame(w http.ResponseWriter, r *http
 	// Structure matches the frontend JSON
 	var req struct {
 		GameType string                `json:"game_type"`
-		Settings services.GameSettings `json:"settings"`
 	}
 
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
@@ -59,15 +58,11 @@ func (h *DrinkingGamesHandler) CreateDrinkingGame(w http.ResponseWriter, r *http
 		return
 	}
 
-	// Validate (Example)
-	if req.Settings.MaxPlayers < 2 {
-		req.Settings.MaxPlayers = 20 // Default
-	}
 
 	sessionID := uuid.New().String()
 
 	// Pass the decoded settings to the manager
-	h.gameManager.CreateSession(ctx, sessionID, req.GameType, clerkID, req.Settings)
+	h.gameManager.CreateSession(ctx, sessionID, req.GameType, clerkID)
 
 	response := map[string]string{
 		"sessionId": sessionID,

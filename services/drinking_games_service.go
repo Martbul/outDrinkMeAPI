@@ -23,12 +23,6 @@ const (
 	maxMessageSize = 512
 )
 
-type GameSettings struct {
-	MaxPlayers int `json:"max_players"`
-	Rounds     int `json:"rounds"` // 0 = Infinite
-	// IsPublic   bool `json:"is_public"` // Shows in public list
-}
-
 // --- 2. The Game Logic Interface (Strategy Pattern) ---
 type GameLogic interface {
 	HandleMessage(session *Session, sender *Client, message []byte)
@@ -40,7 +34,6 @@ type Session struct {
 	ID         string
 	HostID     string
 	GameType   string
-	Settings   GameSettings
 	GameEngine GameLogic    
 	Manager    *DrinnkingGameManager
 	Clients    map[*Client]bool
@@ -60,12 +53,11 @@ func NewGameLogic(gameType string) GameLogic {
 	}
 }
 
-func NewSession(id, gameType, hostID string, settings GameSettings, manager *DrinnkingGameManager) *Session {
+func NewSession(id, gameType, hostID string, manager *DrinnkingGameManager) *Session {
 	return &Session{
 		ID:         id,
 		HostID:     hostID,
 		GameType:   gameType,
-		Settings:   settings,
 		GameEngine: NewGameLogic(gameType),
 		Manager:    manager,
 		Clients:    make(map[*Client]bool),
@@ -125,7 +117,7 @@ func NewDrinnkingGameManager() *DrinnkingGameManager {
 }
 
 
-func (m *DrinnkingGameManager) CreateSession(ctx context.Context, sessionID, gameType, clerkId string, settings GameSettings) *Session {
+func (m *DrinnkingGameManager) CreateSession(ctx context.Context, sessionID, gameType, clerkId string) *Session {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
@@ -133,7 +125,7 @@ func (m *DrinnkingGameManager) CreateSession(ctx context.Context, sessionID, gam
 		return s
 	}
 
-	s := NewSession(sessionID, gameType, clerkId, settings, m)
+	s := NewSession(sessionID, gameType, clerkId, m)
 	m.sessions[sessionID] = s
 	go s.Run()
 	return s
