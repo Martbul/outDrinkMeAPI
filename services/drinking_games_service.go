@@ -110,7 +110,6 @@ func (s *Session) sendPlayerListToAll() {
 	}
 }
 
-
 func (s *Session) Run() {
 	defer func() {
 		close(s.Broadcast)
@@ -155,7 +154,6 @@ func (s *Session) Run() {
 		}
 	}
 }
-
 
 // The Manager holds all active games
 type DrinnkingGameManager struct {
@@ -276,14 +274,19 @@ func (c *Client) ReadPump() {
 				c.IsHost = payload.IsHost
 
 				// 2. Broadcast the "User Joined" chat message
-				c.Session.Broadcast <- message 
+				c.Session.Broadcast <- message
 
 				// 3. Trigger the safe list update
 				// We send 'true' to the channel. The Session.Run loop picks it up.
-				c.Session.TriggerList <- true 
+				c.Session.TriggerList <- true
 				continue
 			}
-				if payload.Action == "game_action" || payload.Action == "draw_card" {
+
+			if payload.Action == "start_game" {
+				c.Session.GameEngine.InitState()
+			}
+
+			if payload.Action == "game_action" || payload.Action == "draw_card" {
 				c.Session.GameEngine.HandleMessage(c.Session, c, message)
 				continue
 			}

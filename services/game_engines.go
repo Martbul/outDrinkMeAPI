@@ -3,6 +3,7 @@ package services
 import (
 	"encoding/json"
 	"fmt"
+	"log"
 	"math/rand"
 	"sync"
 	"time"
@@ -148,11 +149,13 @@ func (g *KingsCupLogic) HandleMessage(s *Session, sender *Client, msg []byte) {
 		Action string `json:"action"` // "draw_card" or "game_action"
 		Type   string `json:"type"`   // "draw_card" (if using nested action)
 	}
+	
 	json.Unmarshal(msg, &payload)
 
-	if payload.Action == "draw_card" || payload.Type == "draw_card" {
+	if payload.Action == "draw_card" {
 		g.mu.Lock()
 
+		log.Println(g.Deck)
 		// Game Over Check
 		if len(g.Deck) == 0 {
 			g.mu.Unlock()
