@@ -91,6 +91,11 @@ func (s *Session) Run() {
 				delete(s.Clients, client)
 				close(client.Send)
 
+				if len(s.Clients) == 0 {
+					log.Printf("[Session %s] Empty, destroying.", s.ID)
+					s.Manager.DeleteSession(s.ID)
+					return // This triggers the defer, closing channels
+				}
 				// ALERT: When someone leaves, update the list for everyone remaining
 				go s.BroadcastPlayerList()
 			}
