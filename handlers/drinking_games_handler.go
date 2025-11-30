@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"log"
 	"net/http"
-	"os"
 	"outDrinkMeAPI/middleware"
 	"outDrinkMeAPI/services"
 	"time"
