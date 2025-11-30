@@ -111,30 +111,17 @@ func main() {
 	photoDumpHandler := handlers.NewPhotoDumpHandler(photoDumpService)
 	drinkingGameHandler := handlers.NewDrinkingGamesHandler(gameManager)
 
-	// 1. Root Router
 	r := mux.NewRouter()
 
-	// -------------------------------------------------------------------------
-	// WEBSOCKET ROUTE (MUST BE ON ROOT ROUTER)
-	// -------------------------------------------------------------------------
-	// We register this BEFORE applying middleware to other routes.
-	// This ensures the response writer is not wrapped, allowing Hijack() to work.
-	// Note: We match the path requested by your client logs: /api/v1/drinking-games/ws/...
 	r.HandleFunc("/api/v1/drinking-games/ws/{sessionID}", drinkingGameHandler.JoinDrinkingGame)
 
-	// -------------------------------------------------------------------------
-	// STANDARD HTTP ROUTER (WITH MIDDLEWARE)
-	// -------------------------------------------------------------------------
-	// Create a subrouter for all normal API traffic
 	standardRouter := r.PathPrefix("/").Subrouter()
 
 	go middleware.CleanupVisitors()
 
-	// Apply middleware ONLY to this subrouter
 	standardRouter.Use(middleware.RateLimitMiddleware)
 	standardRouter.Use(middleware.MonitorMiddleware)
 
-	// Attach basic routes to standardRouter
 	standardRouter.Handle("/metrics", middleware.BasicAuthMiddleware(promhttp.Handler()))
 	standardRouter.PathPrefix("/debug/pprof/").Handler(middleware.PprofSecurityMiddleware(http.DefaultServeMux))
 

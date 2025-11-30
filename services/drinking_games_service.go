@@ -278,7 +278,7 @@ func (c *Client) ReadPump() {
 			}
 
 			if payload.Action == "start_game" {
-				c.Session.GameEngine.InitState()
+				c.Session.GameEngine.InitState() // this is sing the strategy patters, so that if in the create part it has been seleceted 1 game that same game's init will be executed here
 				// Also broadcast that game started so UI changes to game view
 				c.Session.Broadcast <- message
 				continue
@@ -294,6 +294,21 @@ func (c *Client) ReadPump() {
 		c.Session.Broadcast <- message
 	}
 }
+
+func (s *Session) getPlayersList() []PlayerInfo {
+	players := []PlayerInfo{}
+	for client := range s.Clients {
+		if client.Username != "" {
+			players = append(players, PlayerInfo{
+				ID:       client.UserID,
+				Username: client.Username,
+			})
+		}
+	}
+	return players
+}
+
+
 func (s *Session) BroadcastPlayerList() {
 	// create a list of players
 	type PlayerInfo struct {
