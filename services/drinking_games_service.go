@@ -126,7 +126,6 @@ func (s *Session) Run() {
 			log.Printf("[Session %s] User connected. Count: %d", s.ID, len(s.Clients))
 
 		case <-s.TriggerList:
-			// <--- NEW: Handle list updates safely here
 			s.sendPlayerListToAll()
 
 		case client := <-s.Unregister:
@@ -264,7 +263,7 @@ func (c *Client) ReadPump() {
 	for {
 		_, message, err := c.Conn.ReadMessage()
 		if err != nil {
-			// ... logging ...
+			log.Println("Error reading msg")
 			break
 		}
 
@@ -284,8 +283,12 @@ func (c *Client) ReadPump() {
 				c.Session.TriggerList <- true 
 				continue
 			}
+				if payload.Action == "game_action" || payload.Action == "draw_card" {
+				c.Session.GameEngine.HandleMessage(c.Session, c, message)
+				continue
+			}
 		}
-
+		// Chat messages
 		c.Session.Broadcast <- message
 	}
 }
