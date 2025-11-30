@@ -3,29 +3,27 @@ package services
 import (
 	"encoding/json"
 	"fmt"
-	"log"
 	"math/rand"
 	"sync"
 	"time"
 )
 
-// Internal Card Representation
+// Internal Card: Use Short Codes ("H", "S") to make logic easier
 type Card struct {
-	Suit string `json:"suit"` // "H", "D", "C", "S"
-	Rank string `json:"rank"` // "A", "2"..."10", "J", "Q", "K"
+	Suit string `json:"suit"` 
+	Rank string `json:"rank"` 
 }
 
-// Client-Facing Card Representation (Matches React Native interfaces)
 type ClientCard struct {
-	Suit     string `json:"suit"`  // "hearts", etc
-	Value    string `json:"value"` // "A", "K"
+	Suit     string `json:"suit"`  
+	Value    string `json:"value"` 
 	Rule     string `json:"rule"`
 	Color    string `json:"color"`
-	ImageUrl string `json:"imageUrl"` // <--- NEW: The requested image URL
+	ImageUrl string `json:"imageUrl"` 
 }
 
 type GameStatePayload struct {
-	Action    string          `json:"action"` // "game_update"
+	Action    string          `json:"action"` 
 	GameState ClientGameState `json:"gameState"`
 }
 
@@ -35,8 +33,9 @@ type ClientGameState struct {
 	GameOver       bool        `json:"gameOver"`
 }
 
+// 1. REVERTED TO SHORT CODES so the helper functions work
 func generateNewDeck() []Card {
-	suits := []string{"hearts", "diamonds", "clubs", "spades"}
+	suits := []string{"H", "D", "C", "S"} 
 	ranks := []string{"A", "2", "3", "4", "5", "6", "7", "8", "9", "10", "J", "Q", "K"}
 	deck := make([]Card, 0, 52)
 	for _, s := range suits {
@@ -66,97 +65,72 @@ func (g *KingsCupLogic) InitState() interface{} {
 	return nil
 }
 
-// --- HELPER FUNCTIONS FOR RULES & IMAGES ---
+// --- HELPER FUNCTIONS ---
 
 func getSuitName(s string) string {
 	switch s {
-	case "H":
-		return "hearts"
-	case "D":
-		return "diamonds"
-	case "C":
-		return "clubs"
-	case "S":
-		return "spades"
-	default:
-		return "hearts"
+	case "H": return "hearts"
+	case "D": return "diamonds"
+	case "C": return "clubs"
+	case "S": return "spades"
+	default: return "hearts"
 	}
 }
 
 func getCardColor(s string) string {
 	if s == "H" || s == "D" {
-		return "#ef4444" // Red
+		return "#ef4444" 
 	}
 	return "black"
 }
 
-// Simple rule mapping for Kings Cup
 func getRule(rank string) string {
 	switch rank {
-	case "A":
-		return "Waterfall - Everyone drinks!"
-	case "2":
-		return "You - Pick someone to drink"
-	case "3":
-		return "Me - You drink"
-	case "4":
-		return "Whores - All girls drink"
-	case "5":
-		return "Thumb Master"
-	case "6":
-		return "Dicks - All guys drink"
-	case "7":
-		return "Heaven - Point to the sky"
-	case "8":
-		return "Mate - Pick a drinking buddy"
-	case "9":
-		return "Rhyme - Pick a word"
-	case "10":
-		return "Categories"
-	case "J":
-		return "Never Have I Ever"
-	case "Q":
-		return "Question Master"
-	case "K":
-		return "Make a Rule"
-	default:
-		return "Drink!"
+	case "A": return "Waterfall - Everyone drinks!"
+	case "2": return "You - Pick someone to drink"
+	case "3": return "Me - You drink"
+	case "4": return "Whores - All girls drink"
+	case "5": return "Thumb Master"
+	case "6": return "Dicks - All guys drink"
+	case "7": return "Heaven - Point to the sky"
+	case "8": return "Mate - Pick a drinking buddy"
+	case "9": return "Rhyme - Pick a word"
+	case "10": return "Categories"
+	case "J": return "Never Have I Ever"
+	case "Q": return "Question Master"
+	case "K": return "Make a Rule"
+	default: return "Drink!"
 	}
 }
 
-// Generates a URL from the deckofcardsapi CDN
 func getImageUrl(rank, suit string) string {
-	// API format: 0=10, H=Hearts, etc.
-	apiRank := rank
-	if rank == "10" {
-		apiRank = "0"
-	}
-
-	// return fmt.Sprintf("https://deckofcardsapi.com/static/img/%s%s.png", apiRank, suit)
-	return fmt.Sprintf("	https://outdrinkmeapi-dev.onrender.com/assets/images/cards/%s/%s-of-%s.png", suit, apiRank, suit)
+	// Map internal "H" to "hearts" for the URL
+	fullSuit := getSuitName(suit) 
+	
+	// Map internal "A" to "ace" if your image naming requires it
+	// Assuming your server images are like "A-of-hearts.png"
+	
+	return fmt.Sprintf("https://outdrinkmeapi-dev.onrender.com/assets/images/cards/%s/%s-of-%s.png", fullSuit, rank, fullSuit)
 }
 
 // --- MAIN HANDLER ---
 
 func (g *KingsCupLogic) HandleMessage(s *Session, sender *Client, msg []byte) {
-	// 1. Only Host can draw cards
 	if !sender.IsHost {
 		return
 	}
 
-	// 2. Parse Action (Double check it is draw_card, though Client already checks)
+	// 2. Parse Action AND Type
 	var payload struct {
-		Action string `json:"action"` // "draw_card" or "game_action"
-		Type   string `json:"type"`   // "draw_card" (if using nested action)
+		Action string `json:"action"` 
+		Type   string `json:"type"`   // <--- We read Type here
 	}
-	
 	json.Unmarshal(msg, &payload)
 
-	if payload.Action == "draw_card" {
+	// 3. CHECK TYPE, NOT ACTION
+	if payload.Type == "draw_card" { 
 		g.mu.Lock()
 
-		log.Println(g.Deck)
-		// Game Over Check
 		if len(g.Deck) == 0 {
 			g.mu.Unlock()
 			response := GameStatePayload{
@@ -172,23 +146,20 @@ func (g *KingsCupLogic) HandleMessage(s *Session, sender *Client, msg []byte) {
 			return
 		}
 
-		// Draw logic
 		drawn := g.Deck[0]
 		g.Deck = g.Deck[1:]
 		g.CurrentCard = &drawn
 		remaining := len(g.Deck)
 		g.mu.Unlock()
 
-		// 3. Transform to Client Data
 		clientCard := ClientCard{
 			Suit:     getSuitName(drawn.Suit),
 			Value:    drawn.Rank,
 			Rule:     getRule(drawn.Rank),
 			Color:    getCardColor(drawn.Suit),
-			ImageUrl: getImageUrl(drawn.Rank, drawn.Suit), // <--- Here is your URL
+			ImageUrl: getImageUrl(drawn.Rank, drawn.Suit), 
 		}
 
-		// 4. Construct Payload
 		response := GameStatePayload{
 			Action: "game_update",
 			GameState: ClientGameState{
@@ -198,7 +169,6 @@ func (g *KingsCupLogic) HandleMessage(s *Session, sender *Client, msg []byte) {
 			},
 		}
 
-		// 5. Broadcast to ALL clients
 		bytes, _ := json.Marshal(response)
 		s.Broadcast <- bytes
 	}

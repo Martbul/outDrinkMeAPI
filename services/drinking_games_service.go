@@ -238,6 +238,7 @@ type Client struct {
 // messages ws expect
 type WsPayload struct {
 	Action   string `json:"action"`
+	Type     string `json:"type"`
 	Username string `json:"username"`
 	UserID   string `json:"userId"`
 	IsHost   bool   `json:"isHost"`
@@ -268,25 +269,23 @@ func (c *Client) ReadPump() {
 		var payload WsPayload
 		if err := json.Unmarshal(message, &payload); err == nil {
 			if payload.Action == "join_room" {
-				// 1. Update Client info
 				c.Username = payload.Username
 				c.UserID = payload.UserID
 				c.IsHost = payload.IsHost
-
-				// 2. Broadcast the "User Joined" chat message
 				c.Session.Broadcast <- message
-
-				// 3. Trigger the safe list update
-				// We send 'true' to the channel. The Session.Run loop picks it up.
 				c.Session.TriggerList <- true
 				continue
 			}
 
 			if payload.Action == "start_game" {
 				c.Session.GameEngine.InitState()
+				// Also broadcast that game started so UI changes to game view
+				c.Session.Broadcast <- message
+				continue
 			}
 
-			if payload.Action == "game_action" || payload.Action == "draw_card" {
+			// We check if it is a game_action. The Engine will check the "Type" (draw_card).
+			if payload.Action == "game_action" {
 				c.Session.GameEngine.HandleMessage(c.Session, c, message)
 				continue
 			}
