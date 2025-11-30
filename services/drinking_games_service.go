@@ -35,15 +35,16 @@ type GameLogic interface {
 }
 
 type Session struct {
-	ID         string
-	HostID     string
-	GameType   string
-	GameEngine GameLogic
-	Manager    *DrinnkingGameManager
-	Clients    map[*Client]bool
-	Broadcast  chan []byte
-	Register   chan *Client
-	Unregister chan *Client
+	ID          string
+	HostID      string
+	GameType    string
+	GameEngine  GameLogic
+	Manager     *DrinnkingGameManager
+	Clients     map[*Client]bool
+	Broadcast   chan []byte
+	Register    chan *Client
+	Unregister  chan *Client
+	TriggerList chan bool
 }
 
 func NewGameLogic(gameType string) GameLogic {
@@ -59,51 +60,90 @@ func NewGameLogic(gameType string) GameLogic {
 
 func NewSession(id, gameType, hostID string, manager *DrinnkingGameManager) *Session {
 	return &Session{
-		ID:         id,
-		HostID:     hostID,
-		GameType:   gameType,
-		GameEngine: NewGameLogic(gameType),
-		Manager:    manager,
-		Clients:    make(map[*Client]bool),
-		Broadcast:  make(chan []byte),
-		Register:   make(chan *Client),
-		Unregister: make(chan *Client),
+		ID:          id,
+		HostID:      hostID,
+		GameType:    gameType,
+		GameEngine:  NewGameLogic(gameType),
+		Manager:     manager,
+		Clients:     make(map[*Client]bool),
+		Broadcast:   make(chan []byte),
+		Register:    make(chan *Client),
+		Unregister:  make(chan *Client),
+		TriggerList: make(chan bool),
 	}
 }
+func (s *Session) sendPlayerListToAll() {
+	type PlayerInfo struct {
+		ID       string `json:"id"`
+		Username string `json:"username"`
+		IsHost   bool   `json:"isHost"`
+	}
+
+	players := []PlayerInfo{}
+
+	// Safe to read s.Clients here because this function is called inside Run()
+	for client := range s.Clients {
+		if client.Username != "" {
+			players = append(players, PlayerInfo{
+				ID:       client.UserID,
+				Username: client.Username,
+				IsHost:   client.IsHost,
+			})
+		}
+	}
+
+	payload := map[string]interface{}{
+		"action":  "update_player_list",
+		"players": players,
+	}
+
+	data, _ := json.Marshal(payload)
+
+	// Send to everyone directly
+	for client := range s.Clients {
+		select {
+		case client.Send <- data:
+		default:
+			close(client.Send)
+			delete(s.Clients, client)
+		}
+	}
+}
+
 
 func (s *Session) Run() {
 	defer func() {
 		close(s.Broadcast)
 		close(s.Register)
 		close(s.Unregister)
+		close(s.TriggerList)
 	}()
 
 	for {
 		select {
 		case client := <-s.Register:
 			s.Clients[client] = true
-			log.Printf("[Session %s] User joined. Count: %d", s.ID, len(s.Clients))
-			// We don't broadcast list here yet, because we wait for the JSON "join_room"
-			// in ReadPump to get the username first.
+			log.Printf("[Session %s] User connected. Count: %d", s.ID, len(s.Clients))
+
+		case <-s.TriggerList:
+			// <--- NEW: Handle list updates safely here
+			s.sendPlayerListToAll()
 
 		case client := <-s.Unregister:
 			if _, ok := s.Clients[client]; ok {
 				delete(s.Clients, client)
 				close(client.Send)
 
+				// If empty, delete session
 				if len(s.Clients) == 0 {
 					log.Printf("[Session %s] Empty, destroying.", s.ID)
 					s.Manager.DeleteSession(s.ID)
-					return // This triggers the defer, closing channels
+					return
 				}
-				// ALERT: When someone leaves, update the list for everyone remaining
-				go s.BroadcastPlayerList()
+				// If people remain, update their list
+				s.sendPlayerListToAll()
 			}
-			if len(s.Clients) == 0 {
-				log.Printf("[Session %s] Empty, destroying.", s.ID)
-				s.Manager.DeleteSession(s.ID)
-				return
-			}
+
 		case message := <-s.Broadcast:
 			for client := range s.Clients {
 				select {
@@ -116,6 +156,7 @@ func (s *Session) Run() {
 		}
 	}
 }
+
 
 // The Manager holds all active games
 type DrinnkingGameManager struct {
@@ -223,37 +264,31 @@ func (c *Client) ReadPump() {
 	for {
 		_, message, err := c.Conn.ReadMessage()
 		if err != nil {
-			if websocket.IsUnexpectedCloseError(err, websocket.CloseGoingAway, websocket.CloseAbnormalClosure) {
-				log.Printf("WS Error: %v", err)
-			}
+			// ... logging ...
 			break
 		}
 
-		// 1. Parse the message
 		var payload WsPayload
 		if err := json.Unmarshal(message, &payload); err == nil {
-
-			// 2. Intercept "join_room" to save client metadata
 			if payload.Action == "join_room" {
+				// 1. Update Client info
 				c.Username = payload.Username
 				c.UserID = payload.UserID
 				c.IsHost = payload.IsHost
 
-				// Send the specific "User Joined" notification to chat
-				c.Session.Broadcast <- message
+				// 2. Broadcast the "User Joined" chat message
+				c.Session.Broadcast <- message 
 
-				// 3. Trigger a full player list update to everyone
-				// We do this in a goroutine or via a specific channel to avoid blocking ReadPump
-				go c.Session.BroadcastPlayerList()
+				// 3. Trigger the safe list update
+				// We send 'true' to the channel. The Session.Run loop picks it up.
+				c.Session.TriggerList <- true 
 				continue
 			}
 		}
 
-		// Forward normal chat/game messages
 		c.Session.Broadcast <- message
 	}
 }
-
 func (s *Session) BroadcastPlayerList() {
 	// create a list of players
 	type PlayerInfo struct {
