@@ -48,7 +48,6 @@ func (h *DrinkingGamesHandler) CreateDrinkingGame(w http.ResponseWriter, r *http
 		return
 	}
 
-	// Structure matches the frontend JSON
 	var req struct {
 		GameType string `json:"game_type"`
 	}
@@ -60,7 +59,6 @@ func (h *DrinkingGamesHandler) CreateDrinkingGame(w http.ResponseWriter, r *http
 
 	sessionID := uuid.New().String()
 
-	// Pass the decoded settings to the manager
 	h.gameManager.CreateSession(ctx, sessionID, req.GameType, clerkID)
 
 	response := map[string]string{
