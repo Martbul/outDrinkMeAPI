@@ -2,7 +2,7 @@ package services
 
 import (
 	"math/rand"
-
+	"sync"
 	"time"
 )
 
@@ -11,6 +11,7 @@ type Card struct {
 	Rank string `json:"rank"`
 }
 
+// Fixed: Correctly seeding the random generator
 func generateNewDeck() []Card {
 	suits := []string{"H", "D", "C", "S"}
 	ranks := []string{"A", "2", "3", "4", "5", "6", "7", "8", "9", "10", "J", "Q", "K"}
@@ -23,55 +24,28 @@ func generateNewDeck() []Card {
 		}
 	}
 
-	// Shuffle
-	rand.NewSource(time.Now().UnixNano()) 
-	rand.Shuffle(len(deck), func(i, j int) {
+	// Create a local random source to be thread-safe and random every time
+	source := rand.NewSource(time.Now().UnixNano())
+	r := rand.New(source)
+
+	r.Shuffle(len(deck), func(i, j int) {
 		deck[i], deck[j] = deck[j], deck[i]
 	})
 
 	return deck
 }
 
-func getRuleForCard(rank string) string {
-	switch rank {
-	case "A":
-		return "Waterfall - Everyone drinks!"
-	case "2":
-		return "You - Pick someone to drink"
-	case "3":
-		return "Me - You drink"
-	case "4":
-		return "Floor - Last to touch floor drinks"
-	case "5":
-		return "Guys - All guys drink"
-	case "6":
-		return "Chicks - All girls drink"
-	case "7":
-		return "Heaven - Last to point up drinks"
-	case "8":
-		return "Mate - Pick a drinking buddy"
-	case "9":
-		return "Rhyme - Say a phrase, go around rhyming"
-	case "10":
-		return "Categories - Pick a category"
-	case "J":
-		return "Never Have I Ever"
-	case "Q":
-		return "Questions - Ask questions only"
-	case "K":
-		return "King's Cup - Pour into the center cup!"
-	default:
-		return "Drink"
-	}
-}
-
 type KingsCupLogic struct {
-	Deck        []Card `json:"deck"`         // The stack of cards
-	CurrentCard *Card  `json:"current_card"` // The last card drawn
-	TurnCount   int    `json:"turn_count"`
+	Deck        []Card     `json:"deck"`
+	CurrentCard *Card      `json:"current_card"`
+	TurnCount   int        `json:"turn_count"`
+	mu          sync.Mutex // <--- ADD THIS (The Lock)
 }
 
 func (g *KingsCupLogic) InitState() interface{} {
+	g.mu.Lock() // Lock just in case
+	defer g.mu.Unlock()
+
 	g.Deck = generateNewDeck()
 	g.CurrentCard = nil
 	g.TurnCount = 0
@@ -83,26 +57,55 @@ func (g *KingsCupLogic) InitState() interface{} {
 	}
 }
 
+func (g *KingsCupLogic) GetRandomCard() *Card {
+	g.mu.Lock()         // <--- LOCK: Only one person draws at a time
+	defer g.mu.Unlock() // <--- UNLOCK: When function finishes
+
+	if len(g.Deck) == 0 {
+		return nil
+	}
+
+	randomCard := g.Deck[0]
+	g.Deck = g.Deck[1:] // Modify the slice safely
+
+	return &randomCard
+}
+
 func (g *KingsCupLogic) HandleMessage(s *Session, sender *Client, msg []byte) {
-	// Simple Echo for now, replace with real game logic later
-	s.Broadcast <- msg
-
-	// 1. Parse the incoming JSON
+	// 1. Parse payload
 	// var payload struct {
-	// 	Action string `json:"action"` // e.g., "draw_card"
+	// 	Action string `json:"action"`
 	// }
-
 	// if err := json.Unmarshal(msg, &payload); err != nil {
-	// 	return // Ignore bad JSON
+	// 	return
 	// }
 
-	// // 2. Switch on Action
+	// // 2. Switch
 	// switch payload.Action {
 	// case "draw_card":
-	// 	g.handleDrawCard(s, sender)
-	// case "restart":
-	// 	g.InitState()
-	// 	s.BroadcastJSON(map[string]string{"type": "game_reset"})
+	// 	// GetRandomCard handles the locking internally now
+	// 	card := g.GetRandomCard()
+		
+	// 	if card == nil {
+	// 		s.BroadcastJSON(map[string]string{"type": "game_over"})
+	// 		return
+	// 	}
+
+	// 	// Update state safely
+	// 	g.mu.Lock()
+	// 	g.CurrentCard = card
+	// 	g.TurnCount++
+	// 	// Capture values to send (so we can unlock early)
+	// 	turnCount := g.TurnCount
+	// 	g.mu.Unlock()
+
+	// 	// Broadcast result
+	// 	s.BroadcastJSON(map[string]interface{}{
+	// 		"type":       "card_drawn",
+	// 		"player":     sender.ID, // Make sure Client struct has ID
+	// 		"card":       card,
+	// 		"turn_count": turnCount,
+	// 	})
 	// }
 }
 
