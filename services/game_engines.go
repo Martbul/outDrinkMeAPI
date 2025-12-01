@@ -33,14 +33,21 @@ type KingsCupGameState struct {
 	GameOver       bool        `json:"gameOver"`
 }
 
-type BurnBookGameState struct {
-	Phase           string            `json:"phase"`           // "collecting", "voting", "results"
-	QuestionText    string            `json:"questionText"`    // Current question text
-	CollectedCount  int               `json:"collectedCount"`  // How many questions collected so far
-	Voters          []PlayerInfo      `json:"voters"`          // List of players to vote for (candidates)
-	Winner          string            `json:"winner,omitempty"`// Who won the vote (for results phase)
-	Votes           map[string]int    `json:"votes,omitempty"` // Vote distribution (for results phase)
+type RoundResult struct {
+	WinnerID string `json:"winnerId"`
+	Votes    int    `json:"votes"`
 }
+
+type BurnBookGameState struct {
+	Phase          string        `json:"phase"`                    
+	QuestionText   string        `json:"questionText,omitempty"`   
+	CollectedCount int           `json:"collectedCount,omitempty"`
+	Players        []PlayerInfo  `json:"players,omitempty"`        
+	RoundResults   *RoundResult  `json:"roundResults,omitempty"`   
+	HasVoted       bool          `json:"hasVoted,omitempty"`
+	MyVote         string        `json:"myVote,omitempty"`
+}
+
 type PlayerInfo struct {
 	ID       string `json:"id"`
 	Username string `json:"username"`
@@ -194,7 +201,7 @@ func (g *KingsCupLogic) HandleMessage(s *Session, sender *Client, msg []byte) {
 			g.mu.Unlock()
 			response := GameStatePayload{
 				Action: "game_update",
-				GameState: KingsCupGameState{ 
+				GameState: KingsCupGameState{
 					CurrentCard:    nil,
 					CardsRemaining: 0,
 					GameOver:       true,
@@ -219,7 +226,7 @@ func (g *KingsCupLogic) HandleMessage(s *Session, sender *Client, msg []byte) {
 			ImageUrl: getImageUrl(drawn.Rank, drawn.Suit),
 		}
 
-	response := GameStatePayload{
+		response := GameStatePayload{
 			Action: "game_update",
 			GameState: KingsCupGameState{
 				CurrentCard:    &clientCard,
@@ -241,20 +248,22 @@ func (g *KingsCupLogic) HandleMessage(s *Session, sender *Client, msg []byte) {
 // after all questuions are done den range throuh anwsers
 // end game
 type BurnBookLogic struct {
-	Phase           string                  
-	Questions       []string                  
-	CurrentIndex    int                       
-	Votes           map[int]map[string]int    
-	mu              sync.Mutex
+	Phase        string
+	Questions    []string
+	CurrentIndex int
+	Votes        map[int]map[string]int
+	WhoVoted     map[int]map[string]bool
+	mu           sync.Mutex
 }
 
 func (g *BurnBookLogic) InitState() interface{} {
 	g.mu.Lock()
 	defer g.mu.Unlock()
-	
+
 	g.Phase = "collecting"
 	g.Questions = make([]string, 0)
 	g.Votes = make(map[int]map[string]int)
+	g.WhoVoted = make(map[int]map[string]bool) 
 	g.CurrentIndex = 0
 
 	return BurnBookGameState{
@@ -264,19 +273,32 @@ func (g *BurnBookLogic) InitState() interface{} {
 }
 
 func (g *BurnBookLogic) HandleMessage(s *Session, sender *Client, msg []byte) {
-	var payload struct {
-		Type    string `json:"type"`
-		Payload string `json:"payload"` 
+	var request struct {
+		Type    string                 `json:"type"`
+		Payload map[string]interface{} `json:"payload"`
 	}
-	json.Unmarshal(msg, &payload)
+
+	if err := json.Unmarshal(msg, &request); err != nil {
+		fmt.Println("JSON Error:", err)
+		return
+	}
 
 	g.mu.Lock()
 	defer g.mu.Unlock()
 
-	if payload.Type == "submit_question" && g.Phase == "collecting" {
-		g.Questions = append(g.Questions, payload.Payload)
-		
-		// Broadcast update so everyone sees count go up
+	// --- 1. SUBMIT QUESTION ---
+	if request.Type == "submit_question" && g.Phase == "collecting" {
+		// Ensure payload exists in the map
+		if request.Payload == nil {
+			return
+		}
+		qText, ok := request.Payload["payload"].(string)
+		if !ok || qText == "" {
+			return
+		}
+
+		g.Questions = append(g.Questions, qText)
+
 		response := GameStatePayload{
 			Action: "game_update",
 			GameState: BurnBookGameState{
@@ -284,133 +306,145 @@ func (g *BurnBookLogic) HandleMessage(s *Session, sender *Client, msg []byte) {
 				CollectedCount: len(g.Questions),
 			},
 		}
-		bytes, _ := json.Marshal(response)
-		s.Broadcast <- bytes
+		broadcast(s, response)
 		return
 	}
 
-	if payload.Type == "start_voting" && sender.IsHost && g.Phase == "collecting" {
+	// --- 2. START VOTING ---
+	if request.Type == "start_voting" && sender.IsHost && g.Phase == "collecting" {
 		if len(g.Questions) == 0 {
-			return // Cannot start without questions
+			return
 		}
-		
+
 		g.Phase = "voting"
 		g.CurrentIndex = 0
-		
-		// Helper to get all players in session for the UI buttons
-		candidates := s.getPlayersList()
+		g.Votes = make(map[int]map[string]int)
+		g.WhoVoted = make(map[int]map[string]bool)
+
+		broadcastVotingState(s, g)
+		return
+	}
+
+	// --- 3. CAST VOTE ---
+	if request.Type == "vote_player" && g.Phase == "voting" {
+		if request.Payload == nil {
+			return
+		}
+		targetID, _ := request.Payload["targetId"].(string)
+		if targetID == "" {
+			return
+		}
+
+		// Initialize maps if nil
+		if g.Votes[g.CurrentIndex] == nil {
+			g.Votes[g.CurrentIndex] = make(map[string]int)
+		}
+		if g.WhoVoted[g.CurrentIndex] == nil {
+			g.WhoVoted[g.CurrentIndex] = make(map[string]bool)
+		}
+
+		// Check if Sender already voted
+		if g.WhoVoted[g.CurrentIndex][sender.UserID] {
+			return
+		}
+
+		// Record Vote
+		g.Votes[g.CurrentIndex][targetID]++
+		g.WhoVoted[g.CurrentIndex][sender.UserID] = true
+
+		broadcastVotingState(s, g)
+		return
+	}
+
+	// --- 4. REVEAL RESULTS ---
+	if request.Type == "reveal_results" && sender.IsHost && g.Phase == "voting" {
+		g.Phase = "results"
+
+		winnerID, voteCount := g.calculateWinner(g.CurrentIndex)
+
+		response := GameStatePayload{
+			Action: "game_update",
+			GameState: BurnBookGameState{
+				Phase:        "results",
+				QuestionText: g.Questions[g.CurrentIndex],
+				// Now valid because we added RoundResult to the struct
+				RoundResults: &RoundResult{ 
+					WinnerID: winnerID,
+					Votes:    voteCount,
+				},
+				// Now valid because we added Players to the struct
+				Players: s.getPlayersList(), 
+			},
+		}
+		broadcast(s, response)
+		return
+	}
+
+	// --- 5. NEXT QUESTION ---
+	if request.Type == "next_question" && sender.IsHost && g.Phase == "results" {
+		g.CurrentIndex++
+
+		// Check if game is over
+		if g.CurrentIndex >= len(g.Questions) {
+			response := GameStatePayload{
+				Action: "game_update",
+				GameState: BurnBookGameState{
+					Phase: "game_over",
+				},
+			}
+			broadcast(s, response)
+			return
+		}
+
+		// Start voting for next question
+		g.Phase = "voting"
+		broadcastVotingState(s, g)
+		return
+	}
+}
+
+func broadcast(s *Session, payload GameStatePayload) {
+	bytes, _ := json.Marshal(payload)
+	s.Broadcast <- bytes
+}
+
+func broadcastVotingState(s *Session, g *BurnBookLogic) {
+	for client := range s.Clients {
+
+		hasVoted := false
+		if g.WhoVoted[g.CurrentIndex] != nil {
+			hasVoted = g.WhoVoted[g.CurrentIndex][client.UserID]
+		}
 
 		response := GameStatePayload{
 			Action: "game_update",
 			GameState: BurnBookGameState{
 				Phase:        "voting",
-				QuestionText: g.Questions[0],
-				Voters:       candidates,
+				QuestionText: g.Questions[g.CurrentIndex],
+				Players:      s.getPlayersList(), 
+				HasVoted:     hasVoted,           
 			},
 		}
+
 		bytes, _ := json.Marshal(response)
-		s.Broadcast <- bytes
-		return
-	}
-
-	// --- 3. CAST VOTE (Anyone, Voting Phase) ---
-	if payload.Type == "submit_vote" && g.Phase == "voting" {
-		candidateID := payload.Payload
-		
-		// Initialize map if needed
-		if g.Votes[g.CurrentIndex] == nil {
-			g.Votes[g.CurrentIndex] = make(map[string]int)
-		}
-		
-		g.Votes[g.CurrentIndex][candidateID]++
-		// Note: In a real app, you should check if sender already voted to prevent spam
-		return
-	}
-
-	// --- 4. NEXT (Host Only: Next Question OR Go To Results) ---
-	if payload.Type == "next_step" && sender.IsHost {
-		
-		if g.Phase == "voting" {
-			g.CurrentIndex++
-			
-			// If we ran out of questions, switch to RESULTS phase
-			if g.CurrentIndex >= len(g.Questions) {
-				g.Phase = "results"
-				g.CurrentIndex = 0 // Reset to show first result
-				
-				winner, counts := g.calculateWinner(g.CurrentIndex)
-				
-				response := GameStatePayload{
-					Action: "game_update",
-					GameState: BurnBookGameState{
-						Phase:        "results",
-						QuestionText: g.Questions[g.CurrentIndex],
-						Winner:       winner,
-						Votes:        counts,
-					},
-				}
-				bytes, _ := json.Marshal(response)
-				s.Broadcast <- bytes
-				return
-			}
-			
-			// Otherwise, show next question for voting
-			candidates := s.getPlayersList()
-			response := GameStatePayload{
-				Action: "game_update",
-				GameState: BurnBookGameState{
-					Phase:        "voting",
-					QuestionText: g.Questions[g.CurrentIndex],
-					Voters:       candidates,
-				},
-			}
-			bytes, _ := json.Marshal(response)
-			s.Broadcast <- bytes
-			return
-		}
-
-		// --- 5. NEXT RESULT (Host Only, Results Phase) ---
-		if g.Phase == "results" {
-			g.CurrentIndex++
-			
-			// End of game check
-			if g.CurrentIndex >= len(g.Questions) {
-				// Reset or End Game logic here
-				return 
-			}
-
-			winner, counts := g.calculateWinner(g.CurrentIndex)
-
-			response := GameStatePayload{
-				Action: "game_update",
-				GameState: BurnBookGameState{
-					Phase:        "results",
-					QuestionText: g.Questions[g.CurrentIndex],
-					Winner:       winner,
-					Votes:        counts,
-				},
-			}
-			bytes, _ := json.Marshal(response)
-			s.Broadcast <- bytes
-			return
-		}
+		client.Send <- bytes
 	}
 }
 
-func (g *BurnBookLogic) calculateWinner(questionIdx int) (string, map[string]int) {
-	votes := g.Votes[questionIdx]
+func (g *BurnBookLogic) calculateWinner(idx int) (string, int) {
+	votes := g.Votes[idx]
+	if len(votes) == 0 {
+		return "", 0
+	}
+
+	winnerID := ""
 	maxVotes := -1
-	winnerID := "No Votes"
-	
-	// Determine ID with max votes
+
 	for id, count := range votes {
 		if count > maxVotes {
 			maxVotes = count
 			winnerID = id
 		}
 	}
-	
-	// In a real app, you might want to look up the Username from the Session here,
-	// but sending the ID back is fine if the Client can map ID -> Username
-	return winnerID, votes
+	return winnerID, maxVotes
 }

@@ -287,6 +287,7 @@ func (c *Client) ReadPump() {
 
 			// We check if it is a game_action. The Engine will check the "Type" (draw_card).
 			if payload.Action == "game_action" {
+				log.Println("DEBUG: in game_action")
 				c.Session.GameEngine.HandleMessage(c.Session, c, message)
 				continue
 			}
