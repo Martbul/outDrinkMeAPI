@@ -292,7 +292,7 @@ func (g *BurnBookLogic) HandleMessage(s *Session, sender *Client, msg []byte) {
 
 	g.mu.Lock()
 	defer g.mu.Unlock()
-	log.Panicln(request.Type)
+	log.Println("Received Action:", request.Type) 
 
 	// --- 1. SUBMIT QUESTION ---
 	if request.Type == "submit_question" && g.Phase == "collecting" {
