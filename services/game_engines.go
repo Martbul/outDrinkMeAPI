@@ -5,11 +5,11 @@ import (
 	"fmt"
 	"log"
 	"math/rand"
+	"sort"
 	"sync"
 	"time"
 )
 
-// Internal Card: Use Short Codes ("H", "A") internally
 type Card struct {
 	Suit string `json:"suit"`
 	Rank string `json:"rank"`
@@ -24,7 +24,7 @@ type ClientCard struct {
 }
 
 type GameStatePayload struct {
-	Action    string      `json:"action"` // "game_update"
+	Action    string      `json:"action"`
 	GameState interface{} `json:"gameState"`
 }
 
@@ -32,31 +32,6 @@ type KingsCupGameState struct {
 	CurrentCard    *ClientCard `json:"currentCard"`
 	CardsRemaining int         `json:"cardsRemaining"`
 	GameOver       bool        `json:"gameOver"`
-}
-
-type RoundResult struct {
-	WinnerID string `json:"winnerId"`
-	Votes    int    `json:"votes"`
-}
-
-type BurnBookGameState struct {
-	Phase          string `json:"phase"`                  // "collecting", "voting", "results", "game_over"
-	QuestionText   string `json:"questionText,omitempty"` // Current question text
-	CollectedCount int    `json:"collectedCount,omitempty"`
-
-	// For Voting Phase
-	TimeRemaining  int `json:"timeRemaining,omitempty"` // Optional: tell UI how long they have
-	CurrentNumber  int `json:"currentNumber,omitempty"` // "Question 1 of 3"
-	TotalQuestions int `json:"totalQuestions,omitempty"`
-
-	Players      []PlayerInfo `json:"players,omitempty"`
-	RoundResults *RoundResult `json:"roundResults,omitempty"`
-	HasVoted     bool         `json:"hasVoted,omitempty"`
-}
-
-type PlayerInfo struct {
-	ID       string `json:"id"`
-	Username string `json:"username"`
 }
 
 func generateNewDeck() []Card {
@@ -247,17 +222,50 @@ func (g *KingsCupLogic) HandleMessage(s *Session, sender *Client, msg []byte) {
 }
 
 type BurnBookLogic struct {
-	Phase     string
+	mu        sync.Mutex
+	Timer     *time.Timer
 	Questions []string
-
+	Phase string
+	Votes    map[int]map[string]int  // [QuestionIndex] -> [CandidateID] -> Count
+	WhoVoted map[int]map[string]bool // [QuestionIndex] -> [VoterID] -> bool
 	VotingIndex int
 	RevealIndex int
 
-	Votes    map[int]map[string]int  // [QuestionIndex] -> [CandidateID] -> Count
-	WhoVoted map[int]map[string]bool // [QuestionIndex] -> [VoterID] -> bool
+}
 
-	Timer *time.Timer
-	mu    sync.Mutex
+// type RoundResult struct {
+// 	WinnerID string `json:"winnerId"`
+// 	Votes    int    `json:"votes"`
+// }
+
+type RoundResult struct {
+	WinnerID string            `json:"winnerId"` // Helper to identify the top victim easily
+	Results  []PlayerRoundInfo `json:"results"`  // List of all players who got votes
+}
+
+type PlayerRoundInfo struct {
+	UserID string `json:"userId"`
+	Votes  int    `json:"votes"`
+}
+
+
+type BurnBookGameState struct {
+	Phase          string `json:"phase"`
+	QuestionText   string `json:"questionText,omitempty"` // Current question text
+	CollectedCount int    `json:"collectedCount,omitempty"`
+
+	TimeRemaining  int `json:"timeRemaining,omitempty"` // Optional: tell UI how long they have
+	CurrentNumber  int `json:"currentNumber,omitempty"` // "Question 1 of 3"
+	TotalQuestions int `json:"totalQuestions,omitempty"`
+
+	Players      []PlayerInfo `json:"players,omitempty"`
+	RoundResults *RoundResult `json:"roundResults,omitempty"`
+	HasVoted     bool         `json:"hasVoted,omitempty"`
+}
+
+type PlayerInfo struct {
+	ID       string `json:"id"`
+	Username string `json:"username"`
 }
 
 func (g *BurnBookLogic) InitState() interface{} {
@@ -276,6 +284,8 @@ func (g *BurnBookLogic) InitState() interface{} {
 		CollectedCount: 0,
 	}
 }
+
+
 func (g *BurnBookLogic) HandleMessage(s *Session, sender *Client, msg []byte) {
 	var request struct {
 		Type     string `json:"type"`
@@ -358,7 +368,7 @@ func (g *BurnBookLogic) HandleMessage(s *Session, sender *Client, msg []byte) {
 	if request.Type == "next_reveal" && sender.IsHost && g.Phase == "results" {
 		g.RevealIndex++
 
-		if g.RevealIndex >= len(g.Questions) {
+	if g.RevealIndex >= len(g.Questions) {
 			g.Phase = "game_over"
 			broadcast(s, GameStatePayload{
 				Action: "game_update",
@@ -369,21 +379,54 @@ func (g *BurnBookLogic) HandleMessage(s *Session, sender *Client, msg []byte) {
 			return
 		}
 
-		winnerID, voteCount := g.calculateWinner(g.RevealIndex)
+		roundResults := g.getRoundResults(g.RevealIndex)
 
-		broadcast(s, GameStatePayload{
+			broadcast(s, GameStatePayload{
 			Action: "game_update",
 			GameState: BurnBookGameState{
 				Phase:        "results",
 				QuestionText: g.Questions[g.RevealIndex],
-				RoundResults: &RoundResult{
-					WinnerID: winnerID,
-					Votes:    voteCount,
-				},
-				Players: s.getPlayersList(),
+				RoundResults: roundResults, // Sending the full struct
+				Players:      s.getPlayersList(),
 			},
 		})
 		return
+	}
+}
+
+
+func (g *BurnBookLogic) getRoundResults(idx int) *RoundResult {
+	votesMap := g.Votes[idx]
+	
+	results := make([]PlayerRoundInfo, 0)
+	winnerID := ""
+	maxVotes := -1
+
+	// 1. Convert Map to Slice
+	for userID, count := range votesMap {
+		results = append(results, PlayerRoundInfo{
+			UserID: userID,
+			Votes:  count,
+		})
+
+		// Track winner
+		if count > maxVotes {
+			maxVotes = count
+			winnerID = userID
+		} else if count == maxVotes {
+			// Handle ties if necessary (here we just keep the first one found or random map order)
+			// You could leave winnerID as is
+		}
+	}
+
+	// 2. Sort the slice by Votes (Descending) so the Client receives an ordered list
+	sort.Slice(results, func(i, j int) bool {
+		return results[i].Votes > results[j].Votes
+	})
+
+	return &RoundResult{
+		WinnerID: winnerID,
+		Results:  results,
 	}
 }
 
@@ -570,7 +613,7 @@ func (g *MafiaLogic) HandleMessage(s *Session, sender *Client, msg []byte) {
 	if payload.Type == "vote" && g.Phase == "VOTING" {
 		if g.IsAlive[sender.UserID] && g.IsAlive[payload.TargetID] {
 			g.Votes[sender.UserID] = payload.TargetID
-			
+
 			// Optional: Broadcast that X has voted (without revealing who)
 			// to keep pressure up
 		}
@@ -582,13 +625,12 @@ func (g *MafiaLogic) HandleMessage(s *Session, sender *Client, msg []byte) {
 
 }
 
-
 func (g *MafiaLogic) startNightPhase(s *Session) {
 	g.mu.Lock()
 	g.Phase = "NIGHT"
 	g.MafiaTarget = "" // Reset target
 	duration := 30     // 30 seconds for Mafia to decide
-	
+
 	// Notify Everyone
 	g.broadcastState(s, "NIGHT", "Night has fallen. Sleep...", duration)
 
@@ -596,7 +638,7 @@ func (g *MafiaLogic) startNightPhase(s *Session) {
 	for client := range s.Clients {
 		if g.Roles[client.UserID] == "MAFIA" {
 			msg := map[string]interface{}{
-				"action": "system_message",
+				"action":  "system_message",
 				"content": "You are the Mafia. Select a target to Kill!",
 			}
 			data, _ := json.Marshal(msg)
@@ -612,12 +654,11 @@ func (g *MafiaLogic) startNightPhase(s *Session) {
 	}()
 }
 
-
 func (g *MafiaLogic) resolveNight(s *Session) {
 	g.mu.Lock()
-	
+
 	deathMessage := "The night was quiet."
-	
+
 	// Check if Mafia selected a target
 	if g.MafiaTarget != "" {
 		g.IsAlive[g.MafiaTarget] = false
@@ -644,12 +685,11 @@ func (g *MafiaLogic) resolveNight(s *Session) {
 	g.startDayPhase(s, deathMessage)
 }
 
-
 func (g *MafiaLogic) startDayPhase(s *Session, morningMsg string) {
 	g.mu.Lock()
 	g.Phase = "DAY"
 	duration := 360 // 360 seconds discussion
-	g.broadcastState(s, "DAY", morningMsg + " Discuss who is guilty!", duration)
+	g.broadcastState(s, "DAY", morningMsg+" Discuss who is guilty!", duration)
 	g.mu.Unlock()
 
 	go func() {
@@ -657,7 +697,6 @@ func (g *MafiaLogic) startDayPhase(s *Session, morningMsg string) {
 		g.startVotingPhase(s)
 	}()
 }
-
 
 func (g *MafiaLogic) startVotingPhase(s *Session) {
 	g.mu.Lock()
@@ -673,10 +712,9 @@ func (g *MafiaLogic) startVotingPhase(s *Session) {
 	}()
 }
 
-
 func (g *MafiaLogic) resolveVoting(s *Session) {
 	g.mu.Lock()
-	
+
 	// Tally Votes
 	voteCounts := make(map[string]int)
 	for _, target := range g.Votes {
@@ -699,7 +737,7 @@ func (g *MafiaLogic) resolveVoting(s *Session) {
 	}
 
 	resultMsg := ""
-	
+
 	if isTie || maxVotes == 0 {
 		resultMsg = "Vote was a tie (or empty). No one dies. EVERYONE DRINKS!"
 	} else {
@@ -721,7 +759,7 @@ func (g *MafiaLogic) resolveVoting(s *Session) {
 	}
 
 	g.mu.Unlock()
-	
+
 	// Loop back to Night
 	// Small delay to read results
 	go func() {
@@ -729,7 +767,7 @@ func (g *MafiaLogic) resolveVoting(s *Session) {
 		payload := GameStatePayload{
 			Action: "game_update",
 			GameState: MafiaGameState{
-				Phase: "RESULTS", 
+				Phase:   "RESULTS",
 				Message: resultMsg,
 			},
 		}
@@ -744,15 +782,15 @@ func (g *MafiaLogic) resolveVoting(s *Session) {
 func (g *MafiaLogic) assignRoles(s *Session) {
 	// Simple Logic: 1 Mafia, rest Civilians
 	// For 7+ players, maybe 2 Mafia, but let's keep it simple
-	
+
 	ids := make([]string, 0, len(s.Clients))
 	for client := range s.Clients {
 		ids = append(ids, client.UserID)
 	}
-	
+
 	rand.Seed(time.Now().UnixNano())
 	rand.Shuffle(len(ids), func(i, j int) { ids[i], ids[j] = ids[j], ids[i] })
-	
+
 	// Assign Logic
 	for i, id := range ids {
 		role := "CIVILIAN"
@@ -830,7 +868,7 @@ func (g *MafiaLogic) broadcastState(s *Session, phase string, msg string, timeSe
 			DeadPlayers:  dead,
 		},
 	}
-	
+
 	bytes, _ := json.Marshal(payload)
 	s.Broadcast <- bytes
 }
