@@ -40,13 +40,18 @@ type RoundResult struct {
 }
 
 type BurnBookGameState struct {
-	Phase          string        `json:"phase"`                    
-	QuestionText   string        `json:"questionText,omitempty"`   
+	Phase          string        `json:"phase"`                  // "collecting", "voting", "results", "game_over"
+	QuestionText   string        `json:"questionText,omitempty"` // Current question text
 	CollectedCount int           `json:"collectedCount,omitempty"`
-	Players        []PlayerInfo  `json:"players,omitempty"`        
-	RoundResults   *RoundResult  `json:"roundResults,omitempty"`   
+	
+	// For Voting Phase
+	TimeRemaining  int           `json:"timeRemaining,omitempty"` // Optional: tell UI how long they have
+	CurrentNumber  int           `json:"currentNumber,omitempty"` // "Question 1 of 3"
+	TotalQuestions int           `json:"totalQuestions,omitempty"`
+
+	Players        []PlayerInfo  `json:"players,omitempty"`
+	RoundResults   *RoundResult  `json:"roundResults,omitempty"`
 	HasVoted       bool          `json:"hasVoted,omitempty"`
-	MyVote         string        `json:"myVote,omitempty"`
 }
 
 type PlayerInfo struct {
@@ -251,11 +256,19 @@ func (g *KingsCupLogic) HandleMessage(s *Session, sender *Client, msg []byte) {
 type BurnBookLogic struct {
 	Phase        string
 	Questions    []string
-	CurrentIndex int
-	Votes        map[int]map[string]int
-	WhoVoted     map[int]map[string]bool
+	
+	// Logic State
+	VotingIndex  int // Tracks which question we are voting on
+	RevealIndex  int // Tracks which result we are showing
+	
+	Votes        map[int]map[string]int  // [QuestionIndex] -> [CandidateID] -> Count
+	WhoVoted     map[int]map[string]bool // [QuestionIndex] -> [VoterID] -> bool
+	
+	// Timer handling
+	Timer        *time.Timer
 	mu           sync.Mutex
 }
+
 
 func (g *BurnBookLogic) InitState() interface{} {
 	g.mu.Lock()
@@ -264,25 +277,20 @@ func (g *BurnBookLogic) InitState() interface{} {
 	g.Phase = "collecting"
 	g.Questions = make([]string, 0)
 	g.Votes = make(map[int]map[string]int)
-	g.WhoVoted = make(map[int]map[string]bool) 
-	g.CurrentIndex = 0
+	g.WhoVoted = make(map[int]map[string]bool)
+	g.VotingIndex = 0
+	g.RevealIndex = -1 // Starts at -1 so first "next" goes to 0
 
 	return BurnBookGameState{
 		Phase:          "collecting",
 		CollectedCount: 0,
 	}
 }
-
 func (g *BurnBookLogic) HandleMessage(s *Session, sender *Client, msg []byte) {
-	// 1. Define a struct that covers ALL possible fields sent by the client
 	var request struct {
 		Type     string `json:"type"`
-		
-		// Capture "payload" (used for submit_question)
-		Payload  string `json:"payload"` 
-		
-		// Capture "targetId" (used for vote_player)
-		TargetID string `json:"targetId"` 
+		Payload  string `json:"payload"`
+		TargetID string `json:"targetId"`
 	}
 
 	if err := json.Unmarshal(msg, &request); err != nil {
@@ -291,109 +299,156 @@ func (g *BurnBookLogic) HandleMessage(s *Session, sender *Client, msg []byte) {
 	}
 
 	g.mu.Lock()
+	// Note: We defer Unlock inside specific blocks or at the end, 
+	// but because we use a Timer that needs the lock, we must be careful not to deadlock.
+	// For this logic, we will lock primarily for state updates.
 	defer g.mu.Unlock()
-	log.Println("Received Action:", request.Type) 
+
+	log.Println("Received Action:", request.Type)
 
 	// --- 1. SUBMIT QUESTION ---
 	if request.Type == "submit_question" && g.Phase == "collecting" {
-		// Just read request.Payload directly (it's a string now)
 		if request.Payload == "" {
 			return
 		}
-
 		g.Questions = append(g.Questions, request.Payload)
 
-		response := GameStatePayload{
+		broadcast(s, GameStatePayload{
 			Action: "game_update",
 			GameState: BurnBookGameState{
 				Phase:          "collecting",
 				CollectedCount: len(g.Questions),
 			},
-		}
-		broadcast(s, response)
+		})
 		return
 	}
 
-	// --- 2. START VOTING ---
+	// --- 2. START VOTING (Host) ---
 	if request.Type == "start_voting" && sender.IsHost && g.Phase == "collecting" {
 		if len(g.Questions) == 0 {
 			return
 		}
 
 		g.Phase = "voting"
-		g.CurrentIndex = 0
+		g.VotingIndex = 0
 		g.Votes = make(map[int]map[string]int)
 		g.WhoVoted = make(map[int]map[string]bool)
 
-		broadcastVotingState(s, g)
+		// Unlock before calling the timer function to avoid deadlock
+		g.mu.Unlock() 
+		g.startQuestionTimer(s) // Start the automatic flow
+		g.mu.Lock() // Relock for the defer Unlock
 		return
 	}
 
 	// --- 3. CAST VOTE ---
 	if request.Type == "vote_player" && g.Phase == "voting" {
-		// Read request.TargetID directly (no map lookup needed)
 		if request.TargetID == "" {
 			return
 		}
-
-		if g.Votes[g.CurrentIndex] == nil {
-			g.Votes[g.CurrentIndex] = make(map[string]int)
+		
+		// Setup maps
+		if g.Votes[g.VotingIndex] == nil {
+			g.Votes[g.VotingIndex] = make(map[string]int)
 		}
-		if g.WhoVoted[g.CurrentIndex] == nil {
-			g.WhoVoted[g.CurrentIndex] = make(map[string]bool)
+		if g.WhoVoted[g.VotingIndex] == nil {
+			g.WhoVoted[g.VotingIndex] = make(map[string]bool)
 		}
 
-		if g.WhoVoted[g.CurrentIndex][sender.UserID] {
+		// Prevent double voting
+		if g.WhoVoted[g.VotingIndex][sender.UserID] {
 			return
 		}
 
-		g.Votes[g.CurrentIndex][request.TargetID]++
-		g.WhoVoted[g.CurrentIndex][sender.UserID] = true
+		g.Votes[g.VotingIndex][request.TargetID]++
+		g.WhoVoted[g.VotingIndex][sender.UserID] = true
 
+		// Check if everyone has voted to skip the timer?
+		// For now, let's keep the timer running to keep it simple (30s fixed),
+		// OR you can broadcast the updated "HasVoted" state.
 		broadcastVotingState(s, g)
 		return
 	}
 
-	// --- 4. REVEAL RESULTS ---
-	if request.Type == "reveal_results" && sender.IsHost && g.Phase == "voting" {
-		g.Phase = "results"
-		winnerID, voteCount := g.calculateWinner(g.CurrentIndex)
+	// --- 4. REVEAL NEXT RESULT (Host Only) ---
+	// This steps through the results one by one
+	if request.Type == "next_reveal" && sender.IsHost && g.Phase == "results" {
+		g.RevealIndex++
 
-		response := GameStatePayload{
+		// Check if we showed all questions
+		if g.RevealIndex >= len(g.Questions) {
+			g.Phase = "game_over"
+			broadcast(s, GameStatePayload{
+				Action: "game_update",
+				GameState: BurnBookGameState{
+					Phase: "game_over",
+				},
+			})
+			return
+		}
+
+		// Calculate winner for the *current reveal index*
+		winnerID, voteCount := g.calculateWinner(g.RevealIndex)
+
+		broadcast(s, GameStatePayload{
 			Action: "game_update",
 			GameState: BurnBookGameState{
 				Phase:        "results",
-				QuestionText: g.Questions[g.CurrentIndex],
+				QuestionText: g.Questions[g.RevealIndex],
 				RoundResults: &RoundResult{
 					WinnerID: winnerID,
 					Votes:    voteCount,
 				},
 				Players: s.getPlayersList(),
 			},
-		}
-		broadcast(s, response)
+		})
+		return
+	}
+}
+
+// --- HELPER: AUTOMATIC QUESTION TIMER ---
+// This function handles the 30s logic and recursively calls itself
+func (g *BurnBookLogic) startQuestionTimer(s *Session) {
+	g.mu.Lock()
+	
+	// Stop if game is over or phase changed unexpectedly
+	if g.VotingIndex >= len(g.Questions) {
+		g.Phase = "results"
+		g.RevealIndex = -1 // Reset reveal index
+		
+		// Notify clients that voting is done, waiting for host to reveal
+		broadcast(s, GameStatePayload{
+			Action: "game_update",
+			GameState: BurnBookGameState{
+				Phase: "results_wait", // UI should show "Waiting for Host to reveal..."
+			},
+		})
+		g.mu.Unlock()
 		return
 	}
 
-	// --- 5. NEXT QUESTION ---
-	if request.Type == "next_question" && sender.IsHost && g.Phase == "results" {
-		g.CurrentIndex++
+	// Broadcast Current Question
+	broadcastVotingState(s, g)
+	
+	currentIndex := g.VotingIndex // Capture current index for closure
+	g.mu.Unlock()
 
-		if g.CurrentIndex >= len(g.Questions) {
-			response := GameStatePayload{
-				Action: "game_update",
-				GameState: BurnBookGameState{
-					Phase: "game_over",
-				},
-			}
-			broadcast(s, response)
-			return
+	// Wait 30 seconds
+	// Note: In a production app, you might want to allow "early skip" if everyone voted.
+	// We use AfterFunc so we don't block a thread, but here we just need to trigger the next step.
+	go func() {
+		time.Sleep(30 * time.Second)
+		
+		g.mu.Lock()
+		// Check if we are still on the same question (prevents race conditions if game ended)
+		if g.Phase == "voting" && g.VotingIndex == currentIndex {
+			g.VotingIndex++ // Move to next
+			g.mu.Unlock()
+			g.startQuestionTimer(s) // Recursion for next question
+		} else {
+			g.mu.Unlock()
 		}
-
-		g.Phase = "voting"
-		broadcastVotingState(s, g)
-		return
-	}
+	}()
 }
 
 func broadcast(s *Session, payload GameStatePayload) {
@@ -402,23 +457,25 @@ func broadcast(s *Session, payload GameStatePayload) {
 }
 
 func broadcastVotingState(s *Session, g *BurnBookLogic) {
+	// Helper to send the current voting state to everyone
 	for client := range s.Clients {
-
 		hasVoted := false
-		if g.WhoVoted[g.CurrentIndex] != nil {
-			hasVoted = g.WhoVoted[g.CurrentIndex][client.UserID]
+		if g.WhoVoted[g.VotingIndex] != nil {
+			hasVoted = g.WhoVoted[g.VotingIndex][client.UserID]
 		}
 
 		response := GameStatePayload{
 			Action: "game_update",
 			GameState: BurnBookGameState{
-				Phase:        "voting",
-				QuestionText: g.Questions[g.CurrentIndex],
-				Players:      s.getPlayersList(), 
-				HasVoted:     hasVoted,           
+				Phase:          "voting",
+				QuestionText:   g.Questions[g.VotingIndex],
+				CurrentNumber:  g.VotingIndex + 1,
+				TotalQuestions: len(g.Questions),
+				Players:        s.getPlayersList(),
+				HasVoted:       hasVoted,
+				TimeRemaining:  30, // UI can start a countdown
 			},
 		}
-
 		bytes, _ := json.Marshal(response)
 		client.Send <- bytes
 	}
