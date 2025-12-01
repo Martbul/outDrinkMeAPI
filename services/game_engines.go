@@ -46,7 +46,6 @@ type PlayerInfo struct {
 	Username string `json:"username"`
 }
 
-// 1. GENERATE DECK: Use Short Codes (H, D, C, S) and (A, 2-10, J, Q, K)
 func generateNewDeck() []Card {
 	suits := []string{"H", "D", "C", "S"}
 	ranks := []string{"A", "2", "3", "4", "5", "6", "7", "8", "9", "10", "J", "Q", "K"}
@@ -267,14 +266,13 @@ func (g *BurnBookLogic) InitState() interface{} {
 func (g *BurnBookLogic) HandleMessage(s *Session, sender *Client, msg []byte) {
 	var payload struct {
 		Type    string `json:"type"`
-		Payload string `json:"payload"` // For submitting question ("Who is ugly?") or voting ("userID")
+		Payload string `json:"payload"` 
 	}
 	json.Unmarshal(msg, &payload)
 
 	g.mu.Lock()
 	defer g.mu.Unlock()
 
-	// --- 1. SUBMIT QUESTION (Anyone, Collecting Phase) ---
 	if payload.Type == "submit_question" && g.Phase == "collecting" {
 		g.Questions = append(g.Questions, payload.Payload)
 		
@@ -291,7 +289,6 @@ func (g *BurnBookLogic) HandleMessage(s *Session, sender *Client, msg []byte) {
 		return
 	}
 
-	// --- 2. START VOTING / BURN (Host Only) ---
 	if payload.Type == "start_voting" && sender.IsHost && g.Phase == "collecting" {
 		if len(g.Questions) == 0 {
 			return // Cannot start without questions

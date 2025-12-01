@@ -262,7 +262,8 @@ func (c *Client) ReadPump() {
 	for {
 		_, message, err := c.Conn.ReadMessage()
 		if err != nil {
-			log.Println("Error reading msg")
+			log.Println("herere")
+			log.Println("Error reading msg", err)
 			break
 		}
 
