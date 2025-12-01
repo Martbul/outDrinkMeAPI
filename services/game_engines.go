@@ -343,12 +343,12 @@ func (g *BurnBookLogic) HandleMessage(s *Session, sender *Client, msg []byte) {
 			g.WhoVoted[g.CurrentIndex] = make(map[string]bool)
 		}
 
-		if g.WhoVoted[g.CurrentIndex][sender.ID] {
+		if g.WhoVoted[g.CurrentIndex][sender.UserID] {
 			return
 		}
 
 		g.Votes[g.CurrentIndex][request.TargetID]++
-		g.WhoVoted[g.CurrentIndex][sender.ID] = true
+		g.WhoVoted[g.CurrentIndex][sender.UserID] = true
 
 		broadcastVotingState(s, g)
 		return
