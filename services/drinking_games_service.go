@@ -53,6 +53,8 @@ func NewGameLogic(gameType string) GameLogic {
 		return &KingsCupLogic{}
 	case "burn-book":
 		return &BurnBookLogic{}
+	case "mafia":
+		return &MafiaLogic{}
 	default:
 		return &KingsCupLogic{}
 	}
@@ -117,7 +119,7 @@ func (s *Session) Run() {
 		close(s.Unregister)
 		close(s.TriggerList)
 	}()
-
+//! when client disconnects againghe should be unregistered
 	for {
 		select {
 		case client := <-s.Register:
@@ -235,7 +237,6 @@ type Client struct {
 	IsHost   bool
 }
 
-// messages ws expect
 type WsPayload struct {
 	Action   string `json:"action"`
 	Type     string `json:"type"`
@@ -251,7 +252,6 @@ func (c *Client) ReadPump() {
 		c.Conn.Close()
 	}()
 
-	// Standard configuration to ensure connection health
 	c.Conn.SetReadLimit(maxMessageSize)
 	c.Conn.SetReadDeadline(time.Now().Add(pongWait))
 	c.Conn.SetPongHandler(func(string) error {
