@@ -272,35 +272,36 @@ func (g *BurnBookLogic) InitState() interface{} {
 		CollectedCount: 0,
 	}
 }
+
 func (g *BurnBookLogic) HandleMessage(s *Session, sender *Client, msg []byte) {
-	// 1. Use a generic map to handle the flattened JSON structure from the client
-	var request map[string]interface{}
+	// 1. Define a struct that covers ALL possible fields sent by the client
+	var request struct {
+		Type     string `json:"type"`
+		
+		// Capture "payload" (used for submit_question)
+		Payload  string `json:"payload"` 
+		
+		// Capture "targetId" (used for vote_player)
+		TargetID string `json:"targetId"` 
+	}
 
 	if err := json.Unmarshal(msg, &request); err != nil {
 		fmt.Println("JSON Error:", err)
 		return
 	}
 
-	// 2. Safely extract the message type
-	msgType, ok := request["type"].(string)
-	if !ok {
-		return 
-	}
-
 	g.mu.Lock()
 	defer g.mu.Unlock()
-	log.Println(request)
-	log.Println(msgType)
+	log.Panicln(request.Type)
 
 	// --- 1. SUBMIT QUESTION ---
-	if msgType == "submit_question" && g.Phase == "collecting" {
-		// The client sends: { "type": "...", "payload": "Question text" }
-		qText, ok := request["payload"].(string)
-		if !ok || qText == "" {
+	if request.Type == "submit_question" && g.Phase == "collecting" {
+		// Just read request.Payload directly (it's a string now)
+		if request.Payload == "" {
 			return
 		}
 
-		g.Questions = append(g.Questions, qText)
+		g.Questions = append(g.Questions, request.Payload)
 
 		response := GameStatePayload{
 			Action: "game_update",
@@ -313,8 +314,8 @@ func (g *BurnBookLogic) HandleMessage(s *Session, sender *Client, msg []byte) {
 		return
 	}
 
-	// --- 2. START VOTING (Host Only) ---
-	if msgType == "start_voting" && sender.IsHost && g.Phase == "collecting" {
+	// --- 2. START VOTING ---
+	if request.Type == "start_voting" && sender.IsHost && g.Phase == "collecting" {
 		if len(g.Questions) == 0 {
 			return
 		}
@@ -329,15 +330,12 @@ func (g *BurnBookLogic) HandleMessage(s *Session, sender *Client, msg []byte) {
 	}
 
 	// --- 3. CAST VOTE ---
-	if msgType == "vote_player" && g.Phase == "voting" {
-		// The client sends: { "type": "...", "targetId": "123" }
-		// Note: "targetId" is at the root level because of the spread operator
-		targetID, ok := request["targetId"].(string)
-		if !ok || targetID == "" {
+	if request.Type == "vote_player" && g.Phase == "voting" {
+		// Read request.TargetID directly (no map lookup needed)
+		if request.TargetID == "" {
 			return
 		}
 
-		// Initialize maps if nil
 		if g.Votes[g.CurrentIndex] == nil {
 			g.Votes[g.CurrentIndex] = make(map[string]int)
 		}
@@ -345,23 +343,20 @@ func (g *BurnBookLogic) HandleMessage(s *Session, sender *Client, msg []byte) {
 			g.WhoVoted[g.CurrentIndex] = make(map[string]bool)
 		}
 
-		// Check if Sender already voted
-		if g.WhoVoted[g.CurrentIndex][sender.UserID] {
+		if g.WhoVoted[g.CurrentIndex][sender.ID] {
 			return
 		}
 
-		// Record Vote
-		g.Votes[g.CurrentIndex][targetID]++
-		g.WhoVoted[g.CurrentIndex][sender.UserID] = true
+		g.Votes[g.CurrentIndex][request.TargetID]++
+		g.WhoVoted[g.CurrentIndex][sender.ID] = true
 
 		broadcastVotingState(s, g)
 		return
 	}
 
 	// --- 4. REVEAL RESULTS ---
-	if msgType == "reveal_results" && sender.IsHost && g.Phase == "voting" {
+	if request.Type == "reveal_results" && sender.IsHost && g.Phase == "voting" {
 		g.Phase = "results"
-
 		winnerID, voteCount := g.calculateWinner(g.CurrentIndex)
 
 		response := GameStatePayload{
@@ -381,10 +376,9 @@ func (g *BurnBookLogic) HandleMessage(s *Session, sender *Client, msg []byte) {
 	}
 
 	// --- 5. NEXT QUESTION ---
-	if msgType == "next_question" && sender.IsHost && g.Phase == "results" {
+	if request.Type == "next_question" && sender.IsHost && g.Phase == "results" {
 		g.CurrentIndex++
 
-		// Check if game is over
 		if g.CurrentIndex >= len(g.Questions) {
 			response := GameStatePayload{
 				Action: "game_update",
@@ -396,7 +390,6 @@ func (g *BurnBookLogic) HandleMessage(s *Session, sender *Client, msg []byte) {
 			return
 		}
 
-		// Start voting for next question
 		g.Phase = "voting"
 		broadcastVotingState(s, g)
 		return
