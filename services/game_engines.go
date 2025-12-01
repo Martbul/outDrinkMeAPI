@@ -3,6 +3,7 @@ package services
 import (
 	"encoding/json"
 	"fmt"
+	"log"
 	"math/rand"
 	"sync"
 	"time"
@@ -271,28 +272,30 @@ func (g *BurnBookLogic) InitState() interface{} {
 		CollectedCount: 0,
 	}
 }
-
 func (g *BurnBookLogic) HandleMessage(s *Session, sender *Client, msg []byte) {
-	var request struct {
-		Type    string                 `json:"type"`
-		Payload map[string]interface{} `json:"payload"`
-	}
+	// 1. Use a generic map to handle the flattened JSON structure from the client
+	var request map[string]interface{}
 
 	if err := json.Unmarshal(msg, &request); err != nil {
 		fmt.Println("JSON Error:", err)
 		return
 	}
 
+	// 2. Safely extract the message type
+	msgType, ok := request["type"].(string)
+	if !ok {
+		return 
+	}
+
 	g.mu.Lock()
 	defer g.mu.Unlock()
+	log.Println(request)
+	log.Println(msgType)
 
 	// --- 1. SUBMIT QUESTION ---
-	if request.Type == "submit_question" && g.Phase == "collecting" {
-		// Ensure payload exists in the map
-		if request.Payload == nil {
-			return
-		}
-		qText, ok := request.Payload["payload"].(string)
+	if msgType == "submit_question" && g.Phase == "collecting" {
+		// The client sends: { "type": "...", "payload": "Question text" }
+		qText, ok := request["payload"].(string)
 		if !ok || qText == "" {
 			return
 		}
@@ -310,8 +313,8 @@ func (g *BurnBookLogic) HandleMessage(s *Session, sender *Client, msg []byte) {
 		return
 	}
 
-	// --- 2. START VOTING ---
-	if request.Type == "start_voting" && sender.IsHost && g.Phase == "collecting" {
+	// --- 2. START VOTING (Host Only) ---
+	if msgType == "start_voting" && sender.IsHost && g.Phase == "collecting" {
 		if len(g.Questions) == 0 {
 			return
 		}
@@ -326,12 +329,11 @@ func (g *BurnBookLogic) HandleMessage(s *Session, sender *Client, msg []byte) {
 	}
 
 	// --- 3. CAST VOTE ---
-	if request.Type == "vote_player" && g.Phase == "voting" {
-		if request.Payload == nil {
-			return
-		}
-		targetID, _ := request.Payload["targetId"].(string)
-		if targetID == "" {
+	if msgType == "vote_player" && g.Phase == "voting" {
+		// The client sends: { "type": "...", "targetId": "123" }
+		// Note: "targetId" is at the root level because of the spread operator
+		targetID, ok := request["targetId"].(string)
+		if !ok || targetID == "" {
 			return
 		}
 
@@ -357,7 +359,7 @@ func (g *BurnBookLogic) HandleMessage(s *Session, sender *Client, msg []byte) {
 	}
 
 	// --- 4. REVEAL RESULTS ---
-	if request.Type == "reveal_results" && sender.IsHost && g.Phase == "voting" {
+	if msgType == "reveal_results" && sender.IsHost && g.Phase == "voting" {
 		g.Phase = "results"
 
 		winnerID, voteCount := g.calculateWinner(g.CurrentIndex)
@@ -367,13 +369,11 @@ func (g *BurnBookLogic) HandleMessage(s *Session, sender *Client, msg []byte) {
 			GameState: BurnBookGameState{
 				Phase:        "results",
 				QuestionText: g.Questions[g.CurrentIndex],
-				// Now valid because we added RoundResult to the struct
-				RoundResults: &RoundResult{ 
+				RoundResults: &RoundResult{
 					WinnerID: winnerID,
 					Votes:    voteCount,
 				},
-				// Now valid because we added Players to the struct
-				Players: s.getPlayersList(), 
+				Players: s.getPlayersList(),
 			},
 		}
 		broadcast(s, response)
@@ -381,7 +381,7 @@ func (g *BurnBookLogic) HandleMessage(s *Session, sender *Client, msg []byte) {
 	}
 
 	// --- 5. NEXT QUESTION ---
-	if request.Type == "next_question" && sender.IsHost && g.Phase == "results" {
+	if msgType == "next_question" && sender.IsHost && g.Phase == "results" {
 		g.CurrentIndex++
 
 		// Check if game is over
