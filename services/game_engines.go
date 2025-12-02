@@ -67,7 +67,9 @@ func (g *KingsCupLogic) InitState() interface{} {
 	g.CustomRules = make(map[string]string)
 	g.KingsDrawn = 0
 	g.LastKingDrinker = ""
-	g.GameStarted = true
+	
+	// FIX 1: Start as false so players wait in lobby
+	g.GameStarted = false 
 
 	log.Printf("KingsCupLogic InitState called. GameStarted: %t", g.GameStarted)
 
@@ -229,9 +231,14 @@ func (g *KingsCupLogic) HandleMessage(s *Session, sender *Client, msg []byte) {
 	g.mu.Lock()
 	defer g.mu.Unlock()
 
-	if request.Type == "start_game" && sender.IsHost {
-		log.Println("host started game")
+if request.Type == "start_game" && sender.IsHost {
+		log.Println("Host started game")
 		g.GameStarted = true
+		g.DrawingIndex = 0 
+		
+		// IMPORTANT: Broadcast immediately so clients know to switch from Lobby to Game View
+		g.broadcastGameState(s, nil) 
+		return 
 	}
 
 	// Ensure the game has started
@@ -293,20 +300,16 @@ func (g *KingsCupLogic) HandleMessage(s *Session, sender *Client, msg []byte) {
 			ImageUrl: utils.GetImageUrl(drawn.Rank, drawn.Suit),
 		}
 
-		// Handle King's Cup
 		if drawn.Rank == "K" {
 			g.KingsDrawn++
-			// If it's the 4th king, this player drinks the king's cup
 			if g.KingsDrawn == 4 {
 				g.LastKingDrinker = sender.UserID
 				log.Printf("The 4th King has been drawn! %s must drink the King's Cup!\n", sender.Username)
 			}
 		}
 
-		// Broadcast the new card and updated state to everyone
 		g.broadcastGameState(s, &clientCard)
 
-		// Special handling for "8" (Mate) and "K" (King) - turn doesn't advance immediately
 		if drawn.Rank == "8" {
 			log.Printf("%s drew an 8. Waiting for buddy selection.\n", sender.Username)
 			return // Exit to wait for "choose_buddy" from the same player
