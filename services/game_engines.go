@@ -53,7 +53,6 @@ type KingsCupLogic struct {
 	CustomRules     map[string]string       // Stores custom rules set by players (playerID -> rule string)
 	KingsDrawn      int                     // Tracks how many kings have been drawn
 	LastKingDrinker string                  // Stores the ID of the player who drew the last king
-	GameStarted     bool                    // Tracks if the game has started
 }
 
 func (g *KingsCupLogic) InitState() interface{} {
@@ -69,16 +68,13 @@ func (g *KingsCupLogic) InitState() interface{} {
 	g.LastKingDrinker = ""
 	
 	// FIX 1: Start as false so players wait in lobby
-	g.GameStarted = false 
 
-	log.Printf("KingsCupLogic InitState called. GameStarted: %t", g.GameStarted)
 
 	return KingsCupGameState{
 		CurrentCard:    nil,
 		CardsRemaining: len(g.Deck),
 		GameOver:       false,
 		KingsInCup:     0,
-		GameStarted:    g.GameStarted,
 	}
 }
 
@@ -123,7 +119,6 @@ func (g *KingsCupLogic) UpdatePlayers(currentClients map[*Client]bool) {
 		g.DrawingIndex = 0
 	} else if len(newPlayers) == 0 {
 		g.DrawingIndex = 0    // Reset if no players left
-		g.GameStarted = false // Game cannot be started without players
 	}
 
 	g.Players = newPlayers
@@ -134,7 +129,7 @@ func (g *KingsCupLogic) UpdatePlayers(currentClients map[*Client]bool) {
 
 func (g *KingsCupLogic) broadcastGameState(session *Session, clientCard *ClientCard) {
 	var currentPlayerTurnID *string
-	if g.GameStarted && len(g.Players) > 0 {
+	if len(g.Players) > 0 {
 		currentPlayerTurnID = &g.Players[g.DrawingIndex].ID
 	}
 
@@ -146,11 +141,10 @@ func (g *KingsCupLogic) broadcastGameState(session *Session, clientCard *ClientC
 		Buddies:             g.Buddies,
 		CurrentCard:         clientCard,
 		CardsRemaining:      len(g.Deck),
-		GameOver:            len(g.Deck) == 0 && g.GameStarted, // Game over only if started and deck is empty
+		GameOver:            len(g.Deck) == 0,
 		CurrentPlayerTurnID: currentPlayerTurnID,
 		KingsInCup:          g.KingsDrawn,
 		KingCupDrinker:      kingCupDrinkerInfo,
-		GameStarted:         g.GameStarted,
 	}
 
 	response := GameStatePayload{
@@ -163,8 +157,8 @@ func (g *KingsCupLogic) broadcastGameState(session *Session, clientCard *ClientC
 		log.Printf("Error marshalling game state: %v", err)
 		return
 	}
-	log.Printf("Broadcasting game state. Current turn: %v, Card: %v, Players: %d, GameStarted: %t",
-		currentPlayerTurnID, clientCard, len(g.Players), g.GameStarted)
+	log.Printf("Broadcasting game state. Current turn: %v, Card: %v, Players: %d",
+		currentPlayerTurnID, clientCard, len(g.Players))
 
 	// Send to the session's broadcast channel
 	session.Broadcast <- bytes
@@ -231,21 +225,7 @@ func (g *KingsCupLogic) HandleMessage(s *Session, sender *Client, msg []byte) {
 	g.mu.Lock()
 	defer g.mu.Unlock()
 
-if request.Type == "start_game" && sender.IsHost {
-		log.Println("Host started game")
-		g.GameStarted = true
-		g.DrawingIndex = 0 
-		
-		// IMPORTANT: Broadcast immediately so clients know to switch from Lobby to Game View
-		g.broadcastGameState(s, nil) 
-		return 
-	}
 
-	// Ensure the game has started
-	if !g.GameStarted {
-		log.Printf("Game not started. %s tried to perform action.\n", sender.Username)
-		return
-	}
 
 	// Ensure there are players in the game logic's internal list
 	if len(g.Players) == 0 {
@@ -271,7 +251,6 @@ if request.Type == "start_game" && sender.IsHost {
 	case "draw_card":
 		if len(g.Deck) == 0 {
 			// Game is over
-			g.GameStarted = false // Set game as not started, or truly game over state
 			response := GameStatePayload{
 				Action: "game_update",
 				GameState: KingsCupGameState{
@@ -280,7 +259,6 @@ if request.Type == "start_game" && sender.IsHost {
 					GameOver:       true,
 					KingsInCup:     g.KingsDrawn,
 					KingCupDrinker: g.GetPlayerInfoByID(g.LastKingDrinker),
-					GameStarted:    g.GameStarted,
 				},
 			}
 			bytes, _ := json.Marshal(response)
