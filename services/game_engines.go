@@ -56,72 +56,29 @@ type KingsCupLogic struct {
 	GameStarted     bool
 }
 
-// func (g *KingsCupLogic) InitState() interface{} {
-// 	g.mu.Lock()
-// 	defer g.mu.Unlock()
-
-// 	g.Deck = utils.GenerateNewDeck()
-// 	g.CurrentCard = nil
-// 	g.DrawingIndex = 0
-// 	g.Buddies = make(map[string][]PlayerInfo)
-// 	g.CustomRules = make(map[string]string)
-// 	g.KingsDrawn = 0
-// 	g.LastKingDrinker = ""
-
-// 	g.GameStarted = true
-
-// 	return KingsCupGameState{
-// 		CurrentCard:    nil,
-// 		CardsRemaining: len(g.Deck),
-// 		GameOver:       false,
-// 		KingsInCup:     0,
-// 		GameStarted:    true,
-// 		Players:        g.Players,
-// 	}
-// }
-
-
-// In KingsCupLogic.InitState()
 func (g *KingsCupLogic) InitState() interface{} {
-    g.mu.Lock()
-    defer g.mu.Unlock()
+	g.mu.Lock()
+	defer g.mu.Unlock()
 
-    g.Deck = utils.GenerateNewDeck()
-    rand.Shuffle(len(g.Deck), func(i, j int) { g.Deck[i], g.Deck[j] = g.Deck[j], g.Deck[i] }) // Add shuffle
-    g.CurrentCard = nil
-    g.DrawingIndex = 0 // Start at the first player
+	g.Deck = utils.GenerateNewDeck()
+	g.CurrentCard = nil
+	g.DrawingIndex = 0
+	g.Buddies = make(map[string][]PlayerInfo)
+	g.CustomRules = make(map[string]string)
+	g.KingsDrawn = 0
+	g.LastKingDrinker = ""
 
-    g.Buddies = make(map[string][]PlayerInfo)
-    g.CustomRules = make(map[string]string)
-    g.KingsDrawn = 0
-    g.LastKingDrinker = ""
-    g.GameStarted = true // Crucial: game is now started
+	g.GameStarted = true
 
-    var currentPlayerTurnID *string
-    if len(g.Players) > 0 {
-        // Assign the turn to the first player in the list
-        currentPlayerTurnID = &g.Players[g.DrawingIndex].ID
-        log.Printf("Game starting, first turn assigned to: %s (%s)", g.Players[g.DrawingIndex].Username, *currentPlayerTurnID)
-    } else {
-        log.Println("WARNING: KingsCupLogic InitState called with no players. CurrentPlayerTurnID will be nil.")
-    }
-
-
-    // Return the full initial game state
-    return KingsCupGameState{
-        Players:             g.Players, // Make sure players are included
-        CustomRules:         g.CustomRules,
-        Buddies:             g.Buddies,
-        CurrentCard:         nil, // No card drawn yet
-        CardsRemaining:      len(g.Deck),
-        GameOver:            false,
-        CurrentPlayerTurnID: currentPlayerTurnID, // This must be set!
-        KingsInCup:          0,
-        KingCupDrinker:      nil,
-        GameStarted:         true,
-    }
+	return KingsCupGameState{
+		CurrentCard:    nil,
+		CardsRemaining: len(g.Deck),
+		GameOver:       false,
+		KingsInCup:     0,
+		GameStarted:    true,
+		Players:        g.Players,
+	}
 }
-
 
 func (g *KingsCupLogic) UpdatePlayers(currentClients map[*Client]bool) {
 	g.mu.Lock()
