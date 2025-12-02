@@ -278,13 +278,48 @@ func (c *Client) ReadPump() {
 				continue
 			}
 
+			// if payload.Action == "start_game" {
+			// 	c.Session.GameEngine.InitState() // this is sing the strategy patters, so that if in the create part it has been seleceted 1 game that same game's init will be executed here
+			// 	// Also broadcast that game started so UI changes to game view
+			// 	c.Session.Broadcast <- message
+			// 	continue
+			// }
+
+			// In Client.ReadPump()
 			if payload.Action == "start_game" {
-				c.Session.GameEngine.InitState() // this is sing the strategy patters, so that if in the create part it has been seleceted 1 game that same game's init will be executed here
-				c.Session.Broadcast <- message
-				continue
+				// 1. Ensure the game logic has the most current list of players.
+				//    The UpdatePlayers function needs the session's client map.
+				//    We need to cast GameEngine to *KingsCupLogic to call its specific method.
+				if kcLogic, ok := c.Session.GameEngine.(*KingsCupLogic); ok {
+					kcLogic.UpdatePlayers(c.Session.Clients)
+				}
+
+				// 2. Initialize the game state and get the *actual initial state* object.
+				//    InitState() now returns the KingsCupGameState struct.
+				initialGameState := c.Session.GameEngine.InitState()
+
+				// 3. Create a new payload to broadcast. This payload will contain
+				//    the "game_update" action and the full initial game state.
+				responsePayload := map[string]interface{}{
+					"action":    "game_update",
+					"gameState": initialGameState, // Pass the actual initialized state here
+				}
+
+				// 4. Marshal this new payload into JSON bytes.
+				data, err := json.Marshal(responsePayload)
+				if err != nil {
+					log.Printf("[Session %s] Error marshalling initial game state for broadcast: %v", c.Session.ID, err)
+					// You might want to send an error back to the client or log more verbosely
+					continue // Skip broadcasting if there's an error
+				}
+
+				// 5. Broadcast the *full initial game state* to all clients.
+				c.Session.Broadcast <- data
+				log.Printf("[Session %s] Game started and initial state (game_update) broadcasted.", c.Session.ID)
+				continue // Continue to the next message
 			}
 
-
+			// We check if it is a game_action. The Engine will check the "Type" (draw_card).
 			if payload.Action == "game_action" {
 				log.Println("DEBUG: in game_action")
 				c.Session.GameEngine.HandleMessage(c.Session, c, message)
