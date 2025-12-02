@@ -132,7 +132,7 @@ func (g *KingsCupLogic) InitState(s *Session) interface{} {
 
     // Broadcast the initial game state immediately after initialization
     // This is crucial for all clients to get the correct starting state, including player list and first turn
-    g.broadcastGameState(s, nil) // Pass nil for clientCard as no card has been drawn yet
+g.broadcastGameState(s) // Removed 'nil'
 
     return initialState
 }
@@ -194,10 +194,52 @@ func (g *KingsCupLogic) UpdatePlayers(currentClients map[*Client]bool) {
 	g.Players = newPlayers
 	log.Printf("KingsCupLogic Players updated. Current players: %v", g.Players)
 	// After updating players, broadcast the comprehensive game state
-	g.broadcastGameState(nil, nil)
+g.broadcastGameState(nil) // Removed 'nil' (Wait, your broadcastGameState takes session. 
+                          // If called from UpdatePlayers where session might be tricky, 
+                          // ensure you handle the session parameter correctly or pass it through).
 }
 
-func (g *KingsCupLogic) broadcastGameState(session *Session, clientCard *ClientCard) {
+// func (g *KingsCupLogic) broadcastGameState(session *Session, clientCard *ClientCard) {
+// 	var currentPlayerTurnID *string
+// 	if len(g.Players) > 0 {
+// 		currentPlayerTurnID = &g.Players[g.DrawingIndex].ID
+// 	}
+
+// 	kingCupDrinkerInfo := g.GetPlayerInfoByID(g.LastKingDrinker)
+
+// 	state := KingsCupGameState{
+// 		Players:             g.Players,
+// 		CustomRules:         g.CustomRules,
+// 		Buddies:             g.Buddies,
+// 		CurrentCard:         clientCard,
+// 		CardsRemaining:      len(g.Deck),
+// 		GameOver:            len(g.Deck) == 0,
+// 		CurrentPlayerTurnID: currentPlayerTurnID,
+// 		KingsInCup:          g.KingsDrawn,
+// 		KingCupDrinker:      kingCupDrinkerInfo,
+// 		GameStarted:         g.GameStarted,
+// 	}
+
+// 	response := GameStatePayload{
+// 		Action:    "game_update",
+// 		GameState: state,
+// 	}
+
+// 	bytes, err := json.Marshal(response)
+// 	if err != nil {
+// 		log.Printf("Error marshalling game state: %v", err)
+// 		return
+// 	}
+// 	log.Printf("Broadcasting game state. Current turn: %v, Card: %v, Players: %d",
+// 		currentPlayerTurnID, clientCard, len(g.Players))
+
+// 	// Send to the session's broadcast channel
+// 	session.Broadcast <- bytes
+// }
+
+
+// Remove the clientCard argument
+func (g *KingsCupLogic) broadcastGameState(session *Session) {
 	var currentPlayerTurnID *string
 	if len(g.Players) > 0 {
 		currentPlayerTurnID = &g.Players[g.DrawingIndex].ID
@@ -205,11 +247,24 @@ func (g *KingsCupLogic) broadcastGameState(session *Session, clientCard *ClientC
 
 	kingCupDrinkerInfo := g.GetPlayerInfoByID(g.LastKingDrinker)
 
+	// LOGIC CHANGE: Generate ClientCard from g.CurrentCard state
+	var clientCard *ClientCard
+	if g.CurrentCard != nil {
+		c := ClientCard{
+			Suit:     utils.GetSuitName(g.CurrentCard.Suit),
+			Value:    g.CurrentCard.Rank,
+			Rule:     g.getRule(g.CurrentCard.Rank),
+			Color:    utils.GetCardColor(g.CurrentCard.Suit),
+			ImageUrl: utils.GetImageUrl(g.CurrentCard.Rank, g.CurrentCard.Suit),
+		}
+		clientCard = &c
+	}
+
 	state := KingsCupGameState{
 		Players:             g.Players,
 		CustomRules:         g.CustomRules,
 		Buddies:             g.Buddies,
-		CurrentCard:         clientCard,
+		CurrentCard:         clientCard, // Use the variable derived above
 		CardsRemaining:      len(g.Deck),
 		GameOver:            len(g.Deck) == 0,
 		CurrentPlayerTurnID: currentPlayerTurnID,
@@ -228,12 +283,11 @@ func (g *KingsCupLogic) broadcastGameState(session *Session, clientCard *ClientC
 		log.Printf("Error marshalling game state: %v", err)
 		return
 	}
-	log.Printf("Broadcasting game state. Current turn: %v, Card: %v, Players: %d",
-		currentPlayerTurnID, clientCard, len(g.Players))
-
+	
 	// Send to the session's broadcast channel
 	session.Broadcast <- bytes
 }
+
 
 // GetPlayerInfoByID is a helper to get player info from ID
 func (g *KingsCupLogic) GetPlayerInfoByID(playerID string) *PlayerInfo {
@@ -336,16 +390,9 @@ func (g *KingsCupLogic) HandleMessage(s *Session, sender *Client, msg []byte) {
 
 		drawn := g.Deck[0]
 		g.Deck = g.Deck[1:]
-		g.CurrentCard = &drawn
+		g.CurrentCard = &drawn // This updates the state
 
-		clientCard := ClientCard{
-			Suit:     utils.GetSuitName(drawn.Suit),
-			Value:    drawn.Rank,
-			Rule:     g.getRule(drawn.Rank),
-			Color:    utils.GetCardColor(drawn.Suit),
-			ImageUrl: utils.GetImageUrl(drawn.Rank, drawn.Suit),
-		}
-
+		     // Check for 4th King logic
 		if drawn.Rank == "K" {
 			g.KingsDrawn++
 			if g.KingsDrawn == 4 {
@@ -354,20 +401,24 @@ func (g *KingsCupLogic) HandleMessage(s *Session, sender *Client, msg []byte) {
 			}
 		}
 
-		g.broadcastGameState(s, &clientCard)
+		// LOGIC CHANGE: Just call broadcast. It will read g.CurrentCard automatically.
+		g.broadcastGameState(s)
 
 		if drawn.Rank == "8" {
 			log.Printf("%s drew an 8. Waiting for buddy selection.\n", sender.Username)
-			return // Exit to wait for "choose_buddy" from the same player
+			return 
 		} else if drawn.Rank == "K" {
 			log.Printf("%s drew a King. Waiting for rule setting.\n", sender.Username)
-			return // Exit to wait for "set_rule" from the same player
+			return 
 		}
 
-		// If not an 8 or K, advance turn to the next player
+		// Advance turn
 		g.DrawingIndex = (g.DrawingIndex + 1) % len(g.Players)
 		log.Printf("Turn advanced to %s (%s)\n", g.Players[g.DrawingIndex].Username, g.Players[g.DrawingIndex].ID)
-		g.broadcastGameState(s, nil) // Broadcast the turn change (without a new card)
+		
+        // LOGIC CHANGE: Broadcast update (Turn change). 
+        // The card will still be visible because g.CurrentCard is still set.
+		g.broadcastGameState(s) 
 
 	case "choose_buddy":
 		if g.CurrentCard == nil || g.CurrentCard.Rank != "8" {
@@ -392,9 +443,10 @@ func (g *KingsCupLogic) HandleMessage(s *Session, sender *Client, msg []byte) {
 		log.Printf("%s chose %s as a buddy. Buddies: %v\n", sender.Username, chosenBuddyInfo.Username, g.Buddies)
 
 		// After choosing a buddy, advance turn
-		g.DrawingIndex = (g.DrawingIndex + 1) % len(g.Players)
+				g.DrawingIndex = (g.DrawingIndex + 1) % len(g.Players)
+
 		log.Printf("Turn advanced to %s (%s) after buddy selection.\n", g.Players[g.DrawingIndex].Username, g.Players[g.DrawingIndex].ID)
-		g.broadcastGameState(s, nil) // Broadcast updated buddies and turn change
+		g.broadcastGameState(s) 
 
 	case "set_rule":
 		if g.CurrentCard == nil || g.CurrentCard.Rank != "K" {
@@ -412,7 +464,7 @@ func (g *KingsCupLogic) HandleMessage(s *Session, sender *Client, msg []byte) {
 		// After setting a rule, advance turn
 		g.DrawingIndex = (g.DrawingIndex + 1) % len(g.Players)
 		log.Printf("Turn advanced to %s (%s) after rule setting.\n", g.Players[g.DrawingIndex].Username, g.Players[g.DrawingIndex].ID)
-		g.broadcastGameState(s, nil) // Broadcast updated custom rules and turn change
+		g.broadcastGameState(s) 
 
 	default:
 		log.Printf("Unknown game action type: %s from %s\n", request.Type, sender.Username)
