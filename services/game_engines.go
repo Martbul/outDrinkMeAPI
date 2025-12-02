@@ -70,17 +70,16 @@ func (g *KingsCupLogic) InitState(s *Session) interface{} {
 
 	g.GameStarted = true
 
-	initialState := KingsCupGameState{
-		CurrentCard:    nil,
-		CardsRemaining: len(g.Deck),
-		GameOver:       false,
-		KingsInCup:     0,
-		GameStarted:    true,
-		Players:        g.Players,
-	}
-	g.broadcastGameState(nil, nil)
+	  initialState := KingsCupGameState{
+        CurrentCard:    nil,
+        CardsRemaining: len(g.Deck),
+        GameOver:       false,
+        KingsInCup:     0,
+        GameStarted:    true,
+        Players:        g.Players, 
+    }
 
-	return initialState
+    return initialState
 }
 
 func (g *KingsCupLogic) UpdatePlayers(currentClients map[*Client]bool) {
