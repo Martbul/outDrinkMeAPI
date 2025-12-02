@@ -30,30 +30,30 @@ type ClientCard struct {
 }
 
 type KingsCupGameState struct {
-	Players           []PlayerInfo               `json:"players,omitempty"`
-	CustomRules       map[string]string          `json:"customRules,omitempty"` // PlayerID -> Custom Rule
-	Buddies           map[string][]PlayerInfo    `json:"buddies,omitempty"`     // PlayerID -> list of their buddies
-	CurrentCard       *ClientCard                `json:"currentCard"`
-	CardsRemaining    int                        `json:"cardsRemaining"`
-	GameOver          bool                       `json:"gameOver"`
-	CurrentPlayerTurnID *string                    `json:"currentPlayerTurnID,omitempty"` // ID of the player whose turn it is
-	KingsInCup        int                        `json:"kingsInCup"`                    // To track how many kings have been drawn
-	KingCupDrinker    *PlayerInfo                `json:"kingCupDrinker,omitempty"`      // The player who drew the last king
-	GameStarted       bool                       `json:"gameStarted"`                   // Indicates if the game has officially started
+	Players             []PlayerInfo            `json:"players,omitempty"`
+	CustomRules         map[string]string       `json:"customRules,omitempty"` // PlayerID -> Custom Rule
+	Buddies             map[string][]PlayerInfo `json:"buddies,omitempty"`     // PlayerID -> list of their buddies
+	CurrentCard         *ClientCard             `json:"currentCard"`
+	CardsRemaining      int                     `json:"cardsRemaining"`
+	GameOver            bool                    `json:"gameOver"`
+	CurrentPlayerTurnID *string                 `json:"currentPlayerTurnID,omitempty"` // ID of the player whose turn it is
+	KingsInCup          int                     `json:"kingsInCup"`                    // To track how many kings have been drawn
+	KingCupDrinker      *PlayerInfo             `json:"kingCupDrinker,omitempty"`      // The player who drew the last king
+	GameStarted         bool                    `json:"gameStarted"`                   // Indicates if the game has officially started
 }
 
 type KingsCupLogic struct {
-	mu           sync.Mutex
-	Deck         []utils.Card
-	CurrentCard  *utils.Card
-	Timer        *time.Timer // Unused in this logic, but kept for consistency if you need it later
-	DrawingIndex int          // Index in the Players slice indicating whose turn it is
-	Players      []PlayerInfo // List of all players in the game (managed by Session, but stored here for game logic)
-	Buddies      map[string][]PlayerInfo // Tracks who is buddies with whom (playerID -> []PlayerInfo)
-	CustomRules  map[string]string // Stores custom rules set by players (playerID -> rule string)
-	KingsDrawn   int          // Tracks how many kings have been drawn
-	LastKingDrinker string       // Stores the ID of the player who drew the last king
-	GameStarted  bool         // Tracks if the game has started
+	mu              sync.Mutex
+	Deck            []utils.Card
+	CurrentCard     *utils.Card
+	Timer           *time.Timer             // Unused in this logic, but kept for consistency if you need it later
+	DrawingIndex    int                     // Index in the Players slice indicating whose turn it is
+	Players         []PlayerInfo            // List of all players in the game (managed by Session, but stored here for game logic)
+	Buddies         map[string][]PlayerInfo // Tracks who is buddies with whom (playerID -> []PlayerInfo)
+	CustomRules     map[string]string       // Stores custom rules set by players (playerID -> rule string)
+	KingsDrawn      int                     // Tracks how many kings have been drawn
+	LastKingDrinker string                  // Stores the ID of the player who drew the last king
+	GameStarted     bool                    // Tracks if the game has started
 }
 
 func (g *KingsCupLogic) InitState() interface{} {
@@ -66,8 +66,8 @@ func (g *KingsCupLogic) InitState() interface{} {
 	g.Buddies = make(map[string][]PlayerInfo)
 	g.CustomRules = make(map[string]string)
 	g.KingsDrawn = 0
-	g.LastKingDrinker = "" 
-	g.GameStarted = true   
+	g.LastKingDrinker = ""
+	g.GameStarted = true
 
 	log.Printf("KingsCupLogic InitState called. GameStarted: %t", g.GameStarted)
 
@@ -116,12 +116,11 @@ func (g *KingsCupLogic) UpdatePlayers(currentClients map[*Client]bool) {
 		}
 	}
 
-
 	// If the current player's turn is no longer valid (player left), reset the index.
 	if g.DrawingIndex >= len(newPlayers) && len(newPlayers) > 0 {
 		g.DrawingIndex = 0
 	} else if len(newPlayers) == 0 {
-		g.DrawingIndex = 0 // Reset if no players left
+		g.DrawingIndex = 0    // Reset if no players left
 		g.GameStarted = false // Game cannot be started without players
 	}
 
@@ -130,7 +129,6 @@ func (g *KingsCupLogic) UpdatePlayers(currentClients map[*Client]bool) {
 	// After updating players, broadcast the comprehensive game state
 	g.broadcastGameState(nil, nil)
 }
-
 
 func (g *KingsCupLogic) broadcastGameState(session *Session, clientCard *ClientCard) {
 	var currentPlayerTurnID *string
@@ -141,16 +139,16 @@ func (g *KingsCupLogic) broadcastGameState(session *Session, clientCard *ClientC
 	kingCupDrinkerInfo := g.GetPlayerInfoByID(g.LastKingDrinker)
 
 	state := KingsCupGameState{
-		Players:           g.Players,
-		CustomRules:       g.CustomRules,
-		Buddies:           g.Buddies,
-		CurrentCard:       clientCard,
-		CardsRemaining:    len(g.Deck),
-		GameOver:          len(g.Deck) == 0 && g.GameStarted, // Game over only if started and deck is empty
+		Players:             g.Players,
+		CustomRules:         g.CustomRules,
+		Buddies:             g.Buddies,
+		CurrentCard:         clientCard,
+		CardsRemaining:      len(g.Deck),
+		GameOver:            len(g.Deck) == 0 && g.GameStarted, // Game over only if started and deck is empty
 		CurrentPlayerTurnID: currentPlayerTurnID,
-		KingsInCup:        g.KingsDrawn,
-		KingCupDrinker:    kingCupDrinkerInfo,
-		GameStarted:       g.GameStarted,
+		KingsInCup:          g.KingsDrawn,
+		KingCupDrinker:      kingCupDrinkerInfo,
+		GameStarted:         g.GameStarted,
 	}
 
 	response := GameStatePayload{
@@ -217,39 +215,28 @@ func (g *KingsCupLogic) getRule(rank string) string {
 }
 
 func (g *KingsCupLogic) HandleMessage(s *Session, sender *Client, msg []byte) {
-	var payload struct {
-		Action       string    `json:"action"` // This "Action" is from WsPayload, not GameStatePayload
-		Type         string    `json:"type"`   // This "Type" is the specific game action (draw_card, choose_buddy)
-		ChosenBuddieID *string  `json:"chosen_buddie_id,omitempty"` // Use pointer to allow null
-		NewRule      string    `json:"new_rule,omitempty"`
+	var request struct {
+		Type           string  `json:"type"`
+		ChosenBuddieID *string `json:"chosen_buddie_id,omitempty"`
+		NewRule        string  `json:"new_rule,omitempty"`
 	}
 
-	var wsPayload WsPayload 
-	if err := json.Unmarshal(msg, &wsPayload); err != nil {
-		log.Printf("Error unmarshaling WsPayload from %s: %v\n", sender.Username, err)
+	if err := json.Unmarshal(msg, &request); err != nil {
+		fmt.Println("JSON Error:", err)
 		return
 	}
-
-	// Now unmarshal the game-specific part from wsPayload.Content if it's a game_action
-	if wsPayload.Action == "game_action" {
-		if err := json.Unmarshal([]byte(wsPayload.Content), &payload); err != nil {
-			log.Printf("Error unmarshaling game_action content from %s: %v\n", sender.Username, err)
-			return
-		}
-	} else {
-		// If it's not a game_action, this HandleMessage might be called incorrectly, or for other types.
-		// For now, we only care about game_action types.
-		log.Printf("HandleMessage received non-game_action: %s. Ignoring.", wsPayload.Action)
-		return
-	}
-
 
 	g.mu.Lock()
 	defer g.mu.Unlock()
 
+	if request.Type == "start_game" && sender.IsHost {
+		log.Println("host started game")
+		g.GameStarted = true
+	}
+
 	// Ensure the game has started
 	if !g.GameStarted {
-		log.Printf("Game not started. %s tried to perform action %s.\n", sender.Username, payload.Type)
+		log.Printf("Game not started. %s tried to perform action.\n", sender.Username)
 		return
 	}
 
@@ -272,8 +259,8 @@ func (g *KingsCupLogic) HandleMessage(s *Session, sender *Client, msg []byte) {
 		return
 	}
 
+	switch request.Type {
 
-	switch payload.Type {
 	case "draw_card":
 		if len(g.Deck) == 0 {
 			// Game is over
@@ -333,20 +320,19 @@ func (g *KingsCupLogic) HandleMessage(s *Session, sender *Client, msg []byte) {
 		log.Printf("Turn advanced to %s (%s)\n", g.Players[g.DrawingIndex].Username, g.Players[g.DrawingIndex].ID)
 		g.broadcastGameState(s, nil) // Broadcast the turn change (without a new card)
 
-
 	case "choose_buddy":
 		if g.CurrentCard == nil || g.CurrentCard.Rank != "8" {
 			log.Printf("Cannot choose a buddy, an 8 was not just drawn by %s, or no card is drawn.\n", sender.Username)
 			return
 		}
-		if payload.ChosenBuddieID == nil || *payload.ChosenBuddieID == "" {
+		if request.ChosenBuddieID == nil || *request.ChosenBuddieID == "" {
 			log.Println("No buddy chosen or invalid ID provided.")
 			return
 		}
 
-		chosenBuddyInfo := g.GetPlayerInfoByID(*payload.ChosenBuddieID)
+		chosenBuddyInfo := g.GetPlayerInfoByID(*request.ChosenBuddieID)
 		if chosenBuddyInfo == nil {
-			log.Printf("Chosen buddy with ID %s not found.\n", *payload.ChosenBuddieID)
+			log.Printf("Chosen buddy with ID %s not found.\n", *request.ChosenBuddieID)
 			return
 		}
 
@@ -366,13 +352,13 @@ func (g *KingsCupLogic) HandleMessage(s *Session, sender *Client, msg []byte) {
 			log.Printf("Cannot set a rule, a King was not just drawn by %s, or no card is drawn.\n", sender.Username)
 			return
 		}
-		if payload.NewRule == "" {
+		if request.NewRule == "" {
 			log.Println("No new rule provided.")
 			return
 		}
 
-		g.CustomRules[sender.UserID] = payload.NewRule
-		log.Printf("%s set a new rule: \"%s\". Custom Rules: %v\n", sender.Username, payload.NewRule, g.CustomRules)
+		g.CustomRules[sender.UserID] = request.NewRule
+		log.Printf("%s set a new rule: \"%s\". Custom Rules: %v\n", sender.Username, request.NewRule, g.CustomRules)
 
 		// After setting a rule, advance turn
 		g.DrawingIndex = (g.DrawingIndex + 1) % len(g.Players)
@@ -380,7 +366,7 @@ func (g *KingsCupLogic) HandleMessage(s *Session, sender *Client, msg []byte) {
 		g.broadcastGameState(s, nil) // Broadcast updated custom rules and turn change
 
 	default:
-		log.Printf("Unknown game action type: %s from %s\n", payload.Type, sender.Username)
+		log.Printf("Unknown game action type: %s from %s\n", request.Type, sender.Username)
 	}
 }
 
@@ -416,8 +402,6 @@ type BurnBookGameState struct {
 	TotalQuestions int          `json:"totalQuestions,omitempty"`
 	HasVoted       bool         `json:"hasVoted,omitempty"`
 }
-
-
 
 func (g *BurnBookLogic) InitState() interface{} {
 	g.mu.Lock()
