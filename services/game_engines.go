@@ -228,7 +228,6 @@ func (g *KingsCupLogic) HandleMessage(s *Session, sender *Client, msg []byte) {
 	g.mu.Lock()
 	defer g.mu.Unlock()
 
-	// Ensure there are players in the game logic's internal list
 	if len(g.Players) == 0 {
 		log.Println("No players in the game logic. Cannot handle messages.")
 		return
