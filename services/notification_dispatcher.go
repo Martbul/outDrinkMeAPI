@@ -10,10 +10,11 @@ import (
 type PushNotificationProvider interface {
 	SendPush(ctx context.Context, tokens []notification.DeviceToken, title, body string, data map[string]any) error
 }
+
 // NotificationDispatcher handles sending notifications through various channels
 type NotificationDispatcher struct {
 	service      *NotificationService
-	pushProvider PushNotificationProvider // Interface
+	pushProvider PushNotificationProvider 
 	workers      int
 	jobQueue     chan *DispatchJob
 	stopChan     chan struct{}

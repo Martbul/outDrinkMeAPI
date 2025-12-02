@@ -31,15 +31,16 @@ var (
 	sideQuestService    *services.SideQuestService
 	notificationService *services.NotificationService
 	fcmService          *notification.FCMService
+	photoDumpService    *services.PhotoDumpService
+	gameManager         *services.DrinnkingGameManager
 )
 
 func init() {
-	// Load .env file
+	// ... (Your init code remains exactly the same) ...
 	if err := godotenv.Load(); err != nil {
 		log.Println("No .env file found")
 	}
 
-	// Initialize Clerk
 	clerkSecretKey := os.Getenv("CLERK_SECRET_KEY")
 	if clerkSecretKey == "" {
 		log.Fatal("CLERK_SECRET_KEY environment variable is not set")
@@ -47,14 +48,11 @@ func init() {
 	clerk.SetKey(clerkSecretKey)
 	log.Println("Clerk initialized successfully")
 
-	// Load database URL
 	dbURL := os.Getenv("DATABASE_URL")
 	if dbURL == "" {
 		log.Fatal("DATABASE_URL environment variable is not set")
 	}
-	log.Printf("DATABASE_URL loaded: %s", dbURL[:50]+"...")
 
-	// Initialize database connection pool
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 
@@ -63,7 +61,6 @@ func init() {
 		log.Fatal("Failed to parse database URL:", err)
 	}
 
-	// Configure connection pool
 	poolConfig.MaxConns = 25
 	poolConfig.MinConns = 5
 	poolConfig.MaxConnLifetime = time.Hour
@@ -75,20 +72,19 @@ func init() {
 		log.Fatal("Failed to create connection pool:", err)
 	}
 
-	// Test connection
 	if err := dbPool.Ping(ctx); err != nil {
 		log.Fatal("Failed to ping database:", err)
 	}
 
 	log.Println("Successfully connected to NeonDB")
 
-	// Initialize services
 	notificationService = services.NewNotificationService(dbPool)
-
 	userService = services.NewUserService(dbPool, notificationService)
 	storeService = services.NewStoreService(dbPool)
 	sideQuestService = services.NewSideQuestService(dbPool, notificationService)
+	photoDumpService = services.NewPhotoDumpService(dbPool)
 	fcmService, err = notification.NewFCMService("./serviceAccountKey.json")
+	gameManager = services.NewDrinnkingGameManager()
 
 	if err != nil {
 		log.Printf("WARNING: FCM not initialized: %v", err)
@@ -109,33 +105,37 @@ func main() {
 	userHandler := handlers.NewUserHandler(userService)
 	docHandler := handlers.NewDocHandler(docService)
 	storeHandler := handlers.NewStoreHandler(storeService)
-	// sideQuestHandler := handlers.NewSideQuestHandler(sideQuestService)
+	sideQuestHandler := handlers.NewSideQuestHandler(sideQuestService)
 	notificationHandler := handlers.NewNotificationHandler(notificationService)
 	webhookHandler := handlers.NewWebhookHandler(userService)
+	photoDumpHandler := handlers.NewPhotoDumpHandler(photoDumpService)
+	drinkingGameHandler := handlers.NewDrinkingGamesHandler(gameManager)
 
 	r := mux.NewRouter()
 
+	r.HandleFunc("/api/v1/drinking-games/ws/{sessionID}", drinkingGameHandler.JoinDrinkingGame)
+
+	standardRouter := r.PathPrefix("/").Subrouter()
+
 	go middleware.CleanupVisitors()
-	r.Use(middleware.RateLimitMiddleware)
 
-	r.Use(middleware.MonitorMiddleware)
+	standardRouter.Use(middleware.RateLimitMiddleware)
+	standardRouter.Use(middleware.MonitorMiddleware)
 
-	r.Handle("/metrics", middleware.BasicAuthMiddleware(promhttp.Handler()))
-
-	//pprof attaches to http.DefaultServeMux, so we forward traffic there
-	r.PathPrefix("/debug/pprof/").Handler(middleware.PprofSecurityMiddleware(http.DefaultServeMux))
+	standardRouter.Handle("/metrics", middleware.BasicAuthMiddleware(promhttp.Handler()))
+	standardRouter.PathPrefix("/debug/pprof/").Handler(middleware.PprofSecurityMiddleware(http.DefaultServeMux))
 
 	assetsDir := "./assets"
 	fs := http.FileServer(http.Dir(assetsDir))
-	r.PathPrefix("/assets/").Handler(http.StripPrefix("/assets/", fs))
+	standardRouter.PathPrefix("/assets/").Handler(http.StripPrefix("/assets/", fs))
 	log.Printf("Serving static files from %s at /assets/", assetsDir)
 
-	r.HandleFunc("/app-ads.txt", func(w http.ResponseWriter, r *http.Request) {
+	standardRouter.HandleFunc("/app-ads.txt", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "text/plain")
 		w.Write([]byte("google.com, pub-1167503921437683, DIRECT, f08c47fec0942fa0"))
 	})
 
-	r.HandleFunc("/health", func(w http.ResponseWriter, r *http.Request) {
+	standardRouter.HandleFunc("/health", func(w http.ResponseWriter, r *http.Request) {
 		ctx, cancel := context.WithTimeout(r.Context(), 2*time.Second)
 		defer cancel()
 
@@ -151,16 +151,24 @@ func main() {
 		w.Write([]byte(`{"status": "healthy", "service": "outDrinkMe-api"}`))
 	}).Methods("GET")
 
-	r.HandleFunc("/webhooks/clerk", webhookHandler.HandleClerkWebhook).Methods("POST")
+	standardRouter.HandleFunc("/webhooks/clerk", webhookHandler.HandleClerkWebhook).Methods("POST")
 
-	api := r.PathPrefix("/api/v1").Subrouter()
+	// -------------------------------------------------------------------------
+	// API V1 SUBROUTER
+	// -------------------------------------------------------------------------
+	// This inherits middleware from standardRouter
+	api := standardRouter.PathPrefix("/api/v1").Subrouter()
 
+	api.HandleFunc("/drinking-games/public", drinkingGameHandler.GetPublicDrinkingGames).Methods("GET")
+	
 	api.HandleFunc("/privacy-policy", docHandler.ServePrivacyPolicy).Methods("GET")
 	api.HandleFunc("/terms-of-services", docHandler.ServeTermsOfServices).Methods("GET")
 	api.HandleFunc("/delete-account-webpage", userHandler.DeleteAccountPage).Methods("GET")
 	api.HandleFunc("/delete-account-details-webpage", userHandler.UpdateAccountPage).Methods("GET")
 
-	// Protected API routes (auth required)
+	// -------------------------------------------------------------------------
+	// PROTECTED ROUTES (REQUIRE AUTH HEADER)
+	// -------------------------------------------------------------------------
 	protected := api.PathPrefix("").Subrouter()
 	protected.Use(middleware.ClerkAuthMiddleware)
 
@@ -168,8 +176,7 @@ func main() {
 	protected.HandleFunc("/user/friend-discovery/display-profile", userHandler.FriendDiscoveryDisplayProfile).Methods("GET")
 	protected.HandleFunc("/user/update-profile", userHandler.UpdateProfile).Methods("PUT")
 	protected.HandleFunc("/user/delete-account", userHandler.DeleteAccount).Methods("DELETE")
-	protected.HandleFunc("/user/leaderboard/friends", userHandler.GetFriendsLeaderboard).Methods("GET")
-	protected.HandleFunc("/user/leaderboard/global", userHandler.GetGlobalLeaderboard).Methods("GET")
+	protected.HandleFunc("/user/leaderboards", userHandler.GetLeaderboards).Methods("GET")
 	protected.HandleFunc("/user/friends", userHandler.GetFriends).Methods("GET")
 	protected.HandleFunc("/user/your-mix", userHandler.GetYourMix).Methods("GET")
 	protected.HandleFunc("/user/mix-timeline", userHandler.GetMixTimeline).Methods("GET")
@@ -200,7 +207,6 @@ func main() {
 
 	protected.HandleFunc("/store", storeHandler.GetStore).Methods("GET")
 	protected.HandleFunc("/store/purchase/item", storeHandler.PurchaseStoreItem).Methods("POST")
-	// protected.HandleFunc("/store/purchase/gems", storeHandler.PurchaseGems).Methods("POST")
 
 	protected.HandleFunc("/notifications", notificationHandler.GetNotifications).Methods("GET")
 	protected.HandleFunc("/notifications/unread-count", notificationHandler.GetUnreadCount).Methods("GET")
@@ -212,11 +218,15 @@ func main() {
 	protected.HandleFunc("/notifications/register-device", notificationHandler.RegisterDevice).Methods("POST")
 	protected.HandleFunc("/notifications/test", notificationHandler.SendTestNotification).Methods("POST")
 
-	// protected.HandleFunc("/buddies-board", sideQuestHandler.GetBuddiesSideQuestBoard).Methods("GET")
-	// protected.HandleFunc("/random-board", sideQuestHandler.GetRandomSideQuestBoard).Methods("GET")
-	// protected.HandleFunc("/new-sidequest", sideQuestHandler.PostNewSideQuest).Methods("POST")
-	// protected.HandleFunc("/:id/complete", sideQuestHandler.PostCompletion).Methods("POST") //Up to 3 iamges(sending the pics to the user that has added the quest for aprovam, if aproved -> grand the gems(fromk the quester account) to the completer)
-	// protected.HandleFunc("/complete", sideQuestHandler.PostNewSideQuest).Methods("POST")
+	protected.HandleFunc("/sidequest/board", sideQuestHandler.GetSideQuestBoard).Methods("GET")
+	protected.HandleFunc("/sidequest", sideQuestHandler.PostNewSideQuest).Methods("POST")
+
+	protected.HandleFunc("/photo-dump/generate", photoDumpHandler.GenerateQrCode).Methods("GET")
+	protected.HandleFunc("/photo-dump/scan", photoDumpHandler.JoinViaQrCode).Methods("POST")
+	protected.HandleFunc("/photo-dump/:sesionId", photoDumpHandler.GetSessionData).Methods("GET")
+	protected.HandleFunc("/photo-dump/:sesionId", photoDumpHandler.AddImages).Methods("POST")
+
+	protected.HandleFunc("/drinking-games/create", drinkingGameHandler.CreateDrinkingGame).Methods("POST")
 
 	// CORS configuration
 	corsHandler := gorilllaHandlers.CORS(
@@ -235,7 +245,7 @@ func main() {
 
 	server := http.Server{
 		Addr:         port,
-		Handler:      corsHandler(r),
+		Handler:      corsHandler(r), // Pass the root router 'r'
 		ReadTimeout:  5 * time.Second,
 		WriteTimeout: 10 * time.Second,
 		IdleTimeout:  120 * time.Second,

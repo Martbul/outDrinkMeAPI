@@ -87,7 +87,7 @@ func (s *UserService) CreateUser(ctx context.Context, req *user.CreateUserReques
 
 func (s *UserService) GetUserByClerkID(ctx context.Context, clerkID string) (*user.User, error) {
 	query := `
-	SELECT id, clerk_id, email, username, first_name, last_name, image_url, email_verified, created_at, updated_at, gems, xp, all_days_drinking_count
+	SELECT id, clerk_id, email, username, first_name, last_name, image_url, email_verified, created_at, updated_at, gems, xp, all_days_drinking_count, alcoholism_coefficient
 	FROM users
 	WHERE clerk_id = $1
 	`
@@ -107,6 +107,7 @@ func (s *UserService) GetUserByClerkID(ctx context.Context, clerkID string) (*us
 		&user.Gems,
 		&user.XP,
 		&user.AllDaysDrinkingCount,
+		&user.AlcoholismCoefficient,
 	)
 
 	if err != nil {
@@ -163,7 +164,6 @@ func (s *UserService) FriendDiscoveryDisplayProfile(ctx context.Context, clerkID
 		return nil, fmt.Errorf("failed to get user: %w", err)
 	}
 
-	// Use the clerk_id from the retrieved user data
 	friendDiscoveryStats, err := s.GetUserStats(ctx, friendDiscoveryUserData.ClerkID)
 	if err != nil {
 		log.Printf("FriendDiscoveryDisplayProfile: Failed to get userStats: %v", err)
@@ -176,7 +176,6 @@ func (s *UserService) FriendDiscoveryDisplayProfile(ctx context.Context, clerkID
 		return nil, fmt.Errorf("failed to get user achievements: %w", err)
 	}
 
-	// Check if they are friends
 	var isFriend bool
 	friendCheckQuery := `
         SELECT EXISTS(
@@ -188,7 +187,6 @@ func (s *UserService) FriendDiscoveryDisplayProfile(ctx context.Context, clerkID
 	err = s.db.QueryRow(ctx, friendCheckQuery, currnetUserID, friendDiscoveryUUID).Scan(&isFriend)
 	if err != nil {
 		log.Printf("FriendDiscoveryDisplayProfile: Failed to check friendship: %v", err)
-		// Don't fail the whole request, just set isFriend to false
 		isFriend = false
 	}
 
@@ -413,7 +411,6 @@ func (s *UserService) GetDiscovery(ctx context.Context, clerkID string) ([]*user
 }
 
 func (s *UserService) AddFriend(ctx context.Context, clerkID string, friendClerkID string) error {
-	// Get current user ID
 	var userID uuid.UUID
 	err := s.db.QueryRow(ctx, `SELECT id FROM users WHERE clerk_id = $1`, clerkID).Scan(&userID)
 	if err != nil {
@@ -421,7 +418,6 @@ func (s *UserService) AddFriend(ctx context.Context, clerkID string, friendClerk
 		return fmt.Errorf("user not found")
 	}
 
-	// Get friend user ID
 	var friendID uuid.UUID
 	err = s.db.QueryRow(ctx, `SELECT id FROM users WHERE clerk_id = $1`, friendClerkID).Scan(&friendID)
 	if err != nil {
@@ -429,13 +425,11 @@ func (s *UserService) AddFriend(ctx context.Context, clerkID string, friendClerk
 		return fmt.Errorf("friend user not found")
 	}
 
-	// Prevent adding yourself as a friend
 	if userID == friendID {
 		log.Printf("AddFriend: User %s attempted to add themselves", clerkID)
 		return fmt.Errorf("cannot add yourself as a friend")
 	}
 
-	// Check if friendship already exists (in either direction)
 	var exists bool
 	checkQuery := `
 		SELECT EXISTS(
@@ -455,7 +449,6 @@ func (s *UserService) AddFriend(ctx context.Context, clerkID string, friendClerk
 		return fmt.Errorf("friendship already exists")
 	}
 
-	// Insert the friendship (without updated_at)
 	insertQuery := `
 		INSERT INTO friendships (user_id, friend_id, status, created_at)
 		VALUES ($1, $2, 'accepted', NOW())
@@ -472,7 +465,6 @@ func (s *UserService) AddFriend(ctx context.Context, clerkID string, friendClerk
 }
 
 func (s *UserService) RemoveFriend(ctx context.Context, clerkID string, friendClerkID string) error {
-	// Get current user ID
 	var userID uuid.UUID
 	err := s.db.QueryRow(ctx, `SELECT id FROM users WHERE clerk_id = $1`, clerkID).Scan(&userID)
 	if err != nil {
@@ -480,7 +472,6 @@ func (s *UserService) RemoveFriend(ctx context.Context, clerkID string, friendCl
 		return fmt.Errorf("user not found")
 	}
 
-	// Get friend user ID
 	var friendID uuid.UUID
 	err = s.db.QueryRow(ctx, `SELECT id FROM users WHERE clerk_id = $1`, friendClerkID).Scan(&friendID)
 	if err != nil {
@@ -488,7 +479,6 @@ func (s *UserService) RemoveFriend(ctx context.Context, clerkID string, friendCl
 		return fmt.Errorf("friend user not found")
 	}
 
-	// Delete the friendship (check both directions)
 	deleteQuery := `
 		DELETE FROM friendships 
 		WHERE (user_id = $1 AND friend_id = $2) 
@@ -511,101 +501,88 @@ func (s *UserService) RemoveFriend(ctx context.Context, clerkID string, friendCl
 	return nil
 }
 
-func (s *UserService) GetFriendsLeaderboard(ctx context.Context, clerkID string) (*leaderboard.Leaderboard, error) {
-	// Get user ID from clerk_id
+func (s *UserService) GetLeaderboards(ctx context.Context, clerkID string) (map[string]*leaderboard.Leaderboard, error) {
+	// 1. Get YOUR internal UUID (Essential for the rest to work)
 	var userID uuid.UUID
 	err := s.db.QueryRow(ctx, `SELECT id FROM users WHERE clerk_id = $1`, clerkID).Scan(&userID)
 	if err != nil {
 		return nil, fmt.Errorf("user not found: %w", err)
 	}
 
-	query := `
-	SELECT 
-		u.id as user_id,
-		u.username,
-		u.image_url,
-		COALESCE(ws.days_drank, 0) as days_this_week,
-		RANK() OVER (ORDER BY COALESCE(ws.days_drank, 0) DESC) as rank,
-		COALESCE(s.current_streak, 0) as current_streak
-	FROM users u
-	INNER JOIN friendships f 
-		ON (f.friend_id = u.id AND f.user_id = $1 AND f.status = 'accepted')
-	LEFT JOIN weekly_stats ws 
-		ON u.id = ws.user_id 
-		AND ws.week_start = DATE_TRUNC('week', CURRENT_DATE)::DATE
-	LEFT JOIN streaks s 
-		ON u.id = s.user_id
-	ORDER BY days_this_week DESC, current_streak DESC
-	LIMIT 50
-`
+	result := make(map[string]*leaderboard.Leaderboard)
 
-	rows, err := s.db.Query(ctx, query, userID)
+	// --- Global Leaderboard (Standard) ---
+	globalQuery := `
+		SELECT 
+			u.id, u.username, u.image_url,
+			COALESCE(u.alcoholism_coefficient, 0) as score,
+			RANK() OVER (ORDER BY COALESCE(u.alcoholism_coefficient, 0) DESC) as rank
+		FROM users u
+		WHERE u.alcoholism_coefficient > 0
+		ORDER BY score DESC
+		LIMIT 50
+	`
+	globalRows, err := s.db.Query(ctx, globalQuery)
 	if err != nil {
-		return nil, fmt.Errorf("failed to fetch leaderboard: %w", err)
+		return nil, fmt.Errorf("failed global: %w", err)
 	}
-	defer rows.Close()
+	defer globalRows.Close()
 
-	var entries []*leaderboard.LeaderboardEntry
-	var userPosition *leaderboard.LeaderboardEntry
+	globalBoard, err := scanLeaderboardRows(globalRows, userID)
+	if err != nil {
+		return nil, err
+	}
+	result["global"] = globalBoard
 
-	for rows.Next() {
-		entry := &leaderboard.LeaderboardEntry{}
-		err := rows.Scan(
-			&entry.UserID,
-			&entry.Username,
-			&entry.ImageURL,
-			&entry.DaysThisWeek,
-			&entry.Rank,
-			&entry.CurrentStreak,
+	// --- Friends Leaderboard (THE FIX) ---
+
+	friendsQuery := `
+		WITH my_circle AS (
+			-- 1. Get IDs where YOU are the 'user_id' (e.g. Row 1, 3 in your screenshot)
+			SELECT friend_id AS uid FROM friendships 
+			WHERE user_id = $1 AND status = 'accepted'
+			
+			UNION
+			
+			-- 2. Get IDs where YOU are the 'friend_id' (e.g. Row 2, 5 in your screenshot)
+			SELECT user_id AS uid FROM friendships 
+			WHERE friend_id = $1 AND status = 'accepted'
+			
+			UNION
+			
+			-- 3. Include YOURSELF so you appear on the leaderboard
+			SELECT $1 AS uid
 		)
-		if err != nil {
-			return nil, fmt.Errorf("failed to scan row: %w", err)
-		}
+		SELECT 
+			u.id,
+			u.username,
+			u.image_url,
+			COALESCE(u.alcoholism_coefficient, 0) as score,
+			RANK() OVER (ORDER BY COALESCE(u.alcoholism_coefficient, 0) DESC) as rank
+		FROM users u
+		INNER JOIN my_circle mc ON u.id = mc.uid
+				WHERE u.alcoholism_coefficient > 0
+		ORDER BY score DESC
+		LIMIT 50
+	`
 
-		entries = append(entries, entry)
-
-		if entry.UserID == userID {
-			userPosition = entry
-		}
+	// CRITICAL: Pass the UUID (userID), NOT the string (clerkID)
+	friendsRows, err := s.db.Query(ctx, friendsQuery, userID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to fetch friends leaderboard: %w", err)
 	}
+	defer friendsRows.Close()
 
-	return &leaderboard.Leaderboard{
-		Entries:      entries,
-		UserPosition: userPosition,
-		TotalUsers:   len(entries),
-	}, nil
+	friendsBoard, err := scanLeaderboardRows(friendsRows, userID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to scan friends leaderboard: %w", err)
+	}
+	result["friends"] = friendsBoard
+
+	return result, nil
 }
 
-func (s *UserService) GetGlobalLeaderboard(ctx context.Context, clerkID string) (*leaderboard.Leaderboard, error) {
-	// Get user ID from clerk_id
-	var userID uuid.UUID
-	err := s.db.QueryRow(ctx, `SELECT id FROM users WHERE clerk_id = $1`, clerkID).Scan(&userID)
-	if err != nil {
-		return nil, fmt.Errorf("user not found: %w", err)
-	}
-
-	query := `
-	SELECT 
-		u.id AS user_id,
-		u.username,
-		u.image_url,
-		COALESCE(ws.days_drank, 0) AS days_this_week,
-		RANK() OVER (ORDER BY COALESCE(ws.days_drank, 0) DESC) AS rank,
-		COALESCE(s.current_streak, 0) AS current_streak
-	FROM users u
-	LEFT JOIN weekly_stats ws 
-		ON u.id = ws.user_id 
-		AND ws.week_start = DATE_TRUNC('week', CURRENT_DATE)::DATE
-	LEFT JOIN streaks s 
-		ON u.id = s.user_id
-	ORDER BY days_this_week DESC, current_streak DESC
-	LIMIT 50
-`
-
-	rows, err := s.db.Query(ctx, query, userID)
-	if err != nil {
-		return nil, fmt.Errorf("failed to fetch leaderboard: %w", err)
-	}
+func scanLeaderboardRows(rows pgx.Rows, currentUserID uuid.UUID) (*leaderboard.Leaderboard, error) {
 	defer rows.Close()
 
 	var entries []*leaderboard.LeaderboardEntry
@@ -617,19 +594,22 @@ func (s *UserService) GetGlobalLeaderboard(ctx context.Context, clerkID string) 
 			&entry.UserID,
 			&entry.Username,
 			&entry.ImageURL,
-			&entry.DaysThisWeek,
+			&entry.AlcoholismCoefficient,
 			&entry.Rank,
-			&entry.CurrentStreak,
 		)
 		if err != nil {
-			return nil, fmt.Errorf("failed to scan row: %w", err)
+			return nil, err
 		}
 
 		entries = append(entries, entry)
 
-		if entry.UserID == userID {
+		if entry.UserID == currentUserID {
 			userPosition = entry
 		}
+	}
+
+	if err := rows.Err(); err != nil {
+		return nil, err
 	}
 
 	return &leaderboard.Leaderboard{
@@ -694,7 +674,7 @@ func (s *UserService) GetAchievements(ctx context.Context, clerkID string) ([]*a
 }
 func (s *UserService) AddDrinking(ctx context.Context, clerkID string, drankToday bool, imageUrl *string, locationText *string, clerkIDs []string, date time.Time) error {
 	var userID uuid.UUID
-	var username string 
+	var username string
 
 	err := s.db.QueryRow(ctx, `SELECT id, username FROM users WHERE clerk_id = $1`, clerkID).Scan(&userID, &username)
 	if err != nil {
@@ -719,10 +699,8 @@ func (s *UserService) AddDrinking(ctx context.Context, clerkID string, drankToda
 	}
 
 	if imageUrl != nil {
-		// Dereference the pointer to get the string value
 		actualURL := *imageUrl
-		
-		// Run in background
+
 		go utils.FriendPostedImageToMix(s.db, s.notifService, userID, username, actualURL)
 	}
 	return nil
@@ -812,7 +790,6 @@ func (s *UserService) GetDrunkThought(ctx context.Context, clerkID string, date 
 	err = s.db.QueryRow(ctx, query, userID, date).Scan(&drunkThought)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
-			// No entry for that date
 			return nil, nil
 		}
 		return nil, fmt.Errorf("failed to get drunk thought: %w", err)
@@ -982,7 +959,6 @@ func (s *UserService) SearchUsers(ctx context.Context, clerkID string, query str
 		return nil, fmt.Errorf("error iterating rows: %w", err)
 	}
 
-	// Return empty slice instead of nil if no users found
 	if users == nil {
 		users = []*user.User{}
 	}
@@ -1239,14 +1215,22 @@ func (s *UserService) GetUserStats(ctx context.Context, clerkID string) (*stats.
 		return nil, fmt.Errorf("failed to get user stats: %w", err)
 	}
 
-	// Calculate alcoholism coefficient: currentStreak^2 + totalDays*0.3 + achievements*5
-	alcoholismScore := float64(stats.CurrentStreak*stats.CurrentStreak)*0.3 +
-		(float64(stats.TotalDaysDrank) * 0.05) +
-		(float64(stats.AchievementsCount) * 1)
+	stats.AlcoholismCoefficient = utils.CalculateAlcoholismScore(
+		stats.CurrentStreak,
+		stats.TotalDaysDrank,
+		stats.AchievementsCount,
+	)
 
-	stats.AlcoholismCoefficient = alcoholismScore
+	_, err = s.db.Exec(ctx, `
+		UPDATE users 
+		SET alcoholism_coefficient = $1 
+		WHERE id = $2
+	`, stats.AlcoholismCoefficient, userID)
 
-	// Calculate rank based on AlcoholismCoefficient
+	if err != nil {
+		fmt.Printf("failed to update alcoholism coefficient: %v\n", err)
+	}
+
 	rankQuery := `
     WITH user_scores AS (
         SELECT 
@@ -1417,7 +1401,7 @@ func (s *UserService) GetYourMix(ctx context.Context, clerkID string) ([]mix.Dai
 	var posts []mix.DailyDrinkingPost
 	for rows.Next() {
 		var post mix.DailyDrinkingPost
-		var mentionedBuddyIDs []string // Scan as string array
+		var mentionedBuddyIDs []string
 
 		err := rows.Scan(
 			&post.ID,
@@ -1436,12 +1420,10 @@ func (s *UserService) GetYourMix(ctx context.Context, clerkID string) ([]mix.Dai
 			return nil, fmt.Errorf("failed to scan post: %w", err)
 		}
 
-		// Fetch the full user objects for mentioned buddies
 		if len(mentionedBuddyIDs) > 0 {
 			post.MentionedBuddies, err = s.getUsersByIDs(ctx, mentionedBuddyIDs)
 			if err != nil {
 				log.Printf("failed to fetch mentioned buddies for post %s: %v", post.ID, err)
-				// Continue without buddies rather than failing
 				post.MentionedBuddies = []user.User{}
 			}
 		} else {
@@ -1630,7 +1612,7 @@ func (s *UserService) GetMixTimeline(ctx context.Context, clerkID string) ([]mix
 	var posts []mix.DailyDrinkingPost
 	for rows.Next() {
 		var post mix.DailyDrinkingPost
-		var mentionedBuddyIDs []string // Scan as string array
+		var mentionedBuddyIDs []string
 
 		err := rows.Scan(
 			&post.ID,
@@ -1649,7 +1631,6 @@ func (s *UserService) GetMixTimeline(ctx context.Context, clerkID string) ([]mix
 			return nil, fmt.Errorf("failed to scan post: %w", err)
 		}
 
-		// Fetch the full user objects for mentioned buddies
 		if len(mentionedBuddyIDs) > 0 {
 			post.MentionedBuddies, err = s.getUsersByIDs(ctx, mentionedBuddyIDs)
 			if err != nil {
@@ -1674,14 +1655,12 @@ func (s *UserService) GetMixTimeline(ctx context.Context, clerkID string) ([]mix
 }
 
 func (s *UserService) AddChipsToVideo(ctx context.Context, clerkID string, videoID string) error {
-	// Get user ID
 	var userID string
 	err := s.db.QueryRow(ctx, "SELECT id FROM users WHERE clerk_id = $1", clerkID).Scan(&userID)
 	if err != nil {
 		return fmt.Errorf("user not found: %w", err)
 	}
 
-	// Insert like (ignore if already exists)
 	_, err = s.db.Exec(ctx,
 		"INSERT INTO mix_video_likes (video_id, user_id) VALUES ($1, $2) ON CONFLICT DO NOTHING",
 		videoID, userID,
@@ -1690,7 +1669,6 @@ func (s *UserService) AddChipsToVideo(ctx context.Context, clerkID string, video
 		return fmt.Errorf("failed to like video: %w", err)
 	}
 
-	// Increment chips
 	_, err = s.db.Exec(ctx,
 		"UPDATE mix_videos SET chips = COALESCE(chips, 0) + 1 WHERE id = $1",
 		videoID,
@@ -1961,7 +1939,6 @@ func (s *UserService) SearchDbAlcohol(ctx context.Context, clerkID string, query
 	isNewlyAdded := true
 	if err != nil {
 		if err == pgx.ErrNoRows {
-			// Item already exists in collection
 			log.Printf("alcohol item %s already in user's collection", item.Name)
 			isNewlyAdded = false
 		} else {
@@ -2013,7 +1990,6 @@ func (s *UserService) GetUserAlcoholCollection(ctx context.Context, clerkID stri
 	}
 	defer rows.Close()
 
-	// Initialize the map with all alcohol types
 	collectionItemTypes := collection.AlcoholCollectionByType{
 		"beer":    []collection.AlcoholItem{},
 		"whiskey": []collection.AlcoholItem{},
@@ -2045,14 +2021,11 @@ func (s *UserService) GetUserAlcoholCollection(ctx context.Context, clerkID stri
 			return nil, fmt.Errorf("failed to scan alcohol item: %w", err)
 		}
 
-		// Normalize the type to lowercase for consistent map keys
 		alcoholType := strings.ToLower(item.Type)
 
-		// Add to the appropriate category
 		if _, exists := collectionItemTypes[alcoholType]; exists {
 			collectionItemTypes[alcoholType] = append(collectionItemTypes[alcoholType], item)
 		} else {
-			// If type doesn't match any category, you can either skip it or add to "other"
 			log.Printf("unknown alcohol type: %s for item: %s", item.Type, item.Name)
 		}
 	}
@@ -2155,7 +2128,6 @@ func (s *UserService) EquipItem(ctx context.Context, clerkID string, itemIdForRe
 	return true, nil
 }
 
-// Helper function to count total items
 func getTotalCount(collection collection.AlcoholCollectionByType) int {
 	total := 0
 	for _, items := range collection {
