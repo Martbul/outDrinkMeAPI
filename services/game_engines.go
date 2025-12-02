@@ -53,6 +53,7 @@ type KingsCupLogic struct {
 	CustomRules     map[string]string       // Stores custom rules set by players (playerID -> rule string)
 	KingsDrawn      int                     // Tracks how many kings have been drawn
 	LastKingDrinker string                  // Stores the ID of the player who drew the last king
+	GameStarted     bool
 }
 
 func (g *KingsCupLogic) InitState() interface{} {
@@ -66,15 +67,16 @@ func (g *KingsCupLogic) InitState() interface{} {
 	g.CustomRules = make(map[string]string)
 	g.KingsDrawn = 0
 	g.LastKingDrinker = ""
-	
-	// FIX 1: Start as false so players wait in lobby
 
+	g.GameStarted = true
 
 	return KingsCupGameState{
 		CurrentCard:    nil,
 		CardsRemaining: len(g.Deck),
 		GameOver:       false,
 		KingsInCup:     0,
+		GameStarted:    true,
+		Players:        g.Players,
 	}
 }
 
@@ -118,7 +120,7 @@ func (g *KingsCupLogic) UpdatePlayers(currentClients map[*Client]bool) {
 	if g.DrawingIndex >= len(newPlayers) && len(newPlayers) > 0 {
 		g.DrawingIndex = 0
 	} else if len(newPlayers) == 0 {
-		g.DrawingIndex = 0    // Reset if no players left
+		g.DrawingIndex = 0 // Reset if no players left
 	}
 
 	g.Players = newPlayers
@@ -145,6 +147,7 @@ func (g *KingsCupLogic) broadcastGameState(session *Session, clientCard *ClientC
 		CurrentPlayerTurnID: currentPlayerTurnID,
 		KingsInCup:          g.KingsDrawn,
 		KingCupDrinker:      kingCupDrinkerInfo,
+		GameStarted:         g.GameStarted,
 	}
 
 	response := GameStatePayload{
@@ -224,8 +227,6 @@ func (g *KingsCupLogic) HandleMessage(s *Session, sender *Client, msg []byte) {
 
 	g.mu.Lock()
 	defer g.mu.Unlock()
-
-
 
 	// Ensure there are players in the game logic's internal list
 	if len(g.Players) == 0 {
