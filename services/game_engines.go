@@ -469,6 +469,16 @@ func (g *KingsCupLogic) HandleMessage(s *Session, sender *Client, msg []byte) {
 	}
 }
 
+func (g *KingsCupLogic) ResetState(s *Session) {
+	g.mu.Lock()
+	g.GameStarted = false
+	g.mu.Unlock()
+
+	// Re-initialize the state (reshuffle deck, clear buddies)
+	g.InitState(s)
+}
+
+
 type BurnBookLogic struct {
 	mu          sync.Mutex
 	Timer       *time.Timer
@@ -503,6 +513,25 @@ type BurnBookGameState struct {
 	HasVoted       bool         `json:"hasVoted,omitempty"`
 }
 
+// func (g *BurnBookLogic) InitState(s *Session) interface{} {
+// 	g.mu.Lock()
+// 	defer g.mu.Unlock()
+
+// 	g.Phase = "collecting"
+// 	g.Questions = make([]string, 0)
+// 	g.Votes = make(map[int]map[string]int)
+// 	g.WhoVoted = make(map[int]map[string]bool)
+// 	g.VotingIndex = 0
+// 	g.RevealIndex = -1
+// 	g.SkipTimer = make(chan bool)
+
+// 	return BurnBookGameState{
+// 		Phase:          "collecting",
+// 		CollectedCount: 0,
+// 	}
+// }
+
+
 func (g *BurnBookLogic) InitState(s *Session) interface{} {
 	g.mu.Lock()
 	defer g.mu.Unlock()
@@ -513,12 +542,33 @@ func (g *BurnBookLogic) InitState(s *Session) interface{} {
 	g.WhoVoted = make(map[int]map[string]bool)
 	g.VotingIndex = 0
 	g.RevealIndex = -1
-	g.SkipTimer = make(chan bool)
+	
+	// Re-make channel to ensure it's fresh
+	g.SkipTimer = make(chan bool) 
 
 	return BurnBookGameState{
 		Phase:          "collecting",
 		CollectedCount: 0,
 	}
+}
+
+func (g *BurnBookLogic) ResetState(s *Session) {
+	g.mu.Lock()
+	// 1. Stop any active timer
+	if g.Timer != nil {
+		g.Timer.Stop()
+		g.Timer = nil
+	}
+	
+	// 2. Non-blocking drain of the channel
+	select {
+	case <-g.SkipTimer:
+	default:
+	}
+	g.mu.Unlock()
+
+	// 3. Re-initialize
+	g.InitState(s)
 }
 
 func (g *BurnBookLogic) HandleMessage(s *Session, sender *Client, msg []byte) {
@@ -685,42 +735,100 @@ func (g *BurnBookLogic) getRoundResults(idx int) *RoundResult {
 		Results:  results,
 	}
 }
+
+
+// func (g *BurnBookLogic) startQuestionTimer(s *Session) {
+// 	g.mu.Lock()
+
+// 	// Check if we are done with all questions
+// 	if g.VotingIndex >= len(g.Questions) {
+// 		g.Phase = "results"
+// 		g.RevealIndex = -1
+		
+// 		broadcast(s, GameStatePayload{
+// 			Action: "game_update",
+// 			GameState: BurnBookGameState{
+// 				Phase: "results_wait",
+// 			},
+// 		})
+// 		g.mu.Unlock()
+// 		return
+// 	}
+
+// 	// Broadcast the start of this question (Client sets time to 30)
+// 	broadcastVotingState(s, g)
+	
+// 	currentIndex := g.VotingIndex
+// 	g.mu.Unlock() // Unlock so HandleMessage can process votes
+
+// 	// Create a timer for 30 seconds
+// 	timer := time.NewTimer(30 * time.Second)
+
+// 	go func() {
+// 		// Wait for either the Timer to finish OR the Skip signal
+// 		select {
+// 		case <-timer.C:
+// 			// Time ran out naturally
+// 		case <-g.SkipTimer:
+// 			// Everyone voted, stop the timer and proceed immediately
+// 			if !timer.Stop() {
+// 				// Drain channel if timer fired concurrently
+// 				select {
+// 				case <-timer.C:
+// 				default:
+// 				}
+// 			}
+// 		}
+
+// 		// Move to next question
+// 		g.mu.Lock()
+// 		// Ensure we are still in the same state (sanity check)
+// 		if g.Phase == "voting" && g.VotingIndex == currentIndex {
+// 			g.VotingIndex++
+// 			g.mu.Unlock()
+// 			g.startQuestionTimer(s) // Recursion
+// 		} else {
+// 			g.mu.Unlock()
+// 		}
+// 	}()
+// }
+
 func (g *BurnBookLogic) startQuestionTimer(s *Session) {
 	g.mu.Lock()
 
-	// Check if we are done with all questions
 	if g.VotingIndex >= len(g.Questions) {
 		g.Phase = "results"
 		g.RevealIndex = -1
-		
 		broadcast(s, GameStatePayload{
 			Action: "game_update",
-			GameState: BurnBookGameState{
-				Phase: "results_wait",
-			},
+			GameState: BurnBookGameState{Phase: "results_wait"},
 		})
 		g.mu.Unlock()
 		return
 	}
 
-	// Broadcast the start of this question (Client sets time to 30)
 	broadcastVotingState(s, g)
-	
 	currentIndex := g.VotingIndex
-	g.mu.Unlock() // Unlock so HandleMessage can process votes
+	g.mu.Unlock() 
 
-	// Create a timer for 30 seconds
-	timer := time.NewTimer(30 * time.Second)
+	// ASSIGN TO STRUCT FIELD
+	g.mu.Lock()
+	g.Timer = time.NewTimer(30 * time.Second)
+	g.mu.Unlock()
 
 	go func() {
-		// Wait for either the Timer to finish OR the Skip signal
+		g.mu.Lock()
+		timer := g.Timer
+		g.mu.Unlock()
+
+		if timer == nil { return } // Guard against nil
+
 		select {
 		case <-timer.C:
-			// Time ran out naturally
+			// Time naturally expired
 		case <-g.SkipTimer:
-			// Everyone voted, stop the timer and proceed immediately
+			// Force stop
 			if !timer.Stop() {
-				// Drain channel if timer fired concurrently
 				select {
 				case <-timer.C:
 				default:
@@ -728,18 +836,24 @@ func (g *BurnBookLogic) startQuestionTimer(s *Session) {
 			}
 		}
 
-		// Move to next question
 		g.mu.Lock()
-		// Ensure we are still in the same state (sanity check)
-		if g.Phase == "voting" && g.VotingIndex == currentIndex {
+		// Safety check: Did the game reset while we were waiting?
+		// If Phase is 'collecting', we were reset.
+		if g.Phase != "voting" {
+			g.mu.Unlock()
+			return
+		}
+
+		if g.VotingIndex == currentIndex {
 			g.VotingIndex++
 			g.mu.Unlock()
-			g.startQuestionTimer(s) // Recursion
+			g.startQuestionTimer(s)
 		} else {
 			g.mu.Unlock()
 		}
 	}()
 }
+
 
 func broadcast(s *Session, payload GameStatePayload) {
 	bytes, _ := json.Marshal(payload)
@@ -788,37 +902,60 @@ func (g *BurnBookLogic) calculateWinner(idx int) (string, int) {
 	return winnerID, maxVotes
 }
 
+type MafiaGameState struct {
+// 1. Slices (24 bytes each)
+AlivePlayers []PlayerInfo `json:"alivePlayers"`
+DeadPlayers  []PlayerInfo `json:"deadPlayers"`
+// 2. Strings (16 bytes each)
+Phase   string `json:"phase"`
+Message string `json:"message"`
+MyRole  string `json:"myRole,omitempty"`
+Winner  string `json:"winner,omitempty"`
+
+// 3. Ints (8 bytes on 64-bit)
+TimeLeft int `json:"timeLeft"`
+}
+
 type MafiaLogic struct {
-	// 1. Mutex is usually placed first.
-	// This is good for cache locality and indicates it protects the fields below.
 	mu sync.Mutex
 
-	// 2. Larger "Structure" types (Strings are 16 bytes: pointer + length)
 	Phase       string
 	MafiaTarget string
+	
+	// Added to handle resets safely
+	GameGeneration int 
 
-	// 3. Pointers and Maps (8 bytes each)
-	timer   *time.Timer
 	Roles   map[string]string
 	IsAlive map[string]bool
 	Votes   map[string]string
 }
 
-type MafiaGameState struct {
-	// 1. Slices (24 bytes each)
-	AlivePlayers []PlayerInfo `json:"alivePlayers"`
-	DeadPlayers  []PlayerInfo `json:"deadPlayers"`
 
-	// 2. Strings (16 bytes each)
-	Phase   string `json:"phase"`
-	Message string `json:"message"`
-	MyRole  string `json:"myRole,omitempty"`
-	Winner  string `json:"winner,omitempty"`
 
-	// 3. Ints (8 bytes on 64-bit)
-	TimeLeft int `json:"timeLeft"`
+func (g *MafiaLogic) ResetState(s *Session) {
+	g.mu.Lock()
+	// Increment generation. Any active goroutines from the previous game
+	// will see mismatching generation and stop.
+	g.GameGeneration++ 
+	g.mu.Unlock()
+
+	g.InitState(s)
 }
 
+// func (g *MafiaLogic) InitState(s *Session) interface{} {
+// 	g.mu.Lock()
+// 	defer g.mu.Unlock()
+
+// 	g.Phase = "LOBBY"
+// 	g.Roles = make(map[string]string)
+// 	g.IsAlive = make(map[string]bool)
+// 	g.Votes = make(map[string]string)
+
+// 	return MafiaGameState{
+// 		Phase:   "LOBBY",
+// 		Message: "Waiting for Host to start...",
+// 	}
+// }
 func (g *MafiaLogic) InitState(s *Session) interface{} {
 	g.mu.Lock()
 	defer g.mu.Unlock()
@@ -827,6 +964,9 @@ func (g *MafiaLogic) InitState(s *Session) interface{} {
 	g.Roles = make(map[string]string)
 	g.IsAlive = make(map[string]bool)
 	g.Votes = make(map[string]string)
+	
+	// Note: We do NOT increment generation here, 
+	// InitState is called *after* ResetState or on creation.
 
 	return MafiaGameState{
 		Phase:   "LOBBY",

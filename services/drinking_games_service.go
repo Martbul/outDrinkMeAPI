@@ -32,6 +32,7 @@ const (
 type GameLogic interface {
 	HandleMessage(session *Session, sender *Client, message []byte)
 	InitState(session *Session) interface{}
+	ResetState(session *Session)
 }
 
 type Session struct {
@@ -119,7 +120,7 @@ func (s *Session) Run() {
 		close(s.Unregister)
 		close(s.TriggerList)
 	}()
-//! when client disconnects againghe should be unregistered
+	//! when client disconnects againghe should be unregistered
 	for {
 		select {
 		case client := <-s.Register:
@@ -262,7 +263,6 @@ func (c *Client) ReadPump() {
 	for {
 		_, message, err := c.Conn.ReadMessage()
 		if err != nil {
-			log.Println("herere")
 			log.Println("Error reading msg", err)
 			break
 		}
@@ -284,7 +284,48 @@ func (c *Client) ReadPump() {
 				c.Session.Broadcast <- message
 				continue
 			}
-			
+
+			// if payload.Action == "reset_game" {
+			// 	// Only allow the host to reset the game to avoid abuse
+			// 	if c.IsHost {
+			// 		log.Printf("[Session %s] Resetting game state...", c.Session.ID)
+			// 		// Broadcast the reset message.
+			// 		// The frontend will receive this, see "reset_game", and set view to "waiting".
+			// 		// The GameEngine internal state will be overwritten the next time "start_game" is called via InitState.
+			// 		c.Session.Broadcast <- message
+			// 	}
+			// 	continue
+			// }
+
+			// if payload.Action == "reset_game" {
+			// 	// Only allow the host to reset the game
+			// 	if c.IsHost {
+			// 		log.Printf("[Session %s] Host resetting game...", c.Session.ID)
+
+			// 		// 1. Call the Game Engine's specific reset logic (stops timers, clears data)
+			// 		c.Session.GameEngine.ResetState(c.Session)
+
+			// 		// 2. Broadcast the reset action so frontends switch to "Waiting" screen
+			// 		resetPayload := map[string]string{
+			// 			"action": "reset_game",
+			// 		}
+			// 		bytes, _ := json.Marshal(resetPayload)
+			// 		c.Session.Broadcast <- bytes
+			// 	}
+			// 	continue
+			// }
+
+			if payload.Action == "reset_game" {
+				if c.IsHost {
+					log.Printf("[Session %s] Host resetting game...", c.Session.ID)
+
+					c.Session.GameEngine.ResetState(c.Session)
+
+					c.Session.Broadcast <- message
+
+				}
+				continue
+			}
 
 			// We check if it is a game_action. The Engine will check the "Type" (draw_card).
 			if payload.Action == "game_action" {
@@ -310,7 +351,6 @@ func (s *Session) getPlayersList() []PlayerInfo {
 	}
 	return players
 }
-
 
 func (s *Session) BroadcastPlayerList() {
 	// create a list of players
