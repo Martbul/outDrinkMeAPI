@@ -94,7 +94,7 @@ func (g *KingsCupLogic) InitState(s *Session) interface{} {
 	g.CurrentCard = nil
 	g.DrawingIndex = 0
 	g.Buddies = make(map[string][]PlayerInfo)
-	g.CustomRules = make(map[string][]string) 
+	g.CustomRules = make(map[string][]string)
 	g.KingsDrawn = 0
 	g.LastKingDrinker = ""
 	g.GameStarted = true
@@ -302,7 +302,7 @@ func (g *KingsCupLogic) GetPlayerInfoByID(playerID string) *PlayerInfo {
 func (g *KingsCupLogic) getRule(rank string) string {
 	switch rank {
 	case "A":
-		return "Waterfall - Start drinking at the same time as the person to your left. Don't stop until they do."
+		return "Waterfall - Start drinking at the same time as the person to your left. Don't stop until they do"
 	case "2":
 		return "You - Choose someone to drink"
 	case "3":
@@ -455,8 +455,8 @@ func (g *KingsCupLogic) HandleMessage(s *Session, sender *Client, msg []byte) {
 			return
 		}
 
-			g.CustomRules[sender.UserID] = append(g.CustomRules[sender.UserID], request.NewRule)
-        
+		g.CustomRules[sender.UserID] = append(g.CustomRules[sender.UserID], request.NewRule)
+
 		log.Printf("%s set a new rule: \"%s\". Custom Rules: %v\n", sender.Username, request.NewRule, g.CustomRules)
 
 		// After setting a rule, advance turn
@@ -591,10 +591,34 @@ func (g *BurnBookLogic) HandleMessage(s *Session, sender *Client, msg []byte) {
 		g.Votes[g.VotingIndex][request.TargetID]++
 		g.WhoVoted[g.VotingIndex][sender.UserID] = true
 
+		activePlayers := 0
+		for c := range s.Clients {
+			if c.UserID != "" {
+				activePlayers++
+			}
+		}
+		votesCast := len(g.WhoVoted[g.VotingIndex])
+
 		//! Check if everyone has voted to skip the timer?
 		// For now, let's keep the timer running to keep it simple (30s fixed),
 		// OR you can broadcast the updated "HasVoted" state.
-		broadcastVotingState(s, g)
+		if votesCast >= activePlayers {
+			log.Printf("All %d players voted. Skipping timer.", activePlayers)
+			
+			// 1. Stop the existing timer
+			if g.Timer != nil {
+				g.Timer.Stop()
+			}
+
+			// 2. Advance index immediately
+			g.VotingIndex++
+
+			// 3. Trigger next round
+			// IMPORTANT: We run this in a goroutine because startQuestionTimer needs to acquire g.mu,
+			// but we currently hold g.mu. The goroutine will wait until HandleMessage finishes 
+			// and releases the lock via defer.
+			go g.startQuestionTimer(s)
+		}
 		return
 	}
 
@@ -664,44 +688,43 @@ func (g *BurnBookLogic) getRoundResults(idx int) *RoundResult {
 
 func (g *BurnBookLogic) startQuestionTimer(s *Session) {
 	g.mu.Lock()
+	defer g.mu.Unlock()
 
-	// Stop if game is over or phase changed unexpectedly
+	// 1. Check if voting is finished
 	if g.VotingIndex >= len(g.Questions) {
 		g.Phase = "results"
-		g.RevealIndex = -1 // Reset reveal index
+		g.RevealIndex = -1
 
-		// Notify clients that voting is done, waiting for host to reveal
 		broadcast(s, GameStatePayload{
 			Action: "game_update",
 			GameState: BurnBookGameState{
-				Phase: "results_wait", // UI should show "Waiting for Host to reveal..."
+				Phase: "results_wait",
 			},
 		})
-		g.mu.Unlock()
 		return
 	}
 
+	// 2. Broadcast current question to everyone
 	broadcastVotingState(s, g)
 
-	currentIndex := g.VotingIndex // Capture current index for closure
-	g.mu.Unlock()
-
-	// Wait 30 seconds
-	// Note: In a production app, you might want to allow "early skip" if everyone voted.
-	// We use AfterFunc so we don't block a thread, but here we just need to trigger the next step.
-	go func() {
-		time.Sleep(30 * time.Second)
-
+	// 3. Start Timer using AfterFunc (so we can stop it if everyone votes)
+	// We capture the current index to ensure consistency in the callback
+	currentIndex := g.VotingIndex
+	
+	g.Timer = time.AfterFunc(30*time.Second, func() {
 		g.mu.Lock()
-		// Check if we are still on the same question (prevents race conditions if game ended)
+		// Only advance if we are still on the same index (i.e., didn't skip already)
+		// and still in voting phase.
 		if g.Phase == "voting" && g.VotingIndex == currentIndex {
-			g.VotingIndex++ // Move to next
+			g.VotingIndex++
 			g.mu.Unlock()
-			g.startQuestionTimer(s) // Recursion for next question
+			
+			// Start next question
+			g.startQuestionTimer(s)
 		} else {
 			g.mu.Unlock()
 		}
-	}()
+	})
 }
 
 func broadcast(s *Session, payload GameStatePayload) {
