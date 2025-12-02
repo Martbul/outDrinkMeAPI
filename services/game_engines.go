@@ -56,7 +56,7 @@ type KingsCupLogic struct {
 	GameStarted     bool
 }
 
-func (g *KingsCupLogic) InitState() interface{} {
+func (g *KingsCupLogic) InitState(s *Session) interface{} {
 	g.mu.Lock()
 	defer g.mu.Unlock()
 
@@ -70,7 +70,7 @@ func (g *KingsCupLogic) InitState() interface{} {
 
 	g.GameStarted = true
 
-	return KingsCupGameState{
+	initialState := KingsCupGameState{
 		CurrentCard:    nil,
 		CardsRemaining: len(g.Deck),
 		GameOver:       false,
@@ -78,6 +78,9 @@ func (g *KingsCupLogic) InitState() interface{} {
 		GameStarted:    true,
 		Players:        g.Players,
 	}
+	g.broadcastGameState(nil, nil)
+
+	return initialState
 }
 
 func (g *KingsCupLogic) UpdatePlayers(currentClients map[*Client]bool) {
@@ -384,7 +387,7 @@ type BurnBookGameState struct {
 	HasVoted       bool         `json:"hasVoted,omitempty"`
 }
 
-func (g *BurnBookLogic) InitState() interface{} {
+func (g *BurnBookLogic) InitState(s *Session) interface{} {
 	g.mu.Lock()
 	defer g.mu.Unlock()
 
@@ -664,7 +667,7 @@ type MafiaGameState struct {
 	TimeLeft int `json:"timeLeft"`
 }
 
-func (g *MafiaLogic) InitState() interface{} {
+func (g *MafiaLogic) InitState(s *Session) interface{} {
 	g.mu.Lock()
 	defer g.mu.Unlock()
 

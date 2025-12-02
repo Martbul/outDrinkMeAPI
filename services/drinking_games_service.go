@@ -31,7 +31,7 @@ const (
 // --- 2. The Game Logic Interface (Strategy Pattern) ---
 type GameLogic interface {
 	HandleMessage(session *Session, sender *Client, message []byte)
-	InitState() interface{}
+	InitState(session *Session) interface{}
 }
 
 type Session struct {
@@ -279,7 +279,7 @@ func (c *Client) ReadPump() {
 			}
 
 			if payload.Action == "start_game" {
-				c.Session.GameEngine.InitState() // this is sing the strategy patters, so that if in the create part it has been seleceted 1 game that same game's init will be executed here
+				c.Session.GameEngine.InitState(c.Session) // this is sing the strategy patters, so that if in the create part it has been seleceted 1 game that same game's init will be executed here
 				// Also broadcast that game started so UI changes to game view
 				c.Session.Broadcast <- message
 				continue
