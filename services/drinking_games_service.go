@@ -119,7 +119,7 @@ func (s *Session) Run() {
 		close(s.Unregister)
 		close(s.TriggerList)
 	}()
-//! when client disconnects againghe should be unregistered
+	//! when client disconnects againghe should be unregistered
 	for {
 		select {
 		case client := <-s.Register:
@@ -278,13 +278,44 @@ func (c *Client) ReadPump() {
 				continue
 			}
 
+			// if payload.Action == "start_game" {
+			// 	c.Session.GameEngine.InitState() // this is sing the strategy patters, so that if in the create part it has been seleceted 1 game that same game's init will be executed here
+			// 	// Also broadcast that game started so UI changes to game view
+			// 	c.Session.Broadcast <- message
+			// 	continue
+			// }
+
+			// In services/client.go
+
 			if payload.Action == "start_game" {
-				c.Session.GameEngine.InitState() // this is sing the strategy patters, so that if in the create part it has been seleceted 1 game that same game's init will be executed here
-				// Also broadcast that game started so UI changes to game view
+				// 1. Sync players so the game logic knows who is playing
+				// (This ensures the first turn is assigned correctly immediately)
+				if kcLogic, ok := c.Session.GameEngine.(*KingsCupLogic); ok {
+					kcLogic.UpdatePlayers(c.Session.Clients)
+				}
+
+				// 2. Initialize the Game State AND capture the result
+				initialState := c.Session.GameEngine.InitState()
+
+				// 3. Broadcast the signal to switch the UI to the Game View
 				c.Session.Broadcast <- message
+
+				// 4. Broadcast the NEW Game State (containing gameStarted: true)
+				statePayload := map[string]interface{}{
+					"action":    "game_update",
+					"gameState": initialState,
+				}
+
+				// Marshal and send the game state
+				stateBytes, err := json.Marshal(statePayload)
+				if err == nil {
+					c.Session.Broadcast <- stateBytes
+				} else {
+					log.Println("Error marshaling initial state:", err)
+				}
+
 				continue
 			}
-
 			// We check if it is a game_action. The Engine will check the "Type" (draw_card).
 			if payload.Action == "game_action" {
 				log.Println("DEBUG: in game_action")
@@ -309,7 +340,6 @@ func (s *Session) getPlayersList() []PlayerInfo {
 	}
 	return players
 }
-
 
 func (s *Session) BroadcastPlayerList() {
 	// create a list of players
