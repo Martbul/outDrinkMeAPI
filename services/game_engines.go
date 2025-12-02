@@ -5,14 +5,20 @@ import (
 	"fmt"
 	"log"
 	"math/rand"
+	"outDrinkMeAPI/utils"
 	"sort"
 	"sync"
 	"time"
 )
 
-type Card struct {
-	Suit string `json:"suit"`
-	Rank string `json:"rank"`
+type PlayerInfo struct {
+	ID       string `json:"id"`
+	Username string `json:"username"`
+}
+
+type GameStatePayload struct {
+	Action    string      `json:"action"`
+	GameState interface{} `json:"gameState"`
 }
 
 type ClientCard struct {
@@ -23,169 +29,264 @@ type ClientCard struct {
 	ImageUrl string `json:"imageUrl"`
 }
 
-type GameStatePayload struct {
-	Action    string      `json:"action"`
-	GameState interface{} `json:"gameState"`
-}
-
 type KingsCupGameState struct {
-	CurrentCard    *ClientCard `json:"currentCard"`
-	CardsRemaining int         `json:"cardsRemaining"`
-	GameOver       bool        `json:"gameOver"`
-}
-
-func generateNewDeck() []Card {
-	suits := []string{"H", "D", "C", "S"}
-	ranks := []string{"A", "2", "3", "4", "5", "6", "7", "8", "9", "10", "J", "Q", "K"}
-	deck := make([]Card, 0, 52)
-	for _, s := range suits {
-		for _, r := range ranks {
-			deck = append(deck, Card{Suit: s, Rank: r})
-		}
-	}
-	source := rand.NewSource(time.Now().UnixNano())
-	r := rand.New(source)
-	r.Shuffle(len(deck), func(i, j int) {
-		deck[i], deck[j] = deck[j], deck[i]
-	})
-	return deck
+	Players           []PlayerInfo               `json:"players,omitempty"`
+	CustomRules       map[string]string          `json:"customRules,omitempty"` // PlayerID -> Custom Rule
+	Buddies           map[string][]PlayerInfo    `json:"buddies,omitempty"`     // PlayerID -> list of their buddies
+	CurrentCard       *ClientCard                `json:"currentCard"`
+	CardsRemaining    int                        `json:"cardsRemaining"`
+	GameOver          bool                       `json:"gameOver"`
+	CurrentPlayerTurnID *string                    `json:"currentPlayerTurnID,omitempty"` // ID of the player whose turn it is
+	KingsInCup        int                        `json:"kingsInCup"`                    // To track how many kings have been drawn
+	KingCupDrinker    *PlayerInfo                `json:"kingCupDrinker,omitempty"`      // The player who drew the last king
+	GameStarted       bool                       `json:"gameStarted"`                   // Indicates if the game has officially started
 }
 
 type KingsCupLogic struct {
-	Deck        []Card
-	CurrentCard *Card
-	mu          sync.Mutex
+	mu           sync.Mutex
+	Deck         []utils.Card
+	CurrentCard  *utils.Card
+	Timer        *time.Timer // Unused in this logic, but kept for consistency if you need it later
+	DrawingIndex int          // Index in the Players slice indicating whose turn it is
+	Players      []PlayerInfo // List of all players in the game (managed by Session, but stored here for game logic)
+	Buddies      map[string][]PlayerInfo // Tracks who is buddies with whom (playerID -> []PlayerInfo)
+	CustomRules  map[string]string // Stores custom rules set by players (playerID -> rule string)
+	KingsDrawn   int          // Tracks how many kings have been drawn
+	LastKingDrinker string       // Stores the ID of the player who drew the last king
+	GameStarted  bool         // Tracks if the game has started
 }
 
 func (g *KingsCupLogic) InitState() interface{} {
 	g.mu.Lock()
 	defer g.mu.Unlock()
-	g.Deck = generateNewDeck()
+
+	g.Deck = utils.GenerateNewDeck()
 	g.CurrentCard = nil
-	return KingsCupGameState{ // initial state
+	g.DrawingIndex = 0
+	g.Buddies = make(map[string][]PlayerInfo)
+	g.CustomRules = make(map[string]string)
+	g.KingsDrawn = 0
+	g.LastKingDrinker = "" 
+	g.GameStarted = true   
+
+	log.Printf("KingsCupLogic InitState called. GameStarted: %t", g.GameStarted)
+
+	return KingsCupGameState{
 		CurrentCard:    nil,
-		CardsRemaining: 52,
+		CardsRemaining: len(g.Deck),
 		GameOver:       false,
+		KingsInCup:     0,
+		GameStarted:    g.GameStarted,
 	}
 }
 
-func getSuitName(s string) string {
-	switch s {
-	case "H":
-		return "hearts"
-	case "D":
-		return "diamonds"
-	case "C":
-		return "clubs"
-	case "S":
-		return "spades"
-	default:
-		return "hearts"
+func (g *KingsCupLogic) UpdatePlayers(currentClients map[*Client]bool) {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+
+	newPlayers := make([]PlayerInfo, 0, len(currentClients))
+	currentPlayersMap := make(map[string]bool) // To quickly check existing players
+
+	for client := range currentClients {
+		if client.UserID != "" {
+			playerInfo := PlayerInfo{ID: client.UserID, Username: client.Username}
+			newPlayers = append(newPlayers, playerInfo)
+			currentPlayersMap[client.UserID] = true
+		}
 	}
+
+	// Remove buddies/rules for players who left
+	for playerID := range g.Buddies {
+		if _, exists := currentPlayersMap[playerID]; !exists {
+			delete(g.Buddies, playerID)
+			// Also remove this player from other players' buddy lists
+			for otherPlayerID, buddies := range g.Buddies {
+				for i, buddy := range buddies {
+					if buddy.ID == playerID {
+						g.Buddies[otherPlayerID] = append(g.Buddies[otherPlayerID][:i], g.Buddies[otherPlayerID][i+1:]...)
+						break
+					}
+				}
+			}
+		}
+	}
+	for playerID := range g.CustomRules {
+		if _, exists := currentPlayersMap[playerID]; !exists {
+			delete(g.CustomRules, playerID)
+		}
+	}
+
+
+	// If the current player's turn is no longer valid (player left), reset the index.
+	if g.DrawingIndex >= len(newPlayers) && len(newPlayers) > 0 {
+		g.DrawingIndex = 0
+	} else if len(newPlayers) == 0 {
+		g.DrawingIndex = 0 // Reset if no players left
+		g.GameStarted = false // Game cannot be started without players
+	}
+
+	g.Players = newPlayers
+	log.Printf("KingsCupLogic Players updated. Current players: %v", g.Players)
+	// After updating players, broadcast the comprehensive game state
+	g.broadcastGameState(nil, nil)
 }
 
-func getRankName(r string) string {
-	switch r {
-	case "A":
-		return "ace"
-	case "2":
-		return "two"
-	case "3":
-		return "three"
-	case "4":
-		return "four"
-	case "5":
-		return "five"
-	case "6":
-		return "six"
-	case "7":
-		return "seven"
-	case "8":
-		return "eight"
-	case "9":
-		return "nine"
-	case "10":
-		return "ten"
-	case "J":
-		return "jack"
-	case "Q":
-		return "queen"
-	case "K":
-		return "king"
-	default:
-		return "ace"
+
+func (g *KingsCupLogic) broadcastGameState(session *Session, clientCard *ClientCard) {
+	var currentPlayerTurnID *string
+	if g.GameStarted && len(g.Players) > 0 {
+		currentPlayerTurnID = &g.Players[g.DrawingIndex].ID
 	}
+
+	kingCupDrinkerInfo := g.GetPlayerInfoByID(g.LastKingDrinker)
+
+	state := KingsCupGameState{
+		Players:           g.Players,
+		CustomRules:       g.CustomRules,
+		Buddies:           g.Buddies,
+		CurrentCard:       clientCard,
+		CardsRemaining:    len(g.Deck),
+		GameOver:          len(g.Deck) == 0 && g.GameStarted, // Game over only if started and deck is empty
+		CurrentPlayerTurnID: currentPlayerTurnID,
+		KingsInCup:        g.KingsDrawn,
+		KingCupDrinker:    kingCupDrinkerInfo,
+		GameStarted:       g.GameStarted,
+	}
+
+	response := GameStatePayload{
+		Action:    "game_update",
+		GameState: state,
+	}
+
+	bytes, err := json.Marshal(response)
+	if err != nil {
+		log.Printf("Error marshalling game state: %v", err)
+		return
+	}
+	log.Printf("Broadcasting game state. Current turn: %v, Card: %v, Players: %d, GameStarted: %t",
+		currentPlayerTurnID, clientCard, len(g.Players), g.GameStarted)
+
+	// Send to the session's broadcast channel
+	session.Broadcast <- bytes
 }
 
-func getCardColor(s string) string {
-	if s == "H" || s == "D" {
-		return "#ef4444"
+// GetPlayerInfoByID is a helper to get player info from ID
+func (g *KingsCupLogic) GetPlayerInfoByID(playerID string) *PlayerInfo {
+	if playerID == "" {
+		return nil
 	}
-	return "black"
+	for _, p := range g.Players {
+		if p.ID == playerID {
+			return &p
+		}
+	}
+	return nil
 }
 
-func getRule(rank string) string {
+func (g *KingsCupLogic) getRule(rank string) string {
 	switch rank {
 	case "A":
-		return "Waterfall - Everyone drinks!"
+		return "Waterfall - Start drinking at the same time as the person to your left. Don't stop until they do."
 	case "2":
-		return "You - Pick someone to drink"
+		return "You - Choose someone to drink"
 	case "3":
 		return "Me - You drink"
 	case "4":
-		return "Whores - All girls drink"
+		return "Floor - The last person to touch the floor drinks"
 	case "5":
-		return "Thumb Master"
+		return "Guys - All Guys drink"
 	case "6":
-		return "Dicks - All guys drink"
+		return "Chicks - All girls drink"
 	case "7":
-		return "Heaven - Point to the sky"
+		return "Heaven - Raise your hand to heaven. The last person to do so drinks"
 	case "8":
-		return "Mate - Pick a drinking buddy"
+		return "Mate - Choose a drinking buddy. Any time you drink, they drink"
 	case "9":
-		return "Rhyme - Pick a word"
+		return "Rhyme - Say a word. The person to your right says a word that rhymes. The first person to fail drinks"
 	case "10":
-		return "Categories"
+		return "Categories - Choose a category of things. The person to your right names something in that category. The first person to fail drinks"
 	case "J":
-		return "Never Have I Ever"
+		return "Never Have I Ever - Play never have i ever"
 	case "Q":
-		return "Question Master"
+		return "Question - Ask someone a question. That person then asks someone else a question. The first person to fail drinks"
 	case "K":
-		return "Make a Rule"
+		return "Kinkg's cup - Set a rule and pour some of your drink into the king's cup. Whoever draws the final king must drink the entire king's cup"
 	default:
 		return "Drink!"
 	}
 }
 
-func getImageUrl(rank, suit string) string {
-	fullSuit := getSuitName(suit)
-	fullRank := getRankName(rank)
-
-	return fmt.Sprintf("https://outdrinkmeapi-dev.onrender.com/assets/images/cards/%s/%s-of-%s.png", fullSuit, fullRank, fullSuit)
-}
-
 func (g *KingsCupLogic) HandleMessage(s *Session, sender *Client, msg []byte) {
-	if !sender.IsHost {
+	var payload struct {
+		Action       string    `json:"action"` // This "Action" is from WsPayload, not GameStatePayload
+		Type         string    `json:"type"`   // This "Type" is the specific game action (draw_card, choose_buddy)
+		ChosenBuddieID *string  `json:"chosen_buddie_id,omitempty"` // Use pointer to allow null
+		NewRule      string    `json:"new_rule,omitempty"`
+	}
+
+	var wsPayload WsPayload 
+	if err := json.Unmarshal(msg, &wsPayload); err != nil {
+		log.Printf("Error unmarshaling WsPayload from %s: %v\n", sender.Username, err)
 		return
 	}
 
-	var payload struct {
-		Action string `json:"action"`
-		Type   string `json:"type"`
+	// Now unmarshal the game-specific part from wsPayload.Content if it's a game_action
+	if wsPayload.Action == "game_action" {
+		if err := json.Unmarshal([]byte(wsPayload.Content), &payload); err != nil {
+			log.Printf("Error unmarshaling game_action content from %s: %v\n", sender.Username, err)
+			return
+		}
+	} else {
+		// If it's not a game_action, this HandleMessage might be called incorrectly, or for other types.
+		// For now, we only care about game_action types.
+		log.Printf("HandleMessage received non-game_action: %s. Ignoring.", wsPayload.Action)
+		return
 	}
-	json.Unmarshal(msg, &payload)
 
-	if payload.Type == "draw_card" {
-		g.mu.Lock()
 
+	g.mu.Lock()
+	defer g.mu.Unlock()
+
+	// Ensure the game has started
+	if !g.GameStarted {
+		log.Printf("Game not started. %s tried to perform action %s.\n", sender.Username, payload.Type)
+		return
+	}
+
+	// Ensure there are players in the game logic's internal list
+	if len(g.Players) == 0 {
+		log.Println("No players in the game logic. Cannot handle messages.")
+		return
+	}
+
+	// Only the current player can draw a card or perform actions related to their turn
+	// This check is crucial for turn-based games
+	if g.DrawingIndex >= len(g.Players) || sender.UserID != g.Players[g.DrawingIndex].ID {
+		if len(g.Players) > 0 {
+			log.Printf("It's not %s's turn. Current turn is %s (%s) but %s (%s) tried to act.\n",
+				sender.Username, g.Players[g.DrawingIndex].Username, g.Players[g.DrawingIndex].ID, sender.Username, sender.UserID)
+		} else {
+			log.Printf("It's not %s's turn. No players in game logic.\n", sender.Username)
+		}
+		// Potentially send an error back to the sender if needed for UI feedback
+		return
+	}
+
+
+	switch payload.Type {
+	case "draw_card":
 		if len(g.Deck) == 0 {
-			g.mu.Unlock()
+			// Game is over
+			g.GameStarted = false // Set game as not started, or truly game over state
 			response := GameStatePayload{
 				Action: "game_update",
 				GameState: KingsCupGameState{
 					CurrentCard:    nil,
 					CardsRemaining: 0,
 					GameOver:       true,
+					KingsInCup:     g.KingsDrawn,
+					KingCupDrinker: g.GetPlayerInfoByID(g.LastKingDrinker),
+					GameStarted:    g.GameStarted,
 				},
 			}
 			bytes, _ := json.Marshal(response)
@@ -196,47 +297,103 @@ func (g *KingsCupLogic) HandleMessage(s *Session, sender *Client, msg []byte) {
 		drawn := g.Deck[0]
 		g.Deck = g.Deck[1:]
 		g.CurrentCard = &drawn
-		remaining := len(g.Deck)
-		g.mu.Unlock()
 
 		clientCard := ClientCard{
-			Suit:     getSuitName(drawn.Suit),
+			Suit:     utils.GetSuitName(drawn.Suit),
 			Value:    drawn.Rank,
-			Rule:     getRule(drawn.Rank),
-			Color:    getCardColor(drawn.Suit),
-			ImageUrl: getImageUrl(drawn.Rank, drawn.Suit),
+			Rule:     g.getRule(drawn.Rank),
+			Color:    utils.GetCardColor(drawn.Suit),
+			ImageUrl: utils.GetImageUrl(drawn.Rank, drawn.Suit),
 		}
 
-		response := GameStatePayload{
-			Action: "game_update",
-			GameState: KingsCupGameState{
-				CurrentCard:    &clientCard,
-				CardsRemaining: remaining,
-				GameOver:       false,
-			},
+		// Handle King's Cup
+		if drawn.Rank == "K" {
+			g.KingsDrawn++
+			// If it's the 4th king, this player drinks the king's cup
+			if g.KingsDrawn == 4 {
+				g.LastKingDrinker = sender.UserID
+				log.Printf("The 4th King has been drawn! %s must drink the King's Cup!\n", sender.Username)
+			}
 		}
 
-		bytes, _ := json.Marshal(response)
-		s.Broadcast <- bytes
+		// Broadcast the new card and updated state to everyone
+		g.broadcastGameState(s, &clientCard)
+
+		// Special handling for "8" (Mate) and "K" (King) - turn doesn't advance immediately
+		if drawn.Rank == "8" {
+			log.Printf("%s drew an 8. Waiting for buddy selection.\n", sender.Username)
+			return // Exit to wait for "choose_buddy" from the same player
+		} else if drawn.Rank == "K" {
+			log.Printf("%s drew a King. Waiting for rule setting.\n", sender.Username)
+			return // Exit to wait for "set_rule" from the same player
+		}
+
+		// If not an 8 or K, advance turn to the next player
+		g.DrawingIndex = (g.DrawingIndex + 1) % len(g.Players)
+		log.Printf("Turn advanced to %s (%s)\n", g.Players[g.DrawingIndex].Username, g.Players[g.DrawingIndex].ID)
+		g.broadcastGameState(s, nil) // Broadcast the turn change (without a new card)
+
+
+	case "choose_buddy":
+		if g.CurrentCard == nil || g.CurrentCard.Rank != "8" {
+			log.Printf("Cannot choose a buddy, an 8 was not just drawn by %s, or no card is drawn.\n", sender.Username)
+			return
+		}
+		if payload.ChosenBuddieID == nil || *payload.ChosenBuddieID == "" {
+			log.Println("No buddy chosen or invalid ID provided.")
+			return
+		}
+
+		chosenBuddyInfo := g.GetPlayerInfoByID(*payload.ChosenBuddieID)
+		if chosenBuddyInfo == nil {
+			log.Printf("Chosen buddy with ID %s not found.\n", *payload.ChosenBuddieID)
+			return
+		}
+
+		// Add buddy relationship (bidirectional)
+		g.Buddies[sender.UserID] = append(g.Buddies[sender.UserID], *chosenBuddyInfo)
+		g.Buddies[chosenBuddyInfo.ID] = append(g.Buddies[chosenBuddyInfo.ID], PlayerInfo{ID: sender.UserID, Username: sender.Username})
+
+		log.Printf("%s chose %s as a buddy. Buddies: %v\n", sender.Username, chosenBuddyInfo.Username, g.Buddies)
+
+		// After choosing a buddy, advance turn
+		g.DrawingIndex = (g.DrawingIndex + 1) % len(g.Players)
+		log.Printf("Turn advanced to %s (%s) after buddy selection.\n", g.Players[g.DrawingIndex].Username, g.Players[g.DrawingIndex].ID)
+		g.broadcastGameState(s, nil) // Broadcast updated buddies and turn change
+
+	case "set_rule":
+		if g.CurrentCard == nil || g.CurrentCard.Rank != "K" {
+			log.Printf("Cannot set a rule, a King was not just drawn by %s, or no card is drawn.\n", sender.Username)
+			return
+		}
+		if payload.NewRule == "" {
+			log.Println("No new rule provided.")
+			return
+		}
+
+		g.CustomRules[sender.UserID] = payload.NewRule
+		log.Printf("%s set a new rule: \"%s\". Custom Rules: %v\n", sender.Username, payload.NewRule, g.CustomRules)
+
+		// After setting a rule, advance turn
+		g.DrawingIndex = (g.DrawingIndex + 1) % len(g.Players)
+		log.Printf("Turn advanced to %s (%s) after rule setting.\n", g.Players[g.DrawingIndex].Username, g.Players[g.DrawingIndex].ID)
+		g.broadcastGameState(s, nil) // Broadcast updated custom rules and turn change
+
+	default:
+		log.Printf("Unknown game action type: %s from %s\n", payload.Type, sender.Username)
 	}
 }
 
 type BurnBookLogic struct {
-	mu        sync.Mutex
-	Timer     *time.Timer
-	Questions []string
-	Phase string
-	Votes    map[int]map[string]int  // [QuestionIndex] -> [CandidateID] -> Count
-	WhoVoted map[int]map[string]bool // [QuestionIndex] -> [VoterID] -> bool
+	mu          sync.Mutex
+	Timer       *time.Timer
+	Questions   []string
+	Phase       string
+	Votes       map[int]map[string]int  // [QuestionIndex] -> [CandidateID] -> Count
+	WhoVoted    map[int]map[string]bool // [QuestionIndex] -> [VoterID] -> bool
 	VotingIndex int
 	RevealIndex int
-
 }
-
-// type RoundResult struct {
-// 	WinnerID string `json:"winnerId"`
-// 	Votes    int    `json:"votes"`
-// }
 
 type RoundResult struct {
 	WinnerID string            `json:"winnerId"` // Helper to identify the top victim easily
@@ -248,25 +405,19 @@ type PlayerRoundInfo struct {
 	Votes  int    `json:"votes"`
 }
 
-
 type BurnBookGameState struct {
-	Phase          string `json:"phase"`
-	QuestionText   string `json:"questionText,omitempty"` // Current question text
-	CollectedCount int    `json:"collectedCount,omitempty"`
-
-	TimeRemaining  int `json:"timeRemaining,omitempty"` // Optional: tell UI how long they have
-	CurrentNumber  int `json:"currentNumber,omitempty"` // "Question 1 of 3"
-	TotalQuestions int `json:"totalQuestions,omitempty"`
-
-	Players      []PlayerInfo `json:"players,omitempty"`
-	RoundResults *RoundResult `json:"roundResults,omitempty"`
-	HasVoted     bool         `json:"hasVoted,omitempty"`
+	Players        []PlayerInfo `json:"players,omitempty"`
+	Phase          string       `json:"phase"`
+	QuestionText   string       `json:"questionText,omitempty"`
+	RoundResults   *RoundResult `json:"roundResults,omitempty"`
+	CollectedCount int          `json:"collectedCount,omitempty"`
+	TimeRemaining  int          `json:"timeRemaining,omitempty"`
+	CurrentNumber  int          `json:"currentNumber,omitempty"`
+	TotalQuestions int          `json:"totalQuestions,omitempty"`
+	HasVoted       bool         `json:"hasVoted,omitempty"`
 }
 
-type PlayerInfo struct {
-	ID       string `json:"id"`
-	Username string `json:"username"`
-}
+
 
 func (g *BurnBookLogic) InitState() interface{} {
 	g.mu.Lock()
@@ -284,7 +435,6 @@ func (g *BurnBookLogic) InitState() interface{} {
 		CollectedCount: 0,
 	}
 }
-
 
 func (g *BurnBookLogic) HandleMessage(s *Session, sender *Client, msg []byte) {
 	var request struct {
@@ -368,7 +518,7 @@ func (g *BurnBookLogic) HandleMessage(s *Session, sender *Client, msg []byte) {
 	if request.Type == "next_reveal" && sender.IsHost && g.Phase == "results" {
 		g.RevealIndex++
 
-	if g.RevealIndex >= len(g.Questions) {
+		if g.RevealIndex >= len(g.Questions) {
 			g.Phase = "game_over"
 			broadcast(s, GameStatePayload{
 				Action: "game_update",
@@ -381,7 +531,7 @@ func (g *BurnBookLogic) HandleMessage(s *Session, sender *Client, msg []byte) {
 
 		roundResults := g.getRoundResults(g.RevealIndex)
 
-			broadcast(s, GameStatePayload{
+		broadcast(s, GameStatePayload{
 			Action: "game_update",
 			GameState: BurnBookGameState{
 				Phase:        "results",
@@ -394,10 +544,9 @@ func (g *BurnBookLogic) HandleMessage(s *Session, sender *Client, msg []byte) {
 	}
 }
 
-
 func (g *BurnBookLogic) getRoundResults(idx int) *RoundResult {
 	votesMap := g.Votes[idx]
-	
+
 	results := make([]PlayerRoundInfo, 0)
 	winnerID := ""
 	maxVotes := -1
