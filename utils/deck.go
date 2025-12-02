@@ -87,5 +87,5 @@ func GetImageUrl(rank, suit string) string {
 	fullSuit := GetSuitName(suit)
 	fullRank := GetRankName(rank)
 
-	return fmt.Sprintf("https://outdrinkmeapi-dev.onrender.com/assets/images/cards/%s/%s-of-%s.png", fullSuit, fullRank, fullSuit)
+	return fmt.Sprintf("https://martbul.com/assets/images/cards/%s/%s-of-%s.png", fullSuit, fullRank, fullSuit)
 }

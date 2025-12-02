@@ -135,7 +135,7 @@ func (s *UserService) FriendDiscoveryDisplayProfile(ctx context.Context, clerkID
 	}
 
 	query := `
-    SELECT id, clerk_id, email, username, first_name, last_name, image_url, email_verified, created_at, updated_at, gems, xp, all_days_drinking_count
+    SELECT id, clerk_id, email, username, first_name, last_name, image_url, email_verified, created_at, updated_at, gems, xp, all_days_drinking_count, alcoholism_coefficient
     FROM users
     WHERE id = $1
     `
@@ -154,6 +154,7 @@ func (s *UserService) FriendDiscoveryDisplayProfile(ctx context.Context, clerkID
 		&friendDiscoveryUserData.Gems,
 		&friendDiscoveryUserData.XP,
 		&friendDiscoveryUserData.AllDaysDrinkingCount,
+		&friendDiscoveryUserData.AlcoholismCoefficient,
 	)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
