@@ -197,7 +197,7 @@ type PublicGameResponse struct {
 	SessionID    string `json:"sessionId"`
 	GameType     string `json:"gameType"`
 	HostID       string `json:"hostId"`
-	HostUsername string `json:hostUsername`
+	HostUsername string `json:"hostUsername"`
 	Players      int    `json:"players"`
 }
 
@@ -223,6 +223,8 @@ func (m *DrinnkingGameManager) GetPublicSessions() []PublicGameResponse {
 			// Ideally, Session should have its own RWMutex for its Client map.
 		})
 	}
+
+	log.Println(games)
 
 	return games
 }
