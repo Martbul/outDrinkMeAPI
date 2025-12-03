@@ -38,6 +38,7 @@ type GameLogic interface {
 type Session struct {
 	ID          string
 	HostID      string
+	HostUsername string
 	GameType    string
 	GameEngine  GameLogic
 	Manager     *DrinnkingGameManager
@@ -61,10 +62,11 @@ func NewGameLogic(gameType string) GameLogic {
 	}
 }
 
-func NewSession(id, gameType, hostID string, manager *DrinnkingGameManager) *Session {
+func NewSession(id, gameType, hostID, hostUsername string, manager *DrinnkingGameManager) *Session {
 	return &Session{
 		ID:          id,
 		HostID:      hostID,
+		HostUsername: hostUsername,
 		GameType:    gameType,
 		GameEngine:  NewGameLogic(gameType),
 		Manager:     manager,
@@ -170,7 +172,7 @@ func NewDrinnkingGameManager() *DrinnkingGameManager {
 	}
 }
 
-func (m *DrinnkingGameManager) CreateSession(ctx context.Context, sessionID, gameType, clerkId string) *Session {
+func (m *DrinnkingGameManager) CreateSession(ctx context.Context, sessionID, gameType, clerkId, username string) *Session {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
@@ -178,7 +180,7 @@ func (m *DrinnkingGameManager) CreateSession(ctx context.Context, sessionID, gam
 		return s
 	}
 
-	s := NewSession(sessionID, gameType, clerkId, m)
+	s := NewSession(sessionID, gameType, clerkId, username, m)
 	m.sessions[sessionID] = s
 	go s.Run()
 	return s
@@ -192,10 +194,11 @@ func (m *DrinnkingGameManager) GetSession(sessionID string) (*Session, bool) {
 }
 
 type PublicGameResponse struct {
-	SessionID string `json:"sessionId"`
-	GameType  string `json:"gameType"`
-	HostID    string `json:"host"`
-	Players   int    `json:"players"`
+	SessionID    string `json:"sessionId"`
+	GameType     string `json:"gameType"`
+	HostID       string `json:"hostId"`
+	HostUsername string `json:hostUsername`
+	Players      int    `json:"players"`
 }
 
 func (m *DrinnkingGameManager) GetPublicSessions() []PublicGameResponse {
@@ -213,6 +216,7 @@ func (m *DrinnkingGameManager) GetPublicSessions() []PublicGameResponse {
 			SessionID: s.ID,
 			GameType:  s.GameType,
 			HostID:    s.HostID,
+			HostUsername: s.HostUsername,
 			Players:   len(s.Clients), // Thread-safe read?
 			// Note: Reading len(s.Clients) here is technically a race condition
 			// if you don't lock the Session itself, but for a simple list it's usually acceptable.
