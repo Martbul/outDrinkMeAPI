@@ -109,7 +109,7 @@ func main() {
 	notificationHandler := handlers.NewNotificationHandler(notificationService)
 	webhookHandler := handlers.NewWebhookHandler(userService)
 	photoDumpHandler := handlers.NewPhotoDumpHandler(photoDumpService)
-	drinkingGameHandler := handlers.NewDrinkingGamesHandler(gameManager)
+	drinkingGameHandler := handlers.NewDrinkingGamesHandler(gameManager, userService)
 
 	r := mux.NewRouter()
 

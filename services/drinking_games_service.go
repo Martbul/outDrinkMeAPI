@@ -32,11 +32,13 @@ const (
 type GameLogic interface {
 	HandleMessage(session *Session, sender *Client, message []byte)
 	InitState(session *Session) interface{}
+	ResetState(session *Session)
 }
 
 type Session struct {
 	ID          string
 	HostID      string
+	HostUsername string
 	GameType    string
 	GameEngine  GameLogic
 	Manager     *DrinnkingGameManager
@@ -60,10 +62,11 @@ func NewGameLogic(gameType string) GameLogic {
 	}
 }
 
-func NewSession(id, gameType, hostID string, manager *DrinnkingGameManager) *Session {
+func NewSession(id, gameType, hostID, hostUsername string, manager *DrinnkingGameManager) *Session {
 	return &Session{
 		ID:          id,
 		HostID:      hostID,
+		HostUsername: hostUsername,
 		GameType:    gameType,
 		GameEngine:  NewGameLogic(gameType),
 		Manager:     manager,
@@ -119,7 +122,7 @@ func (s *Session) Run() {
 		close(s.Unregister)
 		close(s.TriggerList)
 	}()
-//! when client disconnects againghe should be unregistered
+	//! when client disconnects againghe should be unregistered
 	for {
 		select {
 		case client := <-s.Register:
@@ -169,7 +172,7 @@ func NewDrinnkingGameManager() *DrinnkingGameManager {
 	}
 }
 
-func (m *DrinnkingGameManager) CreateSession(ctx context.Context, sessionID, gameType, clerkId string) *Session {
+func (m *DrinnkingGameManager) CreateSession(ctx context.Context, sessionID, gameType, clerkId, username string) *Session {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
@@ -177,7 +180,7 @@ func (m *DrinnkingGameManager) CreateSession(ctx context.Context, sessionID, gam
 		return s
 	}
 
-	s := NewSession(sessionID, gameType, clerkId, m)
+	s := NewSession(sessionID, gameType, clerkId, username, m)
 	m.sessions[sessionID] = s
 	go s.Run()
 	return s
@@ -191,10 +194,11 @@ func (m *DrinnkingGameManager) GetSession(sessionID string) (*Session, bool) {
 }
 
 type PublicGameResponse struct {
-	SessionID string `json:"sessionId"`
-	GameType  string `json:"gameType"`
-	HostID    string `json:"host"`
-	Players   int    `json:"players"`
+	SessionID    string `json:"sessionId"`
+	GameType     string `json:"gameType"`
+	HostID       string `json:"hostId"`
+	HostUsername string `json:"hostUsername"`
+	Players      int    `json:"players"`
 }
 
 func (m *DrinnkingGameManager) GetPublicSessions() []PublicGameResponse {
@@ -212,12 +216,15 @@ func (m *DrinnkingGameManager) GetPublicSessions() []PublicGameResponse {
 			SessionID: s.ID,
 			GameType:  s.GameType,
 			HostID:    s.HostID,
+			HostUsername: s.HostUsername,
 			Players:   len(s.Clients), // Thread-safe read?
 			// Note: Reading len(s.Clients) here is technically a race condition
 			// if you don't lock the Session itself, but for a simple list it's usually acceptable.
 			// Ideally, Session should have its own RWMutex for its Client map.
 		})
 	}
+
+	log.Println(games)
 
 	return games
 }
@@ -262,7 +269,6 @@ func (c *Client) ReadPump() {
 	for {
 		_, message, err := c.Conn.ReadMessage()
 		if err != nil {
-			log.Println("herere")
 			log.Println("Error reading msg", err)
 			break
 		}
@@ -284,7 +290,48 @@ func (c *Client) ReadPump() {
 				c.Session.Broadcast <- message
 				continue
 			}
-			
+
+			// if payload.Action == "reset_game" {
+			// 	// Only allow the host to reset the game to avoid abuse
+			// 	if c.IsHost {
+			// 		log.Printf("[Session %s] Resetting game state...", c.Session.ID)
+			// 		// Broadcast the reset message.
+			// 		// The frontend will receive this, see "reset_game", and set view to "waiting".
+			// 		// The GameEngine internal state will be overwritten the next time "start_game" is called via InitState.
+			// 		c.Session.Broadcast <- message
+			// 	}
+			// 	continue
+			// }
+
+			// if payload.Action == "reset_game" {
+			// 	// Only allow the host to reset the game
+			// 	if c.IsHost {
+			// 		log.Printf("[Session %s] Host resetting game...", c.Session.ID)
+
+			// 		// 1. Call the Game Engine's specific reset logic (stops timers, clears data)
+			// 		c.Session.GameEngine.ResetState(c.Session)
+
+			// 		// 2. Broadcast the reset action so frontends switch to "Waiting" screen
+			// 		resetPayload := map[string]string{
+			// 			"action": "reset_game",
+			// 		}
+			// 		bytes, _ := json.Marshal(resetPayload)
+			// 		c.Session.Broadcast <- bytes
+			// 	}
+			// 	continue
+			// }
+
+			if payload.Action == "reset_game" {
+				if c.IsHost {
+					log.Printf("[Session %s] Host resetting game...", c.Session.ID)
+
+					c.Session.GameEngine.ResetState(c.Session)
+
+					c.Session.Broadcast <- message
+
+				}
+				continue
+			}
 
 			// We check if it is a game_action. The Engine will check the "Type" (draw_card).
 			if payload.Action == "game_action" {
@@ -310,7 +357,6 @@ func (s *Session) getPlayersList() []PlayerInfo {
 	}
 	return players
 }
-
 
 func (s *Session) BroadcastPlayerList() {
 	// create a list of players

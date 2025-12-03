@@ -30,11 +30,13 @@ func handleConnections(w http.ResponseWriter, r *http.Request) {
 
 type DrinkingGamesHandler struct {
 	gameManager *services.DrinnkingGameManager
+	userService *services.UserService
 }
 
-func NewDrinkingGamesHandler(gameManager *services.DrinnkingGameManager) *DrinkingGamesHandler {
+func NewDrinkingGamesHandler(gameManager *services.DrinnkingGameManager, userService *services.UserService) *DrinkingGamesHandler {
 	return &DrinkingGamesHandler{
 		gameManager: gameManager,
+		userService: userService,
 	}
 }
 
@@ -45,6 +47,12 @@ func (h *DrinkingGamesHandler) CreateDrinkingGame(w http.ResponseWriter, r *http
 	clerkID, ok := middleware.GetClerkID(ctx)
 	if !ok {
 		http.Error(w, "Unauthorized", http.StatusUnauthorized)
+		return
+	}
+
+	user, err := h.userService.GetUserByClerkID(ctx, clerkID)
+	if err != nil {
+		respondWithError(w, http.StatusNotFound, "User not found")
 		return
 	}
 
@@ -59,7 +67,7 @@ func (h *DrinkingGamesHandler) CreateDrinkingGame(w http.ResponseWriter, r *http
 
 	sessionID := uuid.New().String()
 
-	h.gameManager.CreateSession(ctx, sessionID, req.GameType, clerkID)
+	h.gameManager.CreateSession(ctx, sessionID, req.GameType, clerkID, user.Username)
 
 	response := map[string]string{
 		"sessionId": sessionID,
