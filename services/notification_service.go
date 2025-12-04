@@ -18,7 +18,6 @@ type NotificationService struct {
 	dispatcher *NotificationDispatcher
 }
 
-
 func NewNotificationService(db *pgxpool.Pool) *NotificationService {
 	service := &NotificationService{
 		db: db,
@@ -46,8 +45,12 @@ func (s *NotificationService) GetUserIDFromClerkID(ctx context.Context, clerkID 
 	return s.getUserID(ctx, clerkID)
 }
 
-
 func (s *NotificationService) CreateNotification(ctx context.Context, req *notification.CreateNotificationRequest) (*notification.Notification, error) {
+	if req.Data == nil {
+		req.Data = make(map[string]any)
+	}
+	req.Data["recipient_user_id"] = req.UserID.String() // Add this!
+
 	// 1. Get Template from DB
 	template, err := s.getTemplate(ctx, req.Type)
 	if err != nil {
@@ -57,26 +60,32 @@ func (s *NotificationService) CreateNotification(ctx context.Context, req *notif
 	// 2. Render Content
 	title := s.renderTemplate(template.TitleTemplate, req.Data)
 	body := s.renderTemplate(template.BodyTemplate, req.Data)
-	
+
 	priority := req.Priority
 	if priority == "" {
 		priority = template.DefaultPriority
 	}
-	
+
 	expiresAt := time.Now().Add(time.Duration(template.TTLHours) * time.Hour)
 
 	// 3. Check Rate Limits
 	canSend, err := s.checkRateLimit(ctx, req.UserID)
-	if err != nil { return nil, err }
-	if !canSend { return nil, fmt.Errorf("rate limit exceeded") }
+	if err != nil {
+		return nil, err
+	}
+	if !canSend {
+		return nil, fmt.Errorf("rate limit exceeded")
+	}
 
 	// 4. Get Preferences
 	prefs, err := s.GetUserPreferencesByUUID(ctx, req.UserID)
 	if err != nil {
 		prefs, err = s.createDefaultPreferences(ctx, req.UserID)
-		if err != nil { return nil, err }
+		if err != nil {
+			return nil, err
+		}
 	}
-	
+
 	// 5. Check if specific type is disabled by user
 	if enabled, exists := prefs.EnabledTypes[string(req.Type)]; exists && !enabled {
 		return nil, nil // Silently skip
@@ -84,7 +93,7 @@ func (s *NotificationService) CreateNotification(ctx context.Context, req *notif
 
 	// 6. Insert Notification
 	dataJSON, _ := json.Marshal(req.Data)
-	
+
 	// FIXED: Added 'retry_count' to fields and '0' to values
 	query := `
 		INSERT INTO notifications (
@@ -118,7 +127,7 @@ func (s *NotificationService) CreateNotification(ctx context.Context, req *notif
 	if len(dataStr) > 0 {
 		_ = json.Unmarshal([]byte(dataStr), &notif.Data)
 	}
-	
+
 	// 7. Update Rate Limit Counter
 	s.incrementRateLimit(ctx, req.UserID)
 
@@ -143,7 +152,9 @@ func (s *NotificationService) SetPushProvider(provider PushNotificationProvider)
 
 func (s *NotificationService) GetNotifications(ctx context.Context, clerkID string, page, pageSize int, unreadOnly bool) (*notification.NotificationListResponse, error) {
 	userID, err := s.getUserID(ctx, clerkID)
-	if err != nil { return nil, err }
+	if err != nil {
+		return nil, err
+	}
 
 	offset := (page - 1) * pageSize
 	whereClause := "WHERE user_id = $1"
@@ -177,8 +188,10 @@ func (s *NotificationService) GetNotifications(ctx context.Context, clerkID stri
 			&notif.SentAt, &notif.ReadAt, &notif.FailedAt, &notif.FailureReason,
 			&notif.RetryCount, &notif.ActionURL, &notif.CreatedAt, &notif.ExpiresAt,
 		)
-		if err != nil { return nil, err }
-		
+		if err != nil {
+			return nil, err
+		}
+
 		if len(dataStr) > 0 {
 			_ = json.Unmarshal([]byte(dataStr), &notif.Data)
 		}
@@ -200,7 +213,9 @@ func (s *NotificationService) GetNotifications(ctx context.Context, clerkID stri
 
 func (s *NotificationService) GetUnreadCount(ctx context.Context, clerkID string) (int, error) {
 	userID, err := s.getUserID(ctx, clerkID)
-	if err != nil { return 0, err }
+	if err != nil {
+		return 0, err
+	}
 
 	var unreadCount int
 	query := "SELECT COUNT(*) FROM notifications WHERE user_id = $1 AND read_at IS NULL"
@@ -213,7 +228,9 @@ func (s *NotificationService) GetUnreadCount(ctx context.Context, clerkID string
 
 func (s *NotificationService) MarkAsRead(ctx context.Context, notificationID uuid.UUID, clerkID string) error {
 	userID, err := s.getUserID(ctx, clerkID)
-	if err != nil { return err }
+	if err != nil {
+		return err
+	}
 
 	query := `
 		UPDATE notifications
@@ -221,14 +238,20 @@ func (s *NotificationService) MarkAsRead(ctx context.Context, notificationID uui
 		WHERE id = $2 AND user_id = $3 AND read_at IS NULL
 	`
 	result, err := s.db.Exec(ctx, query, notification.StatusRead, notificationID, userID)
-	if err != nil { return err }
-	if result.RowsAffected() == 0 { return fmt.Errorf("notification not found or already read") }
+	if err != nil {
+		return err
+	}
+	if result.RowsAffected() == 0 {
+		return fmt.Errorf("notification not found or already read")
+	}
 	return nil
 }
 
 func (s *NotificationService) MarkAllAsRead(ctx context.Context, clerkID string) error {
 	userID, err := s.getUserID(ctx, clerkID)
-	if err != nil { return err }
+	if err != nil {
+		return err
+	}
 
 	query := `UPDATE notifications SET read_at = NOW(), status = $1 WHERE user_id = $2 AND read_at IS NULL`
 	_, err = s.db.Exec(ctx, query, notification.StatusRead, userID)
@@ -237,12 +260,18 @@ func (s *NotificationService) MarkAllAsRead(ctx context.Context, clerkID string)
 
 func (s *NotificationService) DeleteNotification(ctx context.Context, notificationID uuid.UUID, clerkID string) error {
 	userID, err := s.getUserID(ctx, clerkID)
-	if err != nil { return err }
-	
+	if err != nil {
+		return err
+	}
+
 	query := "DELETE FROM notifications WHERE id = $1 AND user_id = $2"
 	result, err := s.db.Exec(ctx, query, notificationID, userID)
-	if err != nil { return err }
-	if result.RowsAffected() == 0 { return fmt.Errorf("notification not found") }
+	if err != nil {
+		return err
+	}
+	if result.RowsAffected() == 0 {
+		return fmt.Errorf("notification not found")
+	}
 	return nil
 }
 
@@ -252,7 +281,9 @@ func (s *NotificationService) DeleteNotification(ctx context.Context, notificati
 
 func (s *NotificationService) GetUserPreferences(ctx context.Context, clerkID string) (*notification.NotificationPreferences, error) {
 	userID, err := s.getUserID(ctx, clerkID)
-	if err != nil { return nil, err }
+	if err != nil {
+		return nil, err
+	}
 	return s.GetUserPreferencesByUUID(ctx, userID)
 }
 
@@ -277,7 +308,9 @@ func (s *NotificationService) GetUserPreferencesByUUID(ctx context.Context, user
 	)
 
 	if err != nil {
-		if err == pgx.ErrNoRows { return nil, fmt.Errorf("preferences not found") }
+		if err == pgx.ErrNoRows {
+			return nil, fmt.Errorf("preferences not found")
+		}
 		return nil, fmt.Errorf("failed to get preferences: %w", err)
 	}
 
@@ -288,13 +321,15 @@ func (s *NotificationService) GetUserPreferencesByUUID(ctx context.Context, user
 	if len(deviceTokensStr) > 0 {
 		_ = json.Unmarshal([]byte(deviceTokensStr), &prefs.DeviceTokens)
 	}
-	
+
 	return prefs, nil
 }
 
 func (s *NotificationService) UpdateUserPreferences(ctx context.Context, clerkID string, req *notification.UpdatePreferencesRequest) (*notification.NotificationPreferences, error) {
 	userID, err := s.getUserID(ctx, clerkID)
-	if err != nil { return nil, err }
+	if err != nil {
+		return nil, err
+	}
 
 	updates := []string{}
 	args := []interface{}{userID}
@@ -364,10 +399,14 @@ func (s *NotificationService) UpdateUserPreferences(ctx context.Context, clerkID
 
 func (s *NotificationService) RegisterDevice(ctx context.Context, clerkID string, req notification.RegisterDeviceRequest) error {
 	userID, err := s.getUserID(ctx, clerkID)
-	if err != nil { return err }
+	if err != nil {
+		return err
+	}
 
 	prefs, err := s.GetUserPreferencesByUUID(ctx, userID)
-	if err != nil { return fmt.Errorf("failed to get preferences: %w", err) }
+	if err != nil {
+		return fmt.Errorf("failed to get preferences: %w", err)
+	}
 
 	newToken := notification.DeviceToken{
 		Token:    req.Token,
@@ -394,8 +433,10 @@ func (s *NotificationService) RegisterDevice(ctx context.Context, clerkID string
 	query := `UPDATE notification_preferences SET device_tokens = $2, updated_at = NOW() WHERE user_id = $1`
 
 	_, err = s.db.Exec(ctx, query, userID, tokensJSON)
-	if err != nil { return fmt.Errorf("failed to register device: %w", err) }
-	
+	if err != nil {
+		return fmt.Errorf("failed to register device: %w", err)
+	}
+
 	return nil
 }
 
@@ -414,7 +455,9 @@ func (s *NotificationService) getTemplate(ctx context.Context, notifType notific
 		&template.ID, &template.Type, &template.TitleTemplate, &template.BodyTemplate,
 		&template.DefaultPriority, &template.TTLHours, &template.CreatedAt, &template.UpdatedAt,
 	)
-	if err != nil { return nil, err }
+	if err != nil {
+		return nil, err
+	}
 	return template, nil
 }
 
@@ -431,7 +474,9 @@ func (s *NotificationService) createDefaultPreferences(ctx context.Context, user
 	query := `INSERT INTO notification_preferences (user_id) VALUES ($1) RETURNING id`
 	var id uuid.UUID
 	err := s.db.QueryRow(ctx, query, userID).Scan(&id)
-	if err != nil { return nil, err }
+	if err != nil {
+		return nil, err
+	}
 	return s.GetUserPreferencesByUUID(ctx, userID)
 }
 
