@@ -892,17 +892,46 @@ func (g *MafiaLogic) ResetState(s *Session) {
 
 func (g *MafiaLogic) InitState(s *Session) interface{} {
 	g.mu.Lock()
-	defer g.mu.Unlock()
+	
+	// 1. Check Player Count (Safety check)
+	if len(s.Clients) < 3 {
+		// Not enough players, remain in lobby state essentially
+		g.Phase = "LOBBY"
+		Message := "Not enough players to start (Min 3)"
+		g.mu.Unlock()
+		return MafiaGameState{
+			Phase: "LOBBY", 
+			Message: Message,
+		}
+	}
 
+	// 2. Initialize Maps
 	g.Phase = "NIGHT"
 	g.Roles = make(map[string]string)
 	g.IsAlive = make(map[string]bool)
 	g.Votes = make(map[string]string)
 	g.NightActions = make(map[string]string)
 
+	// 3. Mark everyone alive
+	for client := range s.Clients {
+		g.IsAlive[client.UserID] = true
+	}
+
+	// 4. Assign Roles
+	// Note: We hold the lock here because assignRoles writes to g.Roles
+	g.assignRoles(s)
+	
+	g.mu.Unlock() // Unlock before startNightPhase because it locks internally
+
+	// 5. Start the Night Phase immediately
+	// This broadcasts the "NIGHT" state to everyone, effectively skipping the second lobby
+	g.startNightPhase(s)
+
+	// Return nil or the state. Since startNightPhase broadcasts, 
+	// the return value here is less critical, but we return the initial state for consistency.
 	return MafiaGameState{
-		Phase:   "NIGHT",
-		Message: "Waiting for Host to start...",
+		Phase: "NIGHT",
+		Message: "Night has fallen",
 	}
 }
 
@@ -920,20 +949,20 @@ func (g *MafiaLogic) HandleMessage(s *Session, sender *Client, msg []byte) {
 	g.mu.Lock()
 
 	// 1. START GAME
-	if payload.Type == "start_game" && sender.IsHost && g.Phase == "NIGHT" {
-		if len(s.Clients) < 3 {
-			g.mu.Unlock()
-			return
-		}
-		g.assignRoles(s)
-		g.IsAlive = make(map[string]bool)
-		for client := range s.Clients {
-			g.IsAlive[client.UserID] = true
-		}
-		g.mu.Unlock()
-		g.startNightPhase(s)
-		return
-	}
+	// if payload.Type == "start_game" && sender.IsHost && g.Phase == "NIGHT" {
+	// 	if len(s.Clients) < 3 {
+	// 		g.mu.Unlock()
+	// 		return
+	// 	}
+	// 	g.assignRoles(s)
+	// 	g.IsAlive = make(map[string]bool)
+	// 	for client := range s.Clients {
+	// 		g.IsAlive[client.UserID] = true
+	// 	}
+	// 	g.mu.Unlock()
+	// 	g.startNightPhase(s)
+	// 	return
+	// }
 
 	// 2. NIGHT ACTIONS
 	if payload.Type == "night_action" && g.Phase == "NIGHT" {
