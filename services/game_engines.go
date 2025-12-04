@@ -1013,7 +1013,7 @@ func (g *MafiaLogic) HandleMessage(s *Session, sender *Client, msg []byte) {
 		}
 
 		// If not everyone voted yet, broadcast progress
-		g.broadcastState(s, "DAY", fmt.Sprintf("Votes cast: %d/%d", len(g.Votes), aliveCount))
+		g.broadcastState(s, "DAY", fmt.Sprintf("Votes: %d/%d", len(g.Votes), aliveCount))
 		g.mu.Unlock()
 		return
 	}
@@ -1084,7 +1084,7 @@ func (g *MafiaLogic) resolveNight(s *Session) {
 	
 	if killedID != "" {
 		if killedID == healedID {
-			finalDeathMsg = "The Doctor saved the victim"
+			finalDeathMsg = "The Doctor saved the victim."
 		} else {
 			g.IsAlive[killedID] = false
 			finalDeathMsg = fmt.Sprintf("%s was killed in the night", g.getUsername(s, killedID))
@@ -1113,10 +1113,65 @@ func (g *MafiaLogic) resolveNight(s *Session) {
 	g.startDayPhase(s, finalDeathMsg)
 }
 
+// func (g *MafiaLogic) resolveDay(s *Session) {
+// 	g.mu.Lock()
+
+// 	// Tally Votes
+// 	voteCounts := make(map[string]int)
+// 	for _, target := range g.Votes {
+// 		voteCounts[target]++
+// 	}
+
+// 	maxVotes := 0
+// 	victimID := ""
+// 	isTie := false
+
+// 	for target, count := range voteCounts {
+// 		if count > maxVotes {
+// 			maxVotes = count
+// 			victimID = target
+// 			isTie = false
+// 		} else if count == maxVotes {
+// 			isTie = true
+// 		}
+// 	}
+
+// 	resultMsg := ""
+// 	if isTie || maxVotes == 0 {
+// 		resultMsg = "Tie vote. No one was executed"
+// 	} else {
+// 		g.IsAlive[victimID] = false
+// 		resultMsg = fmt.Sprintf("The town decided. %s was executed", g.getUsername(s, victimID))
+// 	}
+
+// 	if g.checkWinCondition(s) {
+// 		g.mu.Unlock()
+// 		return
+// 	}
+
+// 	g.mu.Unlock()
+
+// 	// Brief pause (logic-wise, we just start night immediately after sending result)
+// 	// Or we can wait for Host to click "Next Round" if we wanted, 
+// 	// but the prompt implied transition on player action (voting done -> Result -> Night).
+	
+// 	// We'll send the result, then immediately start night instructions.
+// 	// Effectively "Phase Results" is skipped or instantaneous.
+	
+// 	// Helper to send message before changing state
+// 	g.mu.Lock()
+// 	g.broadcastState(s, "RESULTS", resultMsg) 
+// 	g.mu.Unlock()
+
+// 	// Small artificial blocking/delay isn't possible without timers/sleep.
+// 	// We will just transition to Night immediately. 
+// 	// The client will receive "RESULTS" packet then immediately "NIGHT" packet.
+// 	g.startNightPhase(s)
+// }
 func (g *MafiaLogic) resolveDay(s *Session) {
 	g.mu.Lock()
 
-	// Tally Votes
+	// 1. Tally Votes
 	voteCounts := make(map[string]int)
 	for _, target := range g.Votes {
 		voteCounts[target]++
@@ -1136,37 +1191,32 @@ func (g *MafiaLogic) resolveDay(s *Session) {
 		}
 	}
 
+	// 2. Determine Result
 	resultMsg := ""
 	if isTie || maxVotes == 0 {
-		resultMsg = "Tie vote. No one was executed"
+		resultMsg = "Tie vote. No one was executed."
 	} else {
 		g.IsAlive[victimID] = false
-		resultMsg = fmt.Sprintf("The town decided. %s was executed", g.getUsername(s, victimID))
+		resultMsg = fmt.Sprintf("The town decided. %s was executed.", g.getUsername(s, victimID))
 	}
 
+	// 3. Check Win Condition immediately
 	if g.checkWinCondition(s) {
 		g.mu.Unlock()
 		return
 	}
 
-	g.mu.Unlock()
-
-	// Brief pause (logic-wise, we just start night immediately after sending result)
-	// Or we can wait for Host to click "Next Round" if we wanted, 
-	// but the prompt implied transition on player action (voting done -> Result -> Night).
+	// 4. Broadcast the RESULT
+	g.Phase = "RESULTS" // Update internal phase just in case
+	g.broadcastState(s, "RESULTS", resultMsg)
 	
-	// We'll send the result, then immediately start night instructions.
-	// Effectively "Phase Results" is skipped or instantaneous.
-	
-	// Helper to send message before changing state
-	g.mu.Lock()
-	g.broadcastState(s, "RESULTS", resultMsg) 
-	g.mu.Unlock()
+	g.mu.Unlock() // <--- UNLOCK HERE so the server stays responsive
 
-	// Small artificial blocking/delay isn't possible without timers/sleep.
-	// We will just transition to Night immediately. 
-	// The client will receive "RESULTS" packet then immediately "NIGHT" packet.
-	g.startNightPhase(s)
+	// 5. Wait, then start Night (in a separate goroutine)
+	go func() {
+		time.Sleep(5 * time.Second) // Show results for 5 seconds
+		g.startNightPhase(s)
+	}()
 }
 
 
