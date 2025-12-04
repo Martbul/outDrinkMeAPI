@@ -1303,7 +1303,6 @@ func (g *MafiaLogic) broadcastState(s *Session, phase string, msg string) {
 	bytes, _ := json.Marshal(payload)
 	s.Broadcast <- bytes //sending the whole shit to the sessions broadcast channel, which then sends the state to every client
 }
-
 func (g *MafiaLogic) assignRoles(s *Session) {
 	ids := make([]string, 0, len(s.Clients))
 	for client := range s.Clients {
@@ -1323,32 +1322,33 @@ func (g *MafiaLogic) assignRoles(s *Session) {
 	g.Roles[ids[0]] = ROLE_MAFIA
 
 	if count == 4 {
-		//1 mafia, 1 doc, 2 civ -> index 1 is doc
 		g.Roles[ids[1]] = ROLE_DOCTOR
 	} else if count >= 5 {
-		// 1 Mafia, 1 Doc, 1 Police, 1 Spy, 1 Whore, rest Civ
-		// Indices: 0=Mafia
 		g.Roles[ids[1]] = ROLE_DOCTOR
 		g.Roles[ids[2]] = ROLE_POLICE
 		g.Roles[ids[3]] = ROLE_SPY
 		g.Roles[ids[4]] = ROLE_WHORE
 	}
 
-	//send roles
+	// --- SEND ROLES TO CLIENTS ---
 	for client := range s.Clients {
 		role := g.Roles[client.UserID]
+		
 		payload := GameStatePayload{
 			Action: "game_update",
 			GameState: MafiaGameState{
-				Phase:  "LOBBY",
+				// CHANGE THIS FROM "LOBBY" TO "NIGHT"
+				// This ensures the UI renders the Board immediately with the Role
+				Phase:  "NIGHT", 
 				MyRole: role,
+				Message: "Assigning Roles...",
 			},
 		}
-		bytes, _ := json.Marshal(payload) //encoding json into bytes
+		bytes, _ := json.Marshal(payload)
 		client.Send <- bytes
 	}
-
 }
+
 
 func (g *MafiaLogic) getUsername(s *Session, userID string) string {
 	for c := range s.Clients {
