@@ -894,14 +894,14 @@ func (g *MafiaLogic) InitState(s *Session) interface{} {
 	g.mu.Lock()
 	defer g.mu.Unlock()
 
-	g.Phase = "LOBBY"
+	g.Phase = "NIGHT"
 	g.Roles = make(map[string]string)
 	g.IsAlive = make(map[string]bool)
 	g.Votes = make(map[string]string)
 	g.NightActions = make(map[string]string)
 
 	return MafiaGameState{
-		Phase:   "LOBBY",
+		Phase:   "NIGHT",
 		Message: "Waiting for Host to start...",
 	}
 }
@@ -920,7 +920,7 @@ func (g *MafiaLogic) HandleMessage(s *Session, sender *Client, msg []byte) {
 	g.mu.Lock()
 
 	// 1. START GAME
-	if payload.Type == "start_game" && sender.IsHost && g.Phase == "LOBBY" {
+	if payload.Type == "start_game" && sender.IsHost && g.Phase == "NIGHT" {
 		if len(s.Clients) < 3 {
 			g.mu.Unlock()
 			return
