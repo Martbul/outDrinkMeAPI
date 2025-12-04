@@ -87,10 +87,13 @@ func init() {
 	gameManager = services.NewDrinnkingGameManager()
 
 	if err != nil {
-		log.Printf("WARNING: FCM not initialized: %v", err)
-	} else {
-		notificationService.SetPushProvider(fcmService)
-	}
+        log.Printf("Warning: Could not initialize FCM: %v", err)
+    } else {
+        // 3. INJECT the provider into the service
+        notificationService.SetPushProvider(fcmService)
+        log.Println("FCM Push Provider initialized successfully")
+    }
+
 
 	middleware.InitPrometheus()
 }
