@@ -734,8 +734,6 @@ func (g *BurnBookLogic) getRoundResults(idx int) *RoundResult {
 	}
 }
 
-
-
 func (g *BurnBookLogic) startQuestionTimer(s *Session) {
 	g.mu.Lock()
 
@@ -846,7 +844,6 @@ func (g *BurnBookLogic) calculateWinner(idx int) (string, int) {
 	return winnerID, maxVotes
 }
 
-
 const (
 	ROLE_MAFIA    = "MAFIA"
 	ROLE_DOCTOR   = "DOCTOR"
@@ -863,10 +860,11 @@ type MafiaGameState struct {
 	// Detailed breakdown of who voted for whom (visible during DAY)
 	Votes map[string]string `json:"votes"`
 
-	Phase   string `json:"phase"` // "LOBBY", "NIGHT", "DAY", "GAME_OVER"
-	Message string `json:"message"`
-	MyRole  string `json:"myRole,omitempty"`
-	Winner  string `json:"winner,omitempty"`
+	Phase         string            `json:"phase"` // "LOBBY", "NIGHT", "DAY", "GAME_OVER"
+	Message       string            `json:"message"`
+	MyRole        string            `json:"myRole,omitempty"`
+	Winner        string            `json:"winner,omitempty"`
+	RevealedRoles map[string]string `json:"revealedRoles,omitempty"`
 }
 
 type MafiaLogic struct {
@@ -892,7 +890,7 @@ func (g *MafiaLogic) ResetState(s *Session) {
 
 func (g *MafiaLogic) InitState(s *Session) interface{} {
 	g.mu.Lock()
-	
+
 	// 1. Check Player Count (Safety check)
 	if len(s.Clients) < 3 {
 		// Not enough players, remain in lobby state essentially
@@ -900,7 +898,7 @@ func (g *MafiaLogic) InitState(s *Session) interface{} {
 		Message := "Not enough players to start (Min 3)"
 		g.mu.Unlock()
 		return MafiaGameState{
-			Phase: "LOBBY", 
+			Phase:   "LOBBY",
 			Message: Message,
 		}
 	}
@@ -920,17 +918,17 @@ func (g *MafiaLogic) InitState(s *Session) interface{} {
 	// 4. Assign Roles
 	// Note: We hold the lock here because assignRoles writes to g.Roles
 	g.assignRoles(s)
-	
+
 	g.mu.Unlock() // Unlock before startNightPhase because it locks internally
 
 	// 5. Start the Night Phase immediately
 	// This broadcasts the "NIGHT" state to everyone, effectively skipping the second lobby
 	g.startNightPhase(s)
 
-	// Return nil or the state. Since startNightPhase broadcasts, 
+	// Return nil or the state. Since startNightPhase broadcasts,
 	// the return value here is less critical, but we return the initial state for consistency.
 	return MafiaGameState{
-		Phase: "NIGHT",
+		Phase:   "NIGHT",
 		Message: "Night has fallen",
 	}
 }
@@ -970,12 +968,12 @@ func (g *MafiaLogic) HandleMessage(s *Session, sender *Client, msg []byte) {
 			g.mu.Unlock()
 			return
 		}
-		
+
 		role := g.Roles[sender.UserID]
 		// Only special roles act
 		if role != ROLE_CIVILIAN {
 			g.NightActions[sender.UserID] = payload.TargetID
-			
+
 			// Check if all active roles have submitted their actions
 			if g.haveAllNightActionsBeenReceived() {
 				g.mu.Unlock()
@@ -1039,7 +1037,7 @@ func (g *MafiaLogic) resolveNight(s *Session) {
 	// 2. Prepare outcomes
 	killedID := ""
 	healedID := ""
-	
+
 	// Private info to send back to Police/Spy
 	policeResult := ""
 	policeRecipient := ""
@@ -1081,7 +1079,7 @@ func (g *MafiaLogic) resolveNight(s *Session) {
 
 	// 4. Resolve Life/Death
 	finalDeathMsg := "The night was quiet"
-	
+
 	if killedID != "" {
 		if killedID == healedID {
 			finalDeathMsg = "The Doctor saved the victim."
@@ -1152,26 +1150,27 @@ func (g *MafiaLogic) resolveNight(s *Session) {
 // 	g.mu.Unlock()
 
 // 	// Brief pause (logic-wise, we just start night immediately after sending result)
-// 	// Or we can wait for Host to click "Next Round" if we wanted, 
+// 	// Or we can wait for Host to click "Next Round" if we wanted,
 // 	// but the prompt implied transition on player action (voting done -> Result -> Night).
-	
+
 // 	// We'll send the result, then immediately start night instructions.
 // 	// Effectively "Phase Results" is skipped or instantaneous.
-	
+
 // 	// Helper to send message before changing state
 // 	g.mu.Lock()
-// 	g.broadcastState(s, "RESULTS", resultMsg) 
+// 	g.broadcastState(s, "RESULTS", resultMsg)
 // 	g.mu.Unlock()
 
-// 	// Small artificial blocking/delay isn't possible without timers/sleep.
-// 	// We will just transition to Night immediately. 
-// 	// The client will receive "RESULTS" packet then immediately "NIGHT" packet.
-// 	g.startNightPhase(s)
-// }
+//		// Small artificial blocking/delay isn't possible without timers/sleep.
+//		// We will just transition to Night immediately.
+//		// The client will receive "RESULTS" packet then immediately "NIGHT" packet.
+//		g.startNightPhase(s)
+//	}
+
 func (g *MafiaLogic) resolveDay(s *Session) {
 	g.mu.Lock()
 
-	// 1. Tally Votes
+	// 1. Tally Votes & Determine Victim
 	voteCounts := make(map[string]int)
 	for _, target := range g.Votes {
 		voteCounts[target]++
@@ -1191,7 +1190,6 @@ func (g *MafiaLogic) resolveDay(s *Session) {
 		}
 	}
 
-	// 2. Determine Result
 	resultMsg := ""
 	if isTie || maxVotes == 0 {
 		resultMsg = "Tie vote. No one was executed."
@@ -1200,36 +1198,38 @@ func (g *MafiaLogic) resolveDay(s *Session) {
 		resultMsg = fmt.Sprintf("The town decided. %s was executed.", g.getUsername(s, victimID))
 	}
 
-	// 3. Check Win Condition immediately
-	if g.checkWinCondition(s) {
-		g.mu.Unlock()
-		return
-	}
-
-	// 4. Broadcast the RESULT
-	g.Phase = "RESULTS" // Update internal phase just in case
+	// 2. BROADCAST RESULT IMMEDIATELY (Do not check win yet)
+	g.Phase = "RESULTS"
 	g.broadcastState(s, "RESULTS", resultMsg)
 	
-	g.mu.Unlock() // <--- UNLOCK HERE so the server stays responsive
+	g.mu.Unlock()
 
-	// 5. Wait, then start Night (in a separate goroutine)
+	// 3. Wait 5 seconds, THEN check win or start night
 	go func() {
-		time.Sleep(5 * time.Second) // Show results for 5 seconds
+		time.Sleep(5 * time.Second)
+
+		g.mu.Lock()
+		// Check if the execution ended the game
+		if g.checkWinCondition(s) {
+			g.mu.Unlock()
+			return // Game Over broadcast sent inside checkWinCondition
+		}
+		g.mu.Unlock()
+
+		// If game not over, proceed to Night
 		g.startNightPhase(s)
 	}()
 }
-
 
 func (g *MafiaLogic) startDayPhase(s *Session, morningMsg string) {
 	g.mu.Lock()
 	g.Phase = "DAY"
 	g.Votes = make(map[string]string) // Reset votes
-	
+
 	// Broadcast start of day
 	g.broadcastState(s, "DAY", morningMsg+" Discuss and Vote")
 	g.mu.Unlock()
 }
-
 func (g *MafiaLogic) checkWinCondition(s *Session) bool {
 	mafiaCount := 0
 	civCount := 0
@@ -1253,12 +1253,40 @@ func (g *MafiaLogic) checkWinCondition(s *Session) bool {
 
 	if winner != "" {
 		g.Phase = "GAME_OVER"
-		g.broadcastState(s, "GAME_OVER", fmt.Sprintf("GAME OVER! %s WIN!", winner))
+		
+		// Create the Game Over payload MANUALLY to include RevealedRoles
+		// (We cannot use standard broadcastState because it doesn't send Roles map)
+		alive := []PlayerInfo{}
+		dead := []PlayerInfo{}
+
+		for client := range s.Clients {
+			p := PlayerInfo{ID: client.UserID, Username: client.Username}
+			if g.IsAlive[client.UserID] {
+				alive = append(alive, p)
+			} else {
+				dead = append(dead, p)
+			}
+		}
+
+		payload := GameStatePayload{
+			Action: "game_update",
+			GameState: MafiaGameState{
+				Phase:         "GAME_OVER",
+				Message:       fmt.Sprintf("GAME OVER! %s WIN!", winner),
+				AlivePlayers:  alive,
+				DeadPlayers:   dead,
+				Votes:         g.Votes,
+				Winner:        winner,
+				RevealedRoles: g.Roles, // <--- SEND ALL ROLES HERE
+			},
+		}
+
+		bytes, _ := json.Marshal(payload)
+		s.Broadcast <- bytes
 		return true
 	}
 	return false
 }
-
 
 func (g *MafiaLogic) haveAllNightActionsBeenReceived() bool {
 	for id, alive := range g.IsAlive {
@@ -1383,14 +1411,14 @@ func (g *MafiaLogic) assignRoles(s *Session) {
 	// --- SEND ROLES TO CLIENTS ---
 	for client := range s.Clients {
 		role := g.Roles[client.UserID]
-		
+
 		payload := GameStatePayload{
 			Action: "game_update",
 			GameState: MafiaGameState{
 				// CHANGE THIS FROM "LOBBY" TO "NIGHT"
 				// This ensures the UI renders the Board immediately with the Role
-				Phase:  "NIGHT", 
-				MyRole: role,
+				Phase:   "NIGHT",
+				MyRole:  role,
 				Message: "Assigning Roles...",
 			},
 		}
@@ -1398,7 +1426,6 @@ func (g *MafiaLogic) assignRoles(s *Session) {
 		client.Send <- bytes
 	}
 }
-
 
 func (g *MafiaLogic) getUsername(s *Session, userID string) string {
 	for c := range s.Clients {
@@ -1408,7 +1435,6 @@ func (g *MafiaLogic) getUsername(s *Session, userID string) string {
 	}
 	return "Unknown"
 }
-
 
 func (g *MafiaLogic) getClientByID(s *Session, userID string) *Client {
 	for c := range s.Clients {
