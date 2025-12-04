@@ -291,35 +291,7 @@ func (c *Client) ReadPump() {
 				continue
 			}
 
-			// if payload.Action == "reset_game" {
-			// 	// Only allow the host to reset the game to avoid abuse
-			// 	if c.IsHost {
-			// 		log.Printf("[Session %s] Resetting game state...", c.Session.ID)
-			// 		// Broadcast the reset message.
-			// 		// The frontend will receive this, see "reset_game", and set view to "waiting".
-			// 		// The GameEngine internal state will be overwritten the next time "start_game" is called via InitState.
-			// 		c.Session.Broadcast <- message
-			// 	}
-			// 	continue
-			// }
-
-			// if payload.Action == "reset_game" {
-			// 	// Only allow the host to reset the game
-			// 	if c.IsHost {
-			// 		log.Printf("[Session %s] Host resetting game...", c.Session.ID)
-
-			// 		// 1. Call the Game Engine's specific reset logic (stops timers, clears data)
-			// 		c.Session.GameEngine.ResetState(c.Session)
-
-			// 		// 2. Broadcast the reset action so frontends switch to "Waiting" screen
-			// 		resetPayload := map[string]string{
-			// 			"action": "reset_game",
-			// 		}
-			// 		bytes, _ := json.Marshal(resetPayload)
-			// 		c.Session.Broadcast <- bytes
-			// 	}
-			// 	continue
-			// }
+			
 
 			if payload.Action == "reset_game" {
 				if c.IsHost {
