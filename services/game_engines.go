@@ -965,14 +965,11 @@ if payload.Type == "vote" && g.Phase == "DAY" {
 func (g *MafiaLogic) resolveNight(s *Session) {
 	g.mu.Lock()
 
-	// 1. Identify who targets whom
-	// We need to resolve blocks (Whore) first.
 	blockedPlayers := make(map[string]bool)
 
-	// Find the Whore's action
 	for actorID, targetID := range g.NightActions {
 		if g.Roles[actorID] == ROLE_WHORE {
-			blockedPlayers[targetID] = true
+			blockedPlayers[targetID] = true //blocked
 		}
 	}
 
@@ -981,9 +978,17 @@ func (g *MafiaLogic) resolveNight(s *Session) {
 	policeResult := ""
 	policeRecipient := ""
 
-	for actorID, targetID := range g.NightActions {
-
+for actorID, targetID := range g.NightActions {
+		
+		// --- CASE 1: THE ACTOR IS BLOCKED (Killer fucked by Whore) ---
 		if blockedPlayers[actorID] {
+			// Notify the player they were blocked
+			client := g.getClientByID(s, actorID)
+			if client != nil {
+				g.sendPrivateMessage(client, "system_message", "You were visited by the Whore. Your action was blocked!")
+			}
+			
+			// Skip their action (The Kill never happens)
 			continue
 		}
 
@@ -996,6 +1001,7 @@ func (g *MafiaLogic) resolveNight(s *Session) {
 		case ROLE_POLICE:
 			policeRecipient = actorID
 			targetRole := g.Roles[targetID]
+			// Police sees Mafia as Mafia, everyone else (including Spy) as Innocent
 			isDetected := targetRole == ROLE_MAFIA 
 			targetUsername := g.getUsername(s, targetID)
 
@@ -1006,6 +1012,8 @@ func (g *MafiaLogic) resolveNight(s *Session) {
 			}
 		}
 	}
+
+	
 	// 4. Resolve Life/Death
 	finalDeathMsg := "The night was quiet"
 
@@ -1014,10 +1022,8 @@ func (g *MafiaLogic) resolveNight(s *Session) {
 		if killedID == healedID {
 			finalDeathMsg = "The Doctor saved the victim"
 			
-		// Rule 2: (NEW) If the victim was with the Whore, they are safe
-		// (The Mafia doesn't kill if the Whore is in the room with the victim)
 		} else if blockedPlayers[killedID] {
-			finalDeathMsg = "Someone was saved by an unexpected visitor" // Ambiguous message
+			finalDeathMsg = "The Whore distracted the victim" // Ambiguous message
 			// Reset killedID so no one dies
 			killedID = ""
 			
