@@ -922,10 +922,16 @@ func (g *MafiaLogic) HandleMessage(s *Session, sender *Client, msg []byte) {
 		return
 	}
 
-	// 3. DAY VOTING (Resolves Day)
-	if payload.Type == "vote" && g.Phase == "DAY" {
-		// Validate voter and target are alive
-		if !g.IsAlive[sender.UserID] || !g.IsAlive[payload.TargetID] {
+if payload.Type == "vote" && g.Phase == "DAY" {
+		// Validate voter is alive
+		if !g.IsAlive[sender.UserID] {
+			g.mu.Unlock()
+			return
+		}
+
+		// --- CHANGED CHECK ---
+		// Target must be Alive OR be the special "SKIP" token
+		if payload.TargetID != "SKIP" && !g.IsAlive[payload.TargetID] {
 			g.mu.Unlock()
 			return
 		}
@@ -1108,20 +1114,26 @@ func (g *MafiaLogic) resolveNight(s *Session) {
 //		// The client will receive "RESULTS" packet then immediately "NIGHT" packet.
 //		g.startNightPhase(s)
 //	}
-
 func (g *MafiaLogic) resolveDay(s *Session) {
 	g.mu.Lock()
 
-	// 1. Tally Votes & Determine Victim
+	// 1. Tally Votes
 	voteCounts := make(map[string]int)
+	skipCount := 0 // Track skips
+
 	for _, target := range g.Votes {
-		voteCounts[target]++
+		if target == "SKIP" {
+			skipCount++
+		} else {
+			voteCounts[target]++
+		}
 	}
 
 	maxVotes := 0
 	victimID := ""
 	isTie := false
 
+	// Find the player with most votes
 	for target, count := range voteCounts {
 		if count > maxVotes {
 			maxVotes = count
@@ -1133,9 +1145,15 @@ func (g *MafiaLogic) resolveDay(s *Session) {
 	}
 
 	resultMsg := ""
-	if isTie || maxVotes == 0 {
+
+	// 2. LOGIC: Compare Player Votes vs Skips
+	// If Skips are greater than or equal to the highest player vote, OR if it's a tie between players
+	if skipCount >= maxVotes {
+		resultMsg = "The town chose to SKIP. No one was executed."
+	} else if isTie || maxVotes == 0 {
 		resultMsg = "Tie vote. No one was executed."
 	} else {
+		// A player has the majority over skips and other players
 		g.IsAlive[victimID] = false
 		resultMsg = fmt.Sprintf("The town decided. %s was executed.", g.getUsername(s, victimID))
 	}
@@ -1168,13 +1186,12 @@ func (g *MafiaLogic) startDayPhase(s *Session, morningMsg string) {
 	g.Phase = "DAY"
 	g.Votes = make(map[string]string) // Reset votes
 
-	// Broadcast start of day
 	g.broadcastState(s, "DAY", morningMsg+" Discuss and Vote")
 	g.mu.Unlock()
 }
 func (g *MafiaLogic) checkWinCondition(s *Session) bool {
-	activeMafiaCount := 0 // Only ROLE_MAFIA (The killers)
-	mafiaTeamCount := 0   // ROLE_MAFIA + ROLE_SPY (For majority calc)
+	activeMafiaCount := 0
+	mafiaTeamCount := 0   
 	civTeamCount := 0
 
 	for id, alive := range g.IsAlive {
@@ -1185,7 +1202,6 @@ func (g *MafiaLogic) checkWinCondition(s *Session) bool {
 				activeMafiaCount++ 
 				mafiaTeamCount++
 			} else if role == ROLE_SPY {
-				// Spy counts for the team size, but is NOT an active killer
 				mafiaTeamCount++
 			} else {
 				civTeamCount++
@@ -1195,14 +1211,9 @@ func (g *MafiaLogic) checkWinCondition(s *Session) bool {
 
 	winner := ""
 
-	// 1. CIVILIAN WIN CONDITION:
-	// If the actual Mafia (the Killer) is dead, the game ends.
-	// Even if the Spy is still alive, they cannot kill, so Civilians win.
 	if activeMafiaCount == 0 {
 		winner = "CIVILIANS"
 	} else if mafiaTeamCount >= civTeamCount {
-		// 2. MAFIA WIN CONDITION:
-		// If Mafia Team (Killer + Spy) outnumbers or equals Civilians
 		winner = "MAFIA"
 	}
 
@@ -1290,11 +1301,11 @@ func (g *MafiaLogic) startNightPhase(s *Session) {
 		case ROLE_MAFIA:
 			prompt = "Choose a player to KILL"
 		case ROLE_DOCTOR:
-			prompt = "Choose a player to HEAL"
+			prompt = "Choose a player to SAVE"
 		case ROLE_POLICE:
 			prompt = "Choose a player to INVESTIGATE"
 		case ROLE_WHORE:
-			prompt = "Choose a player to BLOCK"
+			prompt = "Choose a player to FUCK"
         // Spy has no active prompt
 		default: 
 			prompt = "Sleep tight..."
