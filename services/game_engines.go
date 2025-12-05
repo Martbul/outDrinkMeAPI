@@ -57,32 +57,6 @@ type KingsCupLogic struct {
 	GameStarted     bool
 }
 
-// func (g *KingsCupLogic) InitState(s *Session) interface{} {
-// 	g.mu.Lock()
-// 	defer g.mu.Unlock()
-
-// 	g.Deck = utils.GenerateNewDeck()
-// 	g.CurrentCard = nil
-// 	g.DrawingIndex = 0
-// 	g.Buddies = make(map[string][]PlayerInfo)
-// 	g.CustomRules = make(map[string]string)
-// 	g.KingsDrawn = 0
-// 	g.LastKingDrinker = ""
-
-// 	g.GameStarted = true
-
-// 	  initialState := KingsCupGameState{
-//         CurrentCard:    nil,
-//         CardsRemaining: len(g.Deck),
-//         GameOver:       false,
-//         KingsInCup:     0,
-//         GameStarted:    true,
-//         Players:        g.Players,
-//     }
-
-//     return initialState
-// }
-// services/kings_cup_logic.go
 
 func (g *KingsCupLogic) InitState(s *Session) interface{} {
 	g.mu.Lock()
@@ -199,45 +173,7 @@ func (g *KingsCupLogic) UpdatePlayers(currentClients map[*Client]bool) {
 	// ensure you handle the session parameter correctly or pass it through).
 }
 
-// func (g *KingsCupLogic) broadcastGameState(session *Session, clientCard *ClientCard) {
-// 	var currentPlayerTurnID *string
-// 	if len(g.Players) > 0 {
-// 		currentPlayerTurnID = &g.Players[g.DrawingIndex].ID
-// 	}
 
-// 	kingCupDrinkerInfo := g.GetPlayerInfoByID(g.LastKingDrinker)
-
-// 	state := KingsCupGameState{
-// 		Players:             g.Players,
-// 		CustomRules:         g.CustomRules,
-// 		Buddies:             g.Buddies,
-// 		CurrentCard:         clientCard,
-// 		CardsRemaining:      len(g.Deck),
-// 		GameOver:            len(g.Deck) == 0,
-// 		CurrentPlayerTurnID: currentPlayerTurnID,
-// 		KingsInCup:          g.KingsDrawn,
-// 		KingCupDrinker:      kingCupDrinkerInfo,
-// 		GameStarted:         g.GameStarted,
-// 	}
-
-// 	response := GameStatePayload{
-// 		Action:    "game_update",
-// 		GameState: state,
-// 	}
-
-// 	bytes, err := json.Marshal(response)
-// 	if err != nil {
-// 		log.Printf("Error marshalling game state: %v", err)
-// 		return
-// 	}
-// 	log.Printf("Broadcasting game state. Current turn: %v, Card: %v, Players: %d",
-// 		currentPlayerTurnID, clientCard, len(g.Players))
-
-// 	// Send to the session's broadcast channel
-// 	session.Broadcast <- bytes
-// }
-
-// Remove the clientCard argument
 func (g *KingsCupLogic) broadcastGameState(session *Session) {
 	var currentPlayerTurnID *string
 	if len(g.Players) > 0 {
@@ -1299,20 +1235,21 @@ func (g *MafiaLogic) checkWinCondition(s *Session) bool {
 
 func (g *MafiaLogic) haveAllNightActionsBeenReceived() bool {
 	for id, alive := range g.IsAlive {
-		if !alive { //if player is dead do nothing
+		if !alive { // If player is dead do nothing
 			continue
 		}
 
 		role := g.Roles[id]
-		// Civilians don't act. Everyone else must act.
-		if role != ROLE_CIVILIAN {
+		
+		// Fix: Civilians AND Spies don't act. 
+		// Everyone else (Mafia, Doctor, Police, Whore) must submit an action.
+		if role != ROLE_CIVILIAN && role != ROLE_SPY {
 			if _, ok := g.NightActions[id]; !ok {
 				return false // Waiting for this person
 			}
 		}
 	}
 	return true
-
 }
 
 func (g *MafiaLogic) startNightPhase(s *Session) {
