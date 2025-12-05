@@ -57,7 +57,6 @@ type KingsCupLogic struct {
 	GameStarted     bool
 }
 
-
 func (g *KingsCupLogic) InitState(s *Session) interface{} {
 	g.mu.Lock()
 	defer g.mu.Unlock()
@@ -172,7 +171,6 @@ func (g *KingsCupLogic) UpdatePlayers(currentClients map[*Client]bool) {
 	// If called from UpdatePlayers where session might be tricky,
 	// ensure you handle the session parameter correctly or pass it through).
 }
-
 
 func (g *KingsCupLogic) broadcastGameState(session *Session) {
 	var currentPlayerTurnID *string
@@ -370,9 +368,18 @@ func (g *KingsCupLogic) HandleMessage(s *Session, sender *Client, msg []byte) {
 			return
 		}
 
-		// Add buddy relationship (bidirectional)
-		g.Buddies[sender.UserID] = append(g.Buddies[sender.UserID], *chosenBuddyInfo)
-		g.Buddies[chosenBuddyInfo.ID] = append(g.Buddies[chosenBuddyInfo.ID], PlayerInfo{ID: sender.UserID, Username: sender.Username})
+		alreadyBuddies := false
+		for _, b := range g.Buddies[sender.UserID] {
+			if b.ID == chosenBuddyInfo.ID {
+				alreadyBuddies = true
+				break
+			}
+		}
+
+		if !alreadyBuddies {
+			g.Buddies[sender.UserID] = append(g.Buddies[sender.UserID], *chosenBuddyInfo)
+			g.Buddies[chosenBuddyInfo.ID] = append(g.Buddies[chosenBuddyInfo.ID], PlayerInfo{ID: sender.UserID, Username: sender.Username})
+		}
 
 		log.Printf("%s chose %s as a buddy. Buddies: %v\n", sender.Username, chosenBuddyInfo.Username, g.Buddies)
 
@@ -922,7 +929,7 @@ func (g *MafiaLogic) HandleMessage(s *Session, sender *Client, msg []byte) {
 		return
 	}
 
-if payload.Type == "vote" && g.Phase == "DAY" {
+	if payload.Type == "vote" && g.Phase == "DAY" {
 		// Validate voter is alive
 		if !g.IsAlive[sender.UserID] {
 			g.mu.Unlock()
@@ -978,8 +985,8 @@ func (g *MafiaLogic) resolveNight(s *Session) {
 	policeResult := ""
 	policeRecipient := ""
 
-for actorID, targetID := range g.NightActions {
-		
+	for actorID, targetID := range g.NightActions {
+
 		// --- CASE 1: THE ACTOR IS BLOCKED (Killer fucked by Whore) ---
 		if blockedPlayers[actorID] {
 			// Notify the player they were blocked
@@ -987,7 +994,7 @@ for actorID, targetID := range g.NightActions {
 			if client != nil {
 				g.sendPrivateMessage(client, "system_message", "You were visited by the Whore. Your action was blocked!")
 			}
-			
+
 			// Skip their action (The Kill never happens)
 			continue
 		}
@@ -1002,7 +1009,7 @@ for actorID, targetID := range g.NightActions {
 			policeRecipient = actorID
 			targetRole := g.Roles[targetID]
 			// Police sees Mafia as Mafia, everyone else (including Spy) as Innocent
-			isDetected := targetRole == ROLE_MAFIA 
+			isDetected := targetRole == ROLE_MAFIA
 			targetUsername := g.getUsername(s, targetID)
 
 			if isDetected {
@@ -1013,20 +1020,19 @@ for actorID, targetID := range g.NightActions {
 		}
 	}
 
-	
 	// 4. Resolve Life/Death
 	finalDeathMsg := "The night was quiet"
 
-		if killedID != "" {
+	if killedID != "" {
 		// Rule 1: Doctor saves the victim
 		if killedID == healedID {
 			finalDeathMsg = "The Doctor saved the victim"
-			
+
 		} else if blockedPlayers[killedID] {
 			finalDeathMsg = "The Whore distracted the victim" // Ambiguous message
 			// Reset killedID so no one dies
 			killedID = ""
-			
+
 		} else {
 			// Kill successful
 			g.IsAlive[killedID] = false
@@ -1034,13 +1040,11 @@ for actorID, targetID := range g.NightActions {
 		}
 	}
 
-
 	// 5. Send Intel to Police/Spy
 	if policeRecipient != "" && policeResult != "" {
 		c := g.getClientByID(s, policeRecipient)
 		g.sendPrivateMessage(c, "intel", policeResult)
 	}
-
 
 	if g.checkWinCondition(s) {
 		g.mu.Unlock()
@@ -1052,7 +1056,6 @@ for actorID, targetID := range g.NightActions {
 	// Start Day
 	g.startDayPhase(s, finalDeathMsg)
 }
-
 
 func (g *MafiaLogic) resolveDay(s *Session) {
 	g.mu.Lock()
@@ -1127,15 +1130,15 @@ func (g *MafiaLogic) startDayPhase(s *Session, morningMsg string) {
 }
 func (g *MafiaLogic) checkWinCondition(s *Session) bool {
 	activeMafiaCount := 0
-	mafiaTeamCount := 0   
+	mafiaTeamCount := 0
 	civTeamCount := 0
 
 	for id, alive := range g.IsAlive {
 		if alive {
 			role := g.Roles[id]
-			
+
 			if role == ROLE_MAFIA {
-				activeMafiaCount++ 
+				activeMafiaCount++
 				mafiaTeamCount++
 			} else if role == ROLE_SPY {
 				mafiaTeamCount++
@@ -1155,7 +1158,7 @@ func (g *MafiaLogic) checkWinCondition(s *Session) bool {
 
 	if winner != "" {
 		g.Phase = "GAME_OVER"
-		
+
 		alive := []PlayerInfo{}
 		dead := []PlayerInfo{}
 
@@ -1195,8 +1198,8 @@ func (g *MafiaLogic) haveAllNightActionsBeenReceived() bool {
 		}
 
 		role := g.Roles[id]
-		
-		// Fix: Civilians AND Spies don't act. 
+
+		// Fix: Civilians AND Spies don't act.
 		// Everyone else (Mafia, Doctor, Police, Whore) must submit an action.
 		if role != ROLE_CIVILIAN && role != ROLE_SPY {
 			if _, ok := g.NightActions[id]; !ok {
@@ -1218,7 +1221,7 @@ func (g *MafiaLogic) startNightPhase(s *Session) {
 	// 1. Build the list of MAFIA members (Excluding Spy)
 	mafiaNames := []string{}
 	for id, role := range g.Roles {
-        // Only add actual Mafia to this list. DO NOT add the Spy.
+		// Only add actual Mafia to this list. DO NOT add the Spy.
 		if role == ROLE_MAFIA {
 			mafiaNames = append(mafiaNames, g.getUsername(s, id))
 		}
@@ -1232,7 +1235,7 @@ func (g *MafiaLogic) startNightPhase(s *Session) {
 		}
 
 		var prompt string
-		
+
 		switch role {
 		case ROLE_MAFIA:
 			prompt = "Choose a player to KILL"
@@ -1242,8 +1245,8 @@ func (g *MafiaLogic) startNightPhase(s *Session) {
 			prompt = "Choose a player to INVESTIGATE"
 		case ROLE_WHORE:
 			prompt = "Choose a player to FUCK"
-        // Spy has no active prompt
-		default: 
+			// Spy has no active prompt
+		default:
 			prompt = "Sleep tight..."
 		}
 
@@ -1253,9 +1256,9 @@ func (g *MafiaLogic) startNightPhase(s *Session) {
 		}
 
 		// 3. Send Intel / Team Knowledge
-        
-        // CASE A: User is SPY
-        // Spy sees the Mafia list.
+
+		// CASE A: User is SPY
+		// Spy sees the Mafia list.
 		if role == ROLE_SPY {
 			msg := "The Mafia is: " + mafiaListStr
 			g.sendPrivateMessage(client, "intel", msg)
