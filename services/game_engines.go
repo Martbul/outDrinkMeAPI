@@ -1172,16 +1172,20 @@ func (g *MafiaLogic) startDayPhase(s *Session, morningMsg string) {
 	g.broadcastState(s, "DAY", morningMsg+" Discuss and Vote")
 	g.mu.Unlock()
 }
-
 func (g *MafiaLogic) checkWinCondition(s *Session) bool {
-	mafiaTeamCount := 0
+	activeMafiaCount := 0 // Only ROLE_MAFIA (The killers)
+	mafiaTeamCount := 0   // ROLE_MAFIA + ROLE_SPY (For majority calc)
 	civTeamCount := 0
 
 	for id, alive := range g.IsAlive {
 		if alive {
 			role := g.Roles[id]
-			// SPY is now part of the Mafia team for win calculation
-			if role == ROLE_MAFIA || role == ROLE_SPY {
+			
+			if role == ROLE_MAFIA {
+				activeMafiaCount++ 
+				mafiaTeamCount++
+			} else if role == ROLE_SPY {
+				// Spy counts for the team size, but is NOT an active killer
 				mafiaTeamCount++
 			} else {
 				civTeamCount++
@@ -1190,17 +1194,21 @@ func (g *MafiaLogic) checkWinCondition(s *Session) bool {
 	}
 
 	winner := ""
-	if mafiaTeamCount == 0 {
+
+	// 1. CIVILIAN WIN CONDITION:
+	// If the actual Mafia (the Killer) is dead, the game ends.
+	// Even if the Spy is still alive, they cannot kill, so Civilians win.
+	if activeMafiaCount == 0 {
 		winner = "CIVILIANS"
 	} else if mafiaTeamCount >= civTeamCount {
+		// 2. MAFIA WIN CONDITION:
+		// If Mafia Team (Killer + Spy) outnumbers or equals Civilians
 		winner = "MAFIA"
 	}
 
 	if winner != "" {
 		g.Phase = "GAME_OVER"
-
-		// Create the Game Over payload MANUALLY to include RevealedRoles
-		// (We cannot use standard broadcastState because it doesn't send Roles map)
+		
 		alive := []PlayerInfo{}
 		dead := []PlayerInfo{}
 
@@ -1222,7 +1230,7 @@ func (g *MafiaLogic) checkWinCondition(s *Session) bool {
 				DeadPlayers:   dead,
 				Votes:         g.Votes,
 				Winner:        winner,
-				RevealedRoles: g.Roles, // <--- SEND ALL ROLES HERE
+				RevealedRoles: g.Roles,
 			},
 		}
 
