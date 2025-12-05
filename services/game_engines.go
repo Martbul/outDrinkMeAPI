@@ -192,7 +192,7 @@ func (g *KingsCupLogic) broadcastGameState(session *Session) {
 		Players:             g.Players,
 		CustomRules:         g.CustomRules,
 		Buddies:             g.Buddies,
-		CurrentCard:         clientCard, 
+		CurrentCard:         clientCard,
 		CardsRemaining:      len(g.Deck),
 		GameOver:            len(g.Deck) == 0,
 		CurrentPlayerTurnID: currentPlayerTurnID,
@@ -437,7 +437,6 @@ type BurnBookGameState struct {
 	TotalQuestions int          `json:"totalQuestions,omitempty"`
 	HasVoted       bool         `json:"hasVoted,omitempty"`
 }
-
 
 func (g *BurnBookLogic) InitState(s *Session) interface{} {
 	g.mu.Lock()
@@ -766,12 +765,12 @@ type MafiaGameState struct {
 }
 
 type MafiaLogic struct {
-	mu sync.Mutex
-	Roles   map[string]string // UserID -> Role
-	IsAlive map[string]bool   // UserID -> bool
+	mu           sync.Mutex
+	Roles        map[string]string // UserID -> Role
+	IsAlive      map[string]bool   // UserID -> bool
 	NightActions map[string]string
-	Votes map[string]string
-	Phase string
+	Votes        map[string]string
+	Phase        string
 }
 
 func (g *MafiaLogic) ResetState(s *Session) {
@@ -936,7 +935,7 @@ func (g *MafiaLogic) resolveNight(s *Session) {
 		} else if blockedPlayers[killedID] {
 			finalDeathMsg = "The Whore distracted the victim" // Ambiguous message
 			killedID = ""
-
+		} else {
 			// Kill successful
 			g.IsAlive[killedID] = false
 			finalDeathMsg = fmt.Sprintf("%s was killed in the night", g.getUsername(s, killedID))
