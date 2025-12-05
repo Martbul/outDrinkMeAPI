@@ -973,28 +973,17 @@ func (g *MafiaLogic) resolveNight(s *Session) {
 	for actorID, targetID := range g.NightActions {
 		if g.Roles[actorID] == ROLE_WHORE {
 			blockedPlayers[targetID] = true
-			// Whore blocks the target. The target's action will fail.
 		}
 	}
 
-	// 2. Prepare outcomes
 	killedID := ""
 	healedID := ""
-
-	// Private info to send back to Police/Spy
 	policeResult := ""
 	policeRecipient := ""
-	// spyResult := ""
-	// spyRecipient := ""
 
-	// 3. Process Actions (excluding those who were blocked)
 	for actorID, targetID := range g.NightActions {
+
 		if blockedPlayers[actorID] {
-			// Inform the blocked player? (Optional, usually they just fail silently or get notified)
-			client := g.getClientByID(s, actorID)
-			if client != nil {
-				g.sendPrivateMessage(client, "system_message", "You were busy fucking by the Whore")
-			}
 			continue
 		}
 
@@ -1007,18 +996,12 @@ func (g *MafiaLogic) resolveNight(s *Session) {
 		case ROLE_POLICE:
 			policeRecipient = actorID
 			targetRole := g.Roles[targetID]
-
-			// --- CHANGED POLICE LOGIC ---
-			// The Police only detects ROLE_MAFIA.
-			// ROLE_SPY appears as "Innocent" (same as Civilians/Doctor/etc).
-			isDetected := targetRole == ROLE_MAFIA
-
+			isDetected := targetRole == ROLE_MAFIA 
 			targetUsername := g.getUsername(s, targetID)
 
 			if isDetected {
 				policeResult = fmt.Sprintf("%s is MAFIA", targetUsername)
 			} else {
-				// This covers Civilians, Doctor, Whore, AND SPY
 				policeResult = fmt.Sprintf("%s is Innocent", targetUsername)
 			}
 		}
@@ -1026,14 +1009,25 @@ func (g *MafiaLogic) resolveNight(s *Session) {
 	// 4. Resolve Life/Death
 	finalDeathMsg := "The night was quiet"
 
-	if killedID != "" {
+		if killedID != "" {
+		// Rule 1: Doctor saves the victim
 		if killedID == healedID {
-			finalDeathMsg = "The Doctor saved the victim."
+			finalDeathMsg = "The Doctor saved the victim"
+			
+		// Rule 2: (NEW) If the victim was with the Whore, they are safe
+		// (The Mafia doesn't kill if the Whore is in the room with the victim)
+		} else if blockedPlayers[killedID] {
+			finalDeathMsg = "Someone was saved by an unexpected visitor" // Ambiguous message
+			// Reset killedID so no one dies
+			killedID = ""
+			
 		} else {
+			// Kill successful
 			g.IsAlive[killedID] = false
 			finalDeathMsg = fmt.Sprintf("%s was killed in the night", g.getUsername(s, killedID))
 		}
 	}
+
 
 	// 5. Send Intel to Police/Spy
 	if policeRecipient != "" && policeResult != "" {
@@ -1042,12 +1036,6 @@ func (g *MafiaLogic) resolveNight(s *Session) {
 	}
 
 
-	// if spyRecipient != "" && spyResult != "" {
-	// 	c := g.getClientByID(s, spyRecipient)
-	// 	g.sendPrivateMessage(c, "intel", spyResult)
-	// }
-
-	// 6. Check Win
 	if g.checkWinCondition(s) {
 		g.mu.Unlock()
 		return
@@ -1059,61 +1047,7 @@ func (g *MafiaLogic) resolveNight(s *Session) {
 	g.startDayPhase(s, finalDeathMsg)
 }
 
-// func (g *MafiaLogic) resolveDay(s *Session) {
-// 	g.mu.Lock()
 
-// 	// Tally Votes
-// 	voteCounts := make(map[string]int)
-// 	for _, target := range g.Votes {
-// 		voteCounts[target]++
-// 	}
-
-// 	maxVotes := 0
-// 	victimID := ""
-// 	isTie := false
-
-// 	for target, count := range voteCounts {
-// 		if count > maxVotes {
-// 			maxVotes = count
-// 			victimID = target
-// 			isTie = false
-// 		} else if count == maxVotes {
-// 			isTie = true
-// 		}
-// 	}
-
-// 	resultMsg := ""
-// 	if isTie || maxVotes == 0 {
-// 		resultMsg = "Tie vote. No one was executed"
-// 	} else {
-// 		g.IsAlive[victimID] = false
-// 		resultMsg = fmt.Sprintf("The town decided. %s was executed", g.getUsername(s, victimID))
-// 	}
-
-// 	if g.checkWinCondition(s) {
-// 		g.mu.Unlock()
-// 		return
-// 	}
-
-// 	g.mu.Unlock()
-
-// 	// Brief pause (logic-wise, we just start night immediately after sending result)
-// 	// Or we can wait for Host to click "Next Round" if we wanted,
-// 	// but the prompt implied transition on player action (voting done -> Result -> Night).
-
-// 	// We'll send the result, then immediately start night instructions.
-// 	// Effectively "Phase Results" is skipped or instantaneous.
-
-// 	// Helper to send message before changing state
-// 	g.mu.Lock()
-// 	g.broadcastState(s, "RESULTS", resultMsg)
-// 	g.mu.Unlock()
-
-//		// Small artificial blocking/delay isn't possible without timers/sleep.
-//		// We will just transition to Night immediately.
-//		// The client will receive "RESULTS" packet then immediately "NIGHT" packet.
-//		g.startNightPhase(s)
-//	}
 func (g *MafiaLogic) resolveDay(s *Session) {
 	g.mu.Lock()
 
@@ -1146,14 +1080,11 @@ func (g *MafiaLogic) resolveDay(s *Session) {
 
 	resultMsg := ""
 
-	// 2. LOGIC: Compare Player Votes vs Skips
-	// If Skips are greater than or equal to the highest player vote, OR if it's a tie between players
 	if skipCount >= maxVotes {
 		resultMsg = "The town chose to SKIP. No one was executed."
 	} else if isTie || maxVotes == 0 {
 		resultMsg = "Tie vote. No one was executed."
 	} else {
-		// A player has the majority over skips and other players
 		g.IsAlive[victimID] = false
 		resultMsg = fmt.Sprintf("The town decided. %s was executed.", g.getUsername(s, victimID))
 	}
@@ -1169,7 +1100,6 @@ func (g *MafiaLogic) resolveDay(s *Session) {
 		time.Sleep(5 * time.Second)
 
 		g.mu.Lock()
-		// Check if the execution ended the game
 		if g.checkWinCondition(s) {
 			g.mu.Unlock()
 			return // Game Over broadcast sent inside checkWinCondition
@@ -1321,19 +1251,9 @@ func (g *MafiaLogic) startNightPhase(s *Session) {
         // CASE A: User is SPY
         // Spy sees the Mafia list.
 		if role == ROLE_SPY {
-			msg := "The Mafia members are: " + mafiaListStr
+			msg := "The Mafia is: " + mafiaListStr
 			g.sendPrivateMessage(client, "intel", msg)
 		}
-
-        // CASE B: User is MAFIA
-        // Mafia also needs to know who their teammates are (Standard Mafia rules).
-        // Since 'mafiaListStr' only contains ROLE_MAFIA, they will NOT see the Spy.
-        if role == ROLE_MAFIA {
-            // We use the "intel" channel for this static info too, 
-            // so it appears in the blue box on the frontend.
-            msg := "Your team is: " + mafiaListStr
-            g.sendPrivateMessage(client, "intel", msg)
-        }
 	}
 
 	g.mu.Unlock()
