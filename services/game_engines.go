@@ -7,6 +7,7 @@ import (
 	"math/rand"
 	"outDrinkMeAPI/utils"
 	"sort"
+	"strings"
 	"sync"
 	"time"
 )
@@ -1041,8 +1042,8 @@ func (g *MafiaLogic) resolveNight(s *Session) {
 	// Private info to send back to Police/Spy
 	policeResult := ""
 	policeRecipient := ""
-	spyResult := ""
-	spyRecipient := ""
+	// spyResult := ""
+	// spyRecipient := ""
 
 	// 3. Process Actions (excluding those who were blocked)
 	for actorID, targetID := range g.NightActions {
@@ -1064,19 +1065,22 @@ func (g *MafiaLogic) resolveNight(s *Session) {
 		case ROLE_POLICE:
 			policeRecipient = actorID
 			targetRole := g.Roles[targetID]
-			isMafia := targetRole == ROLE_MAFIA
-			if isMafia {
-				policeResult = fmt.Sprintf("%s is MAFIA", g.getUsername(s, targetID))
+
+			// --- CHANGED POLICE LOGIC ---
+			// The Police only detects ROLE_MAFIA.
+			// ROLE_SPY appears as "Innocent" (same as Civilians/Doctor/etc).
+			isDetected := targetRole == ROLE_MAFIA
+
+			targetUsername := g.getUsername(s, targetID)
+
+			if isDetected {
+				policeResult = fmt.Sprintf("%s is MAFIA", targetUsername)
 			} else {
-				policeResult = fmt.Sprintf("%s is Innocent", g.getUsername(s, targetID))
+				// This covers Civilians, Doctor, Whore, AND SPY
+				policeResult = fmt.Sprintf("%s is Innocent", targetUsername)
 			}
-		case ROLE_SPY:
-			spyRecipient = actorID
-			targetRole := g.Roles[targetID]
-			spyResult = fmt.Sprintf("%s is the %s", g.getUsername(s, targetID), targetRole)
 		}
 	}
-
 	// 4. Resolve Life/Death
 	finalDeathMsg := "The night was quiet"
 
@@ -1094,10 +1098,12 @@ func (g *MafiaLogic) resolveNight(s *Session) {
 		c := g.getClientByID(s, policeRecipient)
 		g.sendPrivateMessage(c, "intel", policeResult)
 	}
-	if spyRecipient != "" && spyResult != "" {
-		c := g.getClientByID(s, spyRecipient)
-		g.sendPrivateMessage(c, "intel", spyResult)
-	}
+
+
+	// if spyRecipient != "" && spyResult != "" {
+	// 	c := g.getClientByID(s, spyRecipient)
+	// 	g.sendPrivateMessage(c, "intel", spyResult)
+	// }
 
 	// 6. Check Win
 	if g.checkWinCondition(s) {
@@ -1201,7 +1207,7 @@ func (g *MafiaLogic) resolveDay(s *Session) {
 	// 2. BROADCAST RESULT IMMEDIATELY (Do not check win yet)
 	g.Phase = "RESULTS"
 	g.broadcastState(s, "RESULTS", resultMsg)
-	
+
 	g.mu.Unlock()
 
 	// 3. Wait 5 seconds, THEN check win or start night
@@ -1230,30 +1236,33 @@ func (g *MafiaLogic) startDayPhase(s *Session, morningMsg string) {
 	g.broadcastState(s, "DAY", morningMsg+" Discuss and Vote")
 	g.mu.Unlock()
 }
+
 func (g *MafiaLogic) checkWinCondition(s *Session) bool {
-	mafiaCount := 0
-	civCount := 0
+	mafiaTeamCount := 0
+	civTeamCount := 0
 
 	for id, alive := range g.IsAlive {
 		if alive {
-			if g.Roles[id] == ROLE_MAFIA {
-				mafiaCount++
+			role := g.Roles[id]
+			// SPY is now part of the Mafia team for win calculation
+			if role == ROLE_MAFIA || role == ROLE_SPY {
+				mafiaTeamCount++
 			} else {
-				civCount++
+				civTeamCount++
 			}
 		}
 	}
 
 	winner := ""
-	if mafiaCount == 0 {
+	if mafiaTeamCount == 0 {
 		winner = "CIVILIANS"
-	} else if mafiaCount >= civCount {
+	} else if mafiaTeamCount >= civTeamCount {
 		winner = "MAFIA"
 	}
 
 	if winner != "" {
 		g.Phase = "GAME_OVER"
-		
+
 		// Create the Game Over payload MANUALLY to include RevealedRoles
 		// (We cannot use standard broadcastState because it doesn't send Roles map)
 		alive := []PlayerInfo{}
@@ -1309,10 +1318,20 @@ func (g *MafiaLogic) haveAllNightActionsBeenReceived() bool {
 func (g *MafiaLogic) startNightPhase(s *Session) {
 	g.mu.Lock()
 	g.Phase = "NIGHT"
-	g.NightActions = make(map[string]string) // Reset actions
-	g.Votes = make(map[string]string)        // Clean votes
+	g.NightActions = make(map[string]string)
+	g.Votes = make(map[string]string)
 
-	g.broadcastState(s, "NIGHT", "Night has fallen") //sending to every client of the session this message
+	g.broadcastState(s, "NIGHT", "Night has fallen")
+
+	// 1. Build the list of MAFIA members (Excluding Spy)
+	mafiaNames := []string{}
+	for id, role := range g.Roles {
+        // Only add actual Mafia to this list. DO NOT add the Spy.
+		if role == ROLE_MAFIA {
+			mafiaNames = append(mafiaNames, g.getUsername(s, id))
+		}
+	}
+	mafiaListStr := strings.Join(mafiaNames, ", ")
 
 	for client := range s.Clients {
 		role := g.Roles[client.UserID]
@@ -1321,6 +1340,7 @@ func (g *MafiaLogic) startNightPhase(s *Session) {
 		}
 
 		var prompt string
+		
 		switch role {
 		case ROLE_MAFIA:
 			prompt = "Choose a player to KILL"
@@ -1328,21 +1348,39 @@ func (g *MafiaLogic) startNightPhase(s *Session) {
 			prompt = "Choose a player to HEAL"
 		case ROLE_POLICE:
 			prompt = "Choose a player to INVESTIGATE"
-		case ROLE_SPY:
-			prompt = "Choose a player to REVEAL ROLE"
 		case ROLE_WHORE:
-			prompt = "Choose a player to SLEEP WITH"
-		default: // if role = CIVILIAN
+			prompt = "Choose a player to BLOCK"
+        // Spy has no active prompt
+		default: 
 			prompt = "Sleep tight..."
 		}
 
-		if prompt != "Sleep tight..." { //If user has special role(not CIVILIAN) -> send him the message
+		// 2. Send Action Request
+		if prompt != "Sleep tight..." {
 			g.sendPrivateMessage(client, "action_request", prompt)
 		}
+
+		// 3. Send Intel / Team Knowledge
+        
+        // CASE A: User is SPY
+        // Spy sees the Mafia list.
+		if role == ROLE_SPY {
+			msg := "The Mafia members are: " + mafiaListStr
+			g.sendPrivateMessage(client, "intel", msg)
+		}
+
+        // CASE B: User is MAFIA
+        // Mafia also needs to know who their teammates are (Standard Mafia rules).
+        // Since 'mafiaListStr' only contains ROLE_MAFIA, they will NOT see the Spy.
+        if role == ROLE_MAFIA {
+            // We use the "intel" channel for this static info too, 
+            // so it appears in the blue box on the frontend.
+            msg := "Your team is: " + mafiaListStr
+            g.sendPrivateMessage(client, "intel", msg)
+        }
 	}
 
 	g.mu.Unlock()
-
 }
 
 func (g *MafiaLogic) sendPrivateMessage(c *Client, typeStr string, content string) {

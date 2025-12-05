@@ -211,6 +211,8 @@ func (s *NotificationService) GetNotifications(ctx context.Context, clerkID stri
 	}, nil
 }
 
+
+
 func (s *NotificationService) GetUnreadCount(ctx context.Context, clerkID string) (int, error) {
 	userID, err := s.getUserID(ctx, clerkID)
 	if err != nil {
