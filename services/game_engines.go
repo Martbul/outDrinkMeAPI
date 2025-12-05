@@ -136,7 +136,6 @@ func (g *KingsCupLogic) UpdatePlayers(currentClients map[*Client]bool) {
 		}
 	}
 
-	// Remove buddies/rules for players who left
 	for playerID := range g.Buddies {
 		if _, exists := currentPlayersMap[playerID]; !exists {
 			delete(g.Buddies, playerID)
@@ -166,10 +165,7 @@ func (g *KingsCupLogic) UpdatePlayers(currentClients map[*Client]bool) {
 
 	g.Players = newPlayers
 	log.Printf("KingsCupLogic Players updated. Current players: %v", g.Players)
-	// After updating players, broadcast the comprehensive game state
 	g.broadcastGameState(nil) // Removed 'nil' (Wait, your broadcastGameState takes session.
-	// If called from UpdatePlayers where session might be tricky,
-	// ensure you handle the session parameter correctly or pass it through).
 }
 
 func (g *KingsCupLogic) broadcastGameState(session *Session) {
@@ -180,7 +176,6 @@ func (g *KingsCupLogic) broadcastGameState(session *Session) {
 
 	kingCupDrinkerInfo := g.GetPlayerInfoByID(g.LastKingDrinker)
 
-	// LOGIC CHANGE: Generate ClientCard from g.CurrentCard state
 	var clientCard *ClientCard
 	if g.CurrentCard != nil {
 		c := ClientCard{
@@ -197,7 +192,7 @@ func (g *KingsCupLogic) broadcastGameState(session *Session) {
 		Players:             g.Players,
 		CustomRules:         g.CustomRules,
 		Buddies:             g.Buddies,
-		CurrentCard:         clientCard, // Use the variable derived above
+		CurrentCard:         clientCard, 
 		CardsRemaining:      len(g.Deck),
 		GameOver:            len(g.Deck) == 0,
 		CurrentPlayerTurnID: currentPlayerTurnID,
@@ -221,7 +216,6 @@ func (g *KingsCupLogic) broadcastGameState(session *Session) {
 	session.Broadcast <- bytes
 }
 
-// GetPlayerInfoByID is a helper to get player info from ID
 func (g *KingsCupLogic) GetPlayerInfoByID(playerID string) *PlayerInfo {
 	if playerID == "" {
 		return nil
@@ -287,8 +281,6 @@ func (g *KingsCupLogic) HandleMessage(s *Session, sender *Client, msg []byte) {
 		return
 	}
 
-	// Only the current player can draw a card or perform actions related to their turn
-	// This check is crucial for turn-based games
 	if g.DrawingIndex >= len(g.Players) || sender.UserID != g.Players[g.DrawingIndex].ID {
 		if len(g.Players) > 0 {
 			log.Printf("It's not %s's turn. Current turn is %s (%s) but %s (%s) tried to act.\n",
@@ -296,7 +288,6 @@ func (g *KingsCupLogic) HandleMessage(s *Session, sender *Client, msg []byte) {
 		} else {
 			log.Printf("It's not %s's turn. No players in game logic.\n", sender.Username)
 		}
-		// Potentially send an error back to the sender if needed for UI feedback
 		return
 	}
 
@@ -304,7 +295,6 @@ func (g *KingsCupLogic) HandleMessage(s *Session, sender *Client, msg []byte) {
 
 	case "draw_card":
 		if len(g.Deck) == 0 {
-			// Game is over
 			response := GameStatePayload{
 				Action: "game_update",
 				GameState: KingsCupGameState{
@@ -324,7 +314,6 @@ func (g *KingsCupLogic) HandleMessage(s *Session, sender *Client, msg []byte) {
 		g.Deck = g.Deck[1:]
 		g.CurrentCard = &drawn // This updates the state
 
-		// Check for 4th King logic
 		if drawn.Rank == "K" {
 			g.KingsDrawn++
 			if g.KingsDrawn == 4 {
@@ -333,7 +322,6 @@ func (g *KingsCupLogic) HandleMessage(s *Session, sender *Client, msg []byte) {
 			}
 		}
 
-		// LOGIC CHANGE: Just call broadcast. It will read g.CurrentCard automatically.
 		g.broadcastGameState(s)
 
 		if drawn.Rank == "8" {
@@ -344,12 +332,9 @@ func (g *KingsCupLogic) HandleMessage(s *Session, sender *Client, msg []byte) {
 			return
 		}
 
-		// Advance turn
 		g.DrawingIndex = (g.DrawingIndex + 1) % len(g.Players)
 		log.Printf("Turn advanced to %s (%s)\n", g.Players[g.DrawingIndex].Username, g.Players[g.DrawingIndex].ID)
 
-		// LOGIC CHANGE: Broadcast update (Turn change).
-		// The card will still be visible because g.CurrentCard is still set.
 		g.broadcastGameState(s)
 
 	case "choose_buddy":
@@ -383,7 +368,6 @@ func (g *KingsCupLogic) HandleMessage(s *Session, sender *Client, msg []byte) {
 
 		log.Printf("%s chose %s as a buddy. Buddies: %v\n", sender.Username, chosenBuddyInfo.Username, g.Buddies)
 
-		// After choosing a buddy, advance turn
 		g.DrawingIndex = (g.DrawingIndex + 1) % len(g.Players)
 
 		log.Printf("Turn advanced to %s (%s) after buddy selection.\n", g.Players[g.DrawingIndex].Username, g.Players[g.DrawingIndex].ID)
@@ -403,7 +387,6 @@ func (g *KingsCupLogic) HandleMessage(s *Session, sender *Client, msg []byte) {
 
 		log.Printf("%s set a new rule: \"%s\". Custom Rules: %v\n", sender.Username, request.NewRule, g.CustomRules)
 
-		// After setting a rule, advance turn
 		g.DrawingIndex = (g.DrawingIndex + 1) % len(g.Players)
 		log.Printf("Turn advanced to %s (%s) after rule setting.\n", g.Players[g.DrawingIndex].Username, g.Players[g.DrawingIndex].ID)
 		g.broadcastGameState(s)
@@ -418,7 +401,6 @@ func (g *KingsCupLogic) ResetState(s *Session) {
 	g.GameStarted = false
 	g.mu.Unlock()
 
-	// Re-initialize the state (reshuffle deck, clear buddies)
 	g.InitState(s)
 }
 
@@ -456,23 +438,6 @@ type BurnBookGameState struct {
 	HasVoted       bool         `json:"hasVoted,omitempty"`
 }
 
-// func (g *BurnBookLogic) InitState(s *Session) interface{} {
-// 	g.mu.Lock()
-// 	defer g.mu.Unlock()
-
-// 	g.Phase = "collecting"
-// 	g.Questions = make([]string, 0)
-// 	g.Votes = make(map[int]map[string]int)
-// 	g.WhoVoted = make(map[int]map[string]bool)
-// 	g.VotingIndex = 0
-// 	g.RevealIndex = -1
-// 	g.SkipTimer = make(chan bool)
-
-// 	return BurnBookGameState{
-// 		Phase:          "collecting",
-// 		CollectedCount: 0,
-// 	}
-// }
 
 func (g *BurnBookLogic) InitState(s *Session) interface{} {
 	g.mu.Lock()
@@ -485,7 +450,6 @@ func (g *BurnBookLogic) InitState(s *Session) interface{} {
 	g.VotingIndex = 0
 	g.RevealIndex = -1
 
-	// Re-make channel to ensure it's fresh
 	g.SkipTimer = make(chan bool)
 
 	return BurnBookGameState{
@@ -526,9 +490,6 @@ func (g *BurnBookLogic) HandleMessage(s *Session, sender *Client, msg []byte) {
 	}
 
 	g.mu.Lock()
-	// Note: We defer Unlock inside specific blocks or at the end,
-	// but because we use a Timer that needs the lock, we must be careful not to deadlock.
-	// For this logic, we will lock primarily for state updates.
 	defer g.mu.Unlock()
 
 	log.Println("Received Action:", request.Type)
@@ -559,7 +520,6 @@ func (g *BurnBookLogic) HandleMessage(s *Session, sender *Client, msg []byte) {
 		g.Votes = make(map[int]map[string]int)
 		g.WhoVoted = make(map[int]map[string]bool)
 
-		// Unlock before calling the timer function to avoid deadlock
 		g.mu.Unlock()
 		g.startQuestionTimer(s) // Start the automatic flow
 		g.mu.Lock()             // Relock for the defer Unlock
@@ -571,7 +531,6 @@ func (g *BurnBookLogic) HandleMessage(s *Session, sender *Client, msg []byte) {
 			return
 		}
 
-		// Initialize maps if needed
 		if g.Votes[g.VotingIndex] == nil {
 			g.Votes[g.VotingIndex] = make(map[string]int)
 		}
@@ -579,19 +538,16 @@ func (g *BurnBookLogic) HandleMessage(s *Session, sender *Client, msg []byte) {
 			g.WhoVoted[g.VotingIndex] = make(map[string]bool)
 		}
 
-		// Prevent double voting
 		if g.WhoVoted[g.VotingIndex][sender.UserID] {
 			return
 		}
 
-		// Record vote
 		g.Votes[g.VotingIndex][request.TargetID]++
 		g.WhoVoted[g.VotingIndex][sender.UserID] = true
 
-		// --- LOGIC TO CHECK IF ALL PLAYERS VOTED ---
 		activePlayers := 0
 		for c := range s.Clients {
-			if c.Username != "" { // Ensure they are joined
+			if c.Username != "" {
 				activePlayers++
 			}
 		}
@@ -662,7 +618,6 @@ func (g *BurnBookLogic) getRoundResults(idx int) *RoundResult {
 			maxVotes = count
 			winnerID = userID
 		} else if count == maxVotes {
-			// Handle ties if necessary (here we just keep the first one found or random map order)
 			// You could leave winnerID as is
 		}
 	}
@@ -696,7 +651,6 @@ func (g *BurnBookLogic) startQuestionTimer(s *Session) {
 	currentIndex := g.VotingIndex
 	g.mu.Unlock()
 
-	// ASSIGN TO STRUCT FIELD
 	g.mu.Lock()
 	g.Timer = time.NewTimer(30 * time.Second)
 	g.mu.Unlock()
@@ -813,18 +767,10 @@ type MafiaGameState struct {
 
 type MafiaLogic struct {
 	mu sync.Mutex
-
 	Roles   map[string]string // UserID -> Role
 	IsAlive map[string]bool   // UserID -> bool
-
-	// NIGHT STATE
-	// Maps UserID (Actor) -> TargetID (Victim)
 	NightActions map[string]string
-
-	// DAY STATE
-	// Maps UserID (Voter) -> TargetID (Accused)
 	Votes map[string]string
-
 	Phase string
 }
 
@@ -835,9 +781,7 @@ func (g *MafiaLogic) ResetState(s *Session) {
 func (g *MafiaLogic) InitState(s *Session) interface{} {
 	g.mu.Lock()
 
-	// 1. Check Player Count (Safety check)
 	if len(s.Clients) < 3 {
-		// Not enough players, remain in lobby state essentially
 		g.Phase = "LOBBY"
 		Message := "Not enough players to start (Min 3)"
 		g.mu.Unlock()
@@ -847,30 +791,22 @@ func (g *MafiaLogic) InitState(s *Session) interface{} {
 		}
 	}
 
-	// 2. Initialize Maps
 	g.Phase = "NIGHT"
 	g.Roles = make(map[string]string)
 	g.IsAlive = make(map[string]bool)
 	g.Votes = make(map[string]string)
 	g.NightActions = make(map[string]string)
 
-	// 3. Mark everyone alive
 	for client := range s.Clients {
 		g.IsAlive[client.UserID] = true
 	}
 
-	// 4. Assign Roles
-	// Note: We hold the lock here because assignRoles writes to g.Roles
 	g.assignRoles(s)
 
 	g.mu.Unlock() // Unlock before startNightPhase because it locks internally
 
-	// 5. Start the Night Phase immediately
-	// This broadcasts the "NIGHT" state to everyone, effectively skipping the second lobby
 	g.startNightPhase(s)
 
-	// Return nil or the state. Since startNightPhase broadcasts,
-	// the return value here is less critical, but we return the initial state for consistency.
 	return MafiaGameState{
 		Phase:   "NIGHT",
 		Message: "Night has fallen",
@@ -890,23 +826,6 @@ func (g *MafiaLogic) HandleMessage(s *Session, sender *Client, msg []byte) {
 
 	g.mu.Lock()
 
-	// 1. START GAME
-	// if payload.Type == "start_game" && sender.IsHost && g.Phase == "NIGHT" {
-	// 	if len(s.Clients) < 3 {
-	// 		g.mu.Unlock()
-	// 		return
-	// 	}
-	// 	g.assignRoles(s)
-	// 	g.IsAlive = make(map[string]bool)
-	// 	for client := range s.Clients {
-	// 		g.IsAlive[client.UserID] = true
-	// 	}
-	// 	g.mu.Unlock()
-	// 	g.startNightPhase(s)
-	// 	return
-	// }
-
-	// 2. NIGHT ACTIONS
 	if payload.Type == "night_action" && g.Phase == "NIGHT" {
 		if !g.IsAlive[sender.UserID] {
 			g.mu.Unlock()
@@ -914,11 +833,9 @@ func (g *MafiaLogic) HandleMessage(s *Session, sender *Client, msg []byte) {
 		}
 
 		role := g.Roles[sender.UserID]
-		// Only special roles act
 		if role != ROLE_CIVILIAN {
 			g.NightActions[sender.UserID] = payload.TargetID
 
-			// Check if all active roles have submitted their actions
 			if g.haveAllNightActionsBeenReceived() {
 				g.mu.Unlock()
 				g.resolveNight(s) // Transition: Night -> Day
@@ -930,14 +847,11 @@ func (g *MafiaLogic) HandleMessage(s *Session, sender *Client, msg []byte) {
 	}
 
 	if payload.Type == "vote" && g.Phase == "DAY" {
-		// Validate voter is alive
 		if !g.IsAlive[sender.UserID] {
 			g.mu.Unlock()
 			return
 		}
 
-		// --- CHANGED CHECK ---
-		// Target must be Alive OR be the special "SKIP" token
 		if payload.TargetID != "SKIP" && !g.IsAlive[payload.TargetID] {
 			g.mu.Unlock()
 			return
@@ -945,7 +859,6 @@ func (g *MafiaLogic) HandleMessage(s *Session, sender *Client, msg []byte) {
 
 		g.Votes[sender.UserID] = payload.TargetID
 
-		// Count alive players to see if everyone has voted
 		aliveCount := 0
 		for _, alive := range g.IsAlive {
 			if alive {
@@ -953,14 +866,12 @@ func (g *MafiaLogic) HandleMessage(s *Session, sender *Client, msg []byte) {
 			}
 		}
 
-		// IF everyone has voted -> Resolve Day immediately
 		if len(g.Votes) >= aliveCount {
 			g.mu.Unlock()
 			g.resolveDay(s) // <--- THIS IS THE CALL
 			return
 		}
 
-		// If not everyone voted yet, broadcast progress
 		g.broadcastState(s, "DAY", fmt.Sprintf("Votes: %d/%d", len(g.Votes), aliveCount))
 		g.mu.Unlock()
 		return
@@ -987,15 +898,12 @@ func (g *MafiaLogic) resolveNight(s *Session) {
 
 	for actorID, targetID := range g.NightActions {
 
-		// --- CASE 1: THE ACTOR IS BLOCKED (Killer fucked by Whore) ---
 		if blockedPlayers[actorID] {
-			// Notify the player they were blocked
 			client := g.getClientByID(s, actorID)
 			if client != nil {
 				g.sendPrivateMessage(client, "system_message", "You were visited by the Whore. Your action was blocked!")
 			}
 
-			// Skip their action (The Kill never happens)
 			continue
 		}
 
@@ -1008,7 +916,6 @@ func (g *MafiaLogic) resolveNight(s *Session) {
 		case ROLE_POLICE:
 			policeRecipient = actorID
 			targetRole := g.Roles[targetID]
-			// Police sees Mafia as Mafia, everyone else (including Spy) as Innocent
 			isDetected := targetRole == ROLE_MAFIA
 			targetUsername := g.getUsername(s, targetID)
 
@@ -1020,20 +927,16 @@ func (g *MafiaLogic) resolveNight(s *Session) {
 		}
 	}
 
-	// 4. Resolve Life/Death
 	finalDeathMsg := "The night was quiet"
 
 	if killedID != "" {
-		// Rule 1: Doctor saves the victim
 		if killedID == healedID {
 			finalDeathMsg = "The Doctor saved the victim"
 
 		} else if blockedPlayers[killedID] {
 			finalDeathMsg = "The Whore distracted the victim" // Ambiguous message
-			// Reset killedID so no one dies
 			killedID = ""
 
-		} else {
 			// Kill successful
 			g.IsAlive[killedID] = false
 			finalDeathMsg = fmt.Sprintf("%s was killed in the night", g.getUsername(s, killedID))
@@ -1076,7 +979,6 @@ func (g *MafiaLogic) resolveDay(s *Session) {
 	victimID := ""
 	isTie := false
 
-	// Find the player with most votes
 	for target, count := range voteCounts {
 		if count > maxVotes {
 			maxVotes = count
@@ -1098,7 +1000,6 @@ func (g *MafiaLogic) resolveDay(s *Session) {
 		resultMsg = fmt.Sprintf("The town decided. %s was executed.", g.getUsername(s, victimID))
 	}
 
-	// 2. BROADCAST RESULT IMMEDIATELY (Do not check win yet)
 	g.Phase = "RESULTS"
 	g.broadcastState(s, "RESULTS", resultMsg)
 
@@ -1199,8 +1100,6 @@ func (g *MafiaLogic) haveAllNightActionsBeenReceived() bool {
 
 		role := g.Roles[id]
 
-		// Fix: Civilians AND Spies don't act.
-		// Everyone else (Mafia, Doctor, Police, Whore) must submit an action.
 		if role != ROLE_CIVILIAN && role != ROLE_SPY {
 			if _, ok := g.NightActions[id]; !ok {
 				return false // Waiting for this person
@@ -1218,10 +1117,8 @@ func (g *MafiaLogic) startNightPhase(s *Session) {
 
 	g.broadcastState(s, "NIGHT", "Night has fallen")
 
-	// 1. Build the list of MAFIA members (Excluding Spy)
 	mafiaNames := []string{}
 	for id, role := range g.Roles {
-		// Only add actual Mafia to this list. DO NOT add the Spy.
 		if role == ROLE_MAFIA {
 			mafiaNames = append(mafiaNames, g.getUsername(s, id))
 		}
@@ -1245,20 +1142,14 @@ func (g *MafiaLogic) startNightPhase(s *Session) {
 			prompt = "Choose a player to INVESTIGATE"
 		case ROLE_WHORE:
 			prompt = "Choose a player to FUCK"
-			// Spy has no active prompt
 		default:
 			prompt = "Sleep tight..."
 		}
 
-		// 2. Send Action Request
 		if prompt != "Sleep tight..." {
 			g.sendPrivateMessage(client, "action_request", prompt)
 		}
 
-		// 3. Send Intel / Team Knowledge
-
-		// CASE A: User is SPY
-		// Spy sees the Mafia list.
 		if role == ROLE_SPY {
 			msg := "The Mafia is: " + mafiaListStr
 			g.sendPrivateMessage(client, "intel", msg)
@@ -1331,15 +1222,12 @@ func (g *MafiaLogic) assignRoles(s *Session) {
 		g.Roles[ids[4]] = ROLE_WHORE
 	}
 
-	// --- SEND ROLES TO CLIENTS ---
 	for client := range s.Clients {
 		role := g.Roles[client.UserID]
 
 		payload := GameStatePayload{
 			Action: "game_update",
 			GameState: MafiaGameState{
-				// CHANGE THIS FROM "LOBBY" TO "NIGHT"
-				// This ensures the UI renders the Board immediately with the Role
 				Phase:   "NIGHT",
 				MyRole:  role,
 				Message: "Assigning Roles...",
