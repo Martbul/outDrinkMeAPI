@@ -87,13 +87,12 @@ func init() {
 	gameManager = services.NewDrinnkingGameManager()
 
 	if err != nil {
-        log.Printf("Warning: Could not initialize FCM: %v", err)
-    } else {
-        // 3. INJECT the provider into the service
-        notificationService.SetPushProvider(fcmService)
-        log.Println("FCM Push Provider initialized successfully")
-    }
-
+		log.Printf("Warning: Could not initialize FCM: %v", err)
+	} else {
+		// 3. INJECT the provider into the service
+		notificationService.SetPushProvider(fcmService)
+		log.Println("FCM Push Provider initialized successfully")
+	}
 
 	middleware.InitPrometheus()
 }
@@ -163,7 +162,7 @@ func main() {
 	api := standardRouter.PathPrefix("/api/v1").Subrouter()
 
 	api.HandleFunc("/drinking-games/public", drinkingGameHandler.GetPublicDrinkingGames).Methods("GET")
-	
+
 	api.HandleFunc("/privacy-policy", docHandler.ServePrivacyPolicy).Methods("GET")
 	api.HandleFunc("/terms-of-services", docHandler.ServeTermsOfServices).Methods("GET")
 	api.HandleFunc("/delete-account-webpage", userHandler.DeleteAccountPage).Methods("GET")
@@ -207,6 +206,8 @@ func main() {
 	protected.HandleFunc("/user/drunk-friend-thoughts", userHandler.GetDrunkFriendThoughts).Methods("GET")
 	protected.HandleFunc("/user/inventory", userHandler.GetUserInventory).Methods("GET")
 	protected.HandleFunc("/user/feedback", userHandler.AddUserFeedback).Methods("POST")
+
+	protected.HandleFunc("/min-version", docHandler.GetAppMinVersion).Methods("GET")
 
 	protected.HandleFunc("/store", storeHandler.GetStore).Methods("GET")
 	protected.HandleFunc("/store/purchase/item", storeHandler.PurchaseStoreItem).Methods("POST")
