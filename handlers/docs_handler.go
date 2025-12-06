@@ -253,7 +253,7 @@ func (h *DocHandler) GetAppMinVersion(w http.ResponseWriter, r *http.Request) {
 		log.Fatal("appAndroidMinVersion environment variable is not set")
 	}
 
-	appIOSMinVersion := os.Getenv("	")
+	appIOSMinVersion := os.Getenv("IOS_MIN_VERSION")
 	if appIOSMinVersion == "" {
 		log.Fatal("appIOSMinVersion environment variable is not set")
 	}
