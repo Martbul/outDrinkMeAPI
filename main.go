@@ -206,7 +206,7 @@ func main() {
 	protected.HandleFunc("/user/inventory", userHandler.GetUserInventory).Methods("GET")
 	protected.HandleFunc("/user/feedback", userHandler.AddUserFeedback).Methods("POST")
 
-	api.HandleFunc("/min-version", docHandler.GetAppMinVersion).Methods("GET")
+	protected.HandleFunc("/min-version", docHandler.GetAppMinVersion).Methods("GET")
 
 	protected.HandleFunc("/store", storeHandler.GetStore).Methods("GET")
 	protected.HandleFunc("/store/purchase/item", storeHandler.PurchaseStoreItem).Methods("POST")
