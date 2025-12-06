@@ -2,7 +2,9 @@ package handlers
 
 import (
 	"html/template"
+	"log"
 	"net/http"
+	"os"
 	"outDrinkMeAPI/services"
 )
 
@@ -240,4 +242,34 @@ func (h *DocHandler) ServeTermsOfServices(w http.ResponseWriter, r *http.Request
 	}
 
 	tmpl.Execute(w, nil)
+}
+
+
+
+
+func (h *DocHandler) GetAppMinVersion(w http.ResponseWriter, r *http.Request) {
+	appAndroidMinVersion := os.Getenv("ANDROID_MIN_VERSION")
+	if appAndroidMinVersion == "" {
+		log.Fatal("appAndroidMinVersion environment variable is not set")
+	}
+
+	appIOSMinVersion := os.Getenv("	")
+	if appIOSMinVersion == "" {
+		log.Fatal("appIOSMinVersion environment variable is not set")
+	}
+
+	type MinVersion struct {
+		MinAndroidVersion string `json:"min_android_version_code"`
+		MinIOSVersion     string `json:"min_ios_version_code"`
+		UpdateMessage     string `json:"update_message"`
+	}
+
+	minVers := &MinVersion{
+		MinAndroidVersion: appAndroidMinVersion,
+		MinIOSVersion:     appIOSMinVersion,
+		UpdateMessage:     "An important update is available! Please update to continue using the app. This update includes critical server compatibility changes",
+	}
+
+	
+	respondWithJSON(w, http.StatusOK, minVers)
 }
