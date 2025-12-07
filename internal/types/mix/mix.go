@@ -1,6 +1,8 @@
 package mix
 
 import (
+	"outDrinkMeAPI/internal/types/achievement"
+	"outDrinkMeAPI/internal/types/stats"
 	"outDrinkMeAPI/internal/types/user"
 	"time"
 )
@@ -28,4 +30,13 @@ type VideoPost struct {
 	Chips        int       `json:"chips"`
 	Duration     int       `json:"duration"`
 	CreatedAt    time.Time `json:"created_at"`
+}
+
+
+type FriendDiscoveryDisplayProfileResponse struct {
+	User         *user.User                                `json:"user"`
+	Stats        *stats.UserStats                     `json:"stats"`
+	Achievements []*achievement.AchievementWithStatus `json:"achievements"`
+	MixPosts     []DailyDrinkingPost                  `json:"mix_posts"`
+	IsFriend     bool                                 `json:"is_friend"`
 }
