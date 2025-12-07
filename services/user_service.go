@@ -192,33 +192,32 @@ func (s *UserService) FriendDiscoveryDisplayProfile(ctx context.Context, clerkID
 	}
 
 
-		userPostsQuery := `
-	SELECT 
-		dd.id,
-		dd.user_id,
-		u.image_url AS user_image_url,
-		dd.date,
-		dd.drank_today,
-		dd.logged_at,
-		dd.image_url AS post_image_url,
-		dd.location_text,
-		dd.mentioned_buddies,
-		'own' AS source_type
-	FROM daily_drinking dd
-	JOIN users u ON u.id = dd.user_id
-	WHERE dd.user_id = $1
-		AND dd.image_url IS NOT NULL
-		AND dd.image_url != ''
-	ORDER BY dd.logged_at DESC
-	`
+	    userPostsQuery := `
+    SELECT 
+        dd.id,
+        dd.user_id,
+        u.image_url AS user_image_url,
+        dd.date,
+        dd.drank_today,
+        dd.logged_at,
+        dd.image_url AS post_image_url,
+        dd.location_text,
+        dd.mentioned_buddies,
+        'own' AS source_type
+    FROM daily_drinking dd
+    JOIN users u ON u.id = dd.user_id
+    WHERE dd.user_id = $1  -- This MUST match the argument passed below
+        AND dd.image_url IS NOT NULL
+        AND dd.image_url != ''
+    ORDER BY dd.logged_at DESC
+    `
 
-
-	rows, err := s.db.Query(ctx, userPostsQuery, currnetUserID)
-	if err != nil {
-		log.Println("failed to get feed")
-		return nil, fmt.Errorf("failed to get feed: %w", err)
-	}
-	defer rows.Close()
+	  rows, err := s.db.Query(ctx, userPostsQuery, friendDiscoveryUUID) 
+    if err != nil {
+        log.Println("failed to get feed")
+        return nil, fmt.Errorf("failed to get feed: %w", err)
+    }
+    defer rows.Close()
 
 	var userPosts []mix.DailyDrinkingPost
 	for rows.Next() {
