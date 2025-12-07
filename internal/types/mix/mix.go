@@ -8,16 +8,16 @@ import (
 )
 
 type DailyDrinkingPost struct {
-	ID               string
-	UserID           string
-	UserImageURL     *string
-	Date             time.Time
-	DrankToday       bool
-	LoggedAt         time.Time
-	ImageURL         *string
-	LocationText     *string
-	MentionedBuddies []user.User
-	SourceType       string
+	ID               string      `json:"id"`
+	UserID           string      `json:"user_id"`
+	UserImageURL     *string     `json:"user_image_url"`
+	Date             time.Time   `json:"data"`
+	DrankToday       bool        `json:"drank_today"`
+	LoggedAt         time.Time   `json:"logged_at"`
+	ImageURL         *string     `json:"image_url"`
+	LocationText     *string     `json:"location_text"`
+	MentionedBuddies []user.User `json:"mentioned_buddies"`
+	SourceType       string      `json:"source_type"`
 }
 
 type VideoPost struct {
@@ -32,9 +32,8 @@ type VideoPost struct {
 	CreatedAt    time.Time `json:"created_at"`
 }
 
-
 type FriendDiscoveryDisplayProfileResponse struct {
-	User         *user.User                                `json:"user"`
+	User         *user.User                           `json:"user"`
 	Stats        *stats.UserStats                     `json:"stats"`
 	Achievements []*achievement.AchievementWithStatus `json:"achievements"`
 	MixPosts     []DailyDrinkingPost                  `json:"mix_posts"`
