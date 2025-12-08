@@ -119,7 +119,6 @@ func (s *UserService) GetUserByClerkID(ctx context.Context, clerkID string) (*us
 
 	return user, nil
 }
-
 func (s *UserService) FriendDiscoveryDisplayProfile(ctx context.Context, clerkID string, FriendDiscoveryId string) (*mix.FriendDiscoveryDisplayProfileResponse, error) {
 	var currnetUserID uuid.UUID
 	err := s.db.QueryRow(ctx, `SELECT id FROM users WHERE clerk_id = $1`, clerkID).Scan(&currnetUserID)
@@ -177,6 +176,19 @@ func (s *UserService) FriendDiscoveryDisplayProfile(ctx context.Context, clerkID
 		return nil, fmt.Errorf("failed to get user achievements: %w", err)
 	}
 
+	// ---------------------------------------------------------
+	// NEW: Fetch Inventory using the existing GetUserInventory
+	// ---------------------------------------------------------
+	friendDiscoveryInventory, err := s.GetUserInventory(ctx, friendDiscoveryUserData.ClerkID)
+	if err != nil {
+		log.Printf("FriendDiscoveryDisplayProfile: Failed to get user inventory: %v", err)
+		// Option A: Return error if inventory is critical
+		return nil, fmt.Errorf("failed to get user inventory: %w", err)
+		
+		// Option B: If you prefer to return the profile even if inventory fails, un-comment below and comment out the return above:
+		// friendDiscoveryInventory = make(map[string][]*store.InventoryItem) 
+	}
+
 	var isFriend bool
 	friendCheckQuery := `
         SELECT EXISTS(
@@ -191,12 +203,12 @@ func (s *UserService) FriendDiscoveryDisplayProfile(ctx context.Context, clerkID
 		isFriend = false
 	}
 
-
-	    userPostsQuery := `
+	userPostsQuery := `
     SELECT 
         dd.id,
         dd.user_id,
         u.image_url AS user_image_url,
+		u.username,
         dd.date,
         dd.drank_today,
         dd.logged_at,
@@ -206,18 +218,18 @@ func (s *UserService) FriendDiscoveryDisplayProfile(ctx context.Context, clerkID
         'own' AS source_type
     FROM daily_drinking dd
     JOIN users u ON u.id = dd.user_id
-    WHERE dd.user_id = $1  -- This MUST match the argument passed below
+    WHERE dd.user_id = $1
         AND dd.image_url IS NOT NULL
         AND dd.image_url != ''
     ORDER BY dd.logged_at DESC
     `
 
-	  rows, err := s.db.Query(ctx, userPostsQuery, friendDiscoveryUUID) 
-    if err != nil {
-        log.Println("failed to get feed")
-        return nil, fmt.Errorf("failed to get feed: %w", err)
-    }
-    defer rows.Close()
+	rows, err := s.db.Query(ctx, userPostsQuery, friendDiscoveryUUID)
+	if err != nil {
+		log.Println("failed to get feed")
+		return nil, fmt.Errorf("failed to get feed: %w", err)
+	}
+	defer rows.Close()
 
 	var userPosts []mix.DailyDrinkingPost
 	for rows.Next() {
@@ -228,6 +240,7 @@ func (s *UserService) FriendDiscoveryDisplayProfile(ctx context.Context, clerkID
 			&post.ID,
 			&post.UserID,
 			&post.UserImageURL,
+			&post.Username,
 			&post.Date,
 			&post.DrankToday,
 			&post.LoggedAt,
@@ -245,7 +258,6 @@ func (s *UserService) FriendDiscoveryDisplayProfile(ctx context.Context, clerkID
 			post.MentionedBuddies, err = s.getUsersByIDs(ctx, mentionedBuddyIDs)
 			if err != nil {
 				log.Printf("failed to fetch mentioned buddies for post %s: %v", post.ID, err)
-				// Continue without buddies rather than failing
 				post.MentionedBuddies = []user.User{}
 			}
 		} else {
@@ -259,7 +271,6 @@ func (s *UserService) FriendDiscoveryDisplayProfile(ctx context.Context, clerkID
 		log.Println("error iterating userPosts")
 		return nil, fmt.Errorf("error iterating posts: %w", err)
 	}
-	log.Println(userPosts)
 
 	log.Println("Friend Discovery User Data:", friendDiscoveryUserData)
 	log.Println("Friend Discovery Stats:", friendDiscoveryStats)
@@ -272,6 +283,7 @@ func (s *UserService) FriendDiscoveryDisplayProfile(ctx context.Context, clerkID
 		Achievements: friendDiscoveryAchievements,
 		MixPosts:     userPosts,
 		IsFriend:     isFriend,
+		Inventory:    friendDiscoveryInventory, 
 	}
 	return response, nil
 }
@@ -1365,6 +1377,9 @@ func (s *UserService) GetUserStats(ctx context.Context, clerkID string) (*stats.
 
 	return stats, nil
 }
+
+
+
 func (s *UserService) GetYourMix(ctx context.Context, clerkID string) ([]mix.DailyDrinkingPost, error) {
 	log.Println("getting feed")
 
@@ -1382,6 +1397,7 @@ func (s *UserService) GetYourMix(ctx context.Context, clerkID string) ([]mix.Dai
 			dd.id,
 			dd.user_id,
 			u.image_url AS user_image_url,
+			u.username,
 			dd.date,
 			dd.drank_today,
 			dd.logged_at,
@@ -1417,6 +1433,7 @@ func (s *UserService) GetYourMix(ctx context.Context, clerkID string) ([]mix.Dai
 			dd.id,
 			dd.user_id,
 			u.image_url AS user_image_url,
+						u.username,
 			dd.date,
 			dd.drank_today,
 			dd.logged_at,
@@ -1446,6 +1463,7 @@ func (s *UserService) GetYourMix(ctx context.Context, clerkID string) ([]mix.Dai
 		id,
 		user_id,
 		user_image_url,
+		username,
 		date,
 		drank_today,
 		logged_at,
@@ -1478,6 +1496,7 @@ func (s *UserService) GetYourMix(ctx context.Context, clerkID string) ([]mix.Dai
 			&post.ID,
 			&post.UserID,
 			&post.UserImageURL,
+			&post.Username,
 			&post.Date,
 			&post.DrankToday,
 			&post.LoggedAt,
@@ -1658,6 +1677,7 @@ func (s *UserService) GetMixTimeline(ctx context.Context, clerkID string) ([]mix
 		dd.id,
 		dd.user_id,
 		u.image_url AS user_image_url,
+		u.username,
 		dd.date,
 		dd.drank_today,
 		dd.logged_at,
@@ -1689,6 +1709,7 @@ func (s *UserService) GetMixTimeline(ctx context.Context, clerkID string) ([]mix
 			&post.ID,
 			&post.UserID,
 			&post.UserImageURL,
+			&post.Username,
 			&post.Date,
 			&post.DrankToday,
 			&post.LoggedAt,
@@ -2147,15 +2168,15 @@ func (s *UserService) GetAlcoholismChart(ctx context.Context, clerkID string, pe
 	query := `SELECT get_alcoholism_chart_data($1, $2)`
 
 	var jsonResult []byte
-	
+
 	err = s.db.QueryRow(ctx, query, userID, period).Scan(&jsonResult)
 	if err != nil {
 		return nil, fmt.Errorf("failed to fetch chart data: %w", err)
 	}
 
-    if len(jsonResult) == 0 {
-        return []byte("[]"), nil
-    }
+	if len(jsonResult) == 0 {
+		return []byte("[]"), nil
+	}
 
 	return jsonResult, nil
 }

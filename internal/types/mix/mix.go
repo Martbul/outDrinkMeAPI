@@ -3,16 +3,17 @@ package mix
 import (
 	"outDrinkMeAPI/internal/types/achievement"
 	"outDrinkMeAPI/internal/types/stats"
+	"outDrinkMeAPI/internal/types/store"
 	"outDrinkMeAPI/internal/types/user"
 	"time"
 )
 
-
 type DailyDrinkingPost struct {
 	ID               string      `json:"id"`
 	UserID           string      `json:"user_id"`
+	Username         string      `json:"username"`
 	UserImageURL     *string     `json:"user_image_url"`
-	Date             time.Time   `json:"date"` 
+	Date             time.Time   `json:"date"`
 	DrankToday       bool        `json:"drank_today"`
 	LoggedAt         time.Time   `json:"logged_at"`
 	ImageURL         *string     `json:"image_url"`
@@ -33,10 +34,13 @@ type VideoPost struct {
 	CreatedAt    time.Time `json:"created_at"`
 }
 
+
+
 type FriendDiscoveryDisplayProfileResponse struct {
 	User         *user.User                           `json:"user"`
 	Stats        *stats.UserStats                     `json:"stats"`
 	Achievements []*achievement.AchievementWithStatus `json:"achievements"`
 	MixPosts     []DailyDrinkingPost                  `json:"mix_posts"`
 	IsFriend     bool                                 `json:"is_friend"`
+	Inventory    map[string][]*store.InventoryItem    `json:"inventory"` // Added this field
 }

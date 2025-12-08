@@ -367,6 +367,7 @@ func (g *KingsCupLogic) HandleMessage(s *Session, sender *Client, msg []byte) {
 		}
 
 		log.Printf("%s chose %s as a buddy. Buddies: %v\n", sender.Username, chosenBuddyInfo.Username, g.Buddies)
+		g.CurrentCard = nil
 
 		g.DrawingIndex = (g.DrawingIndex + 1) % len(g.Players)
 
@@ -386,6 +387,7 @@ func (g *KingsCupLogic) HandleMessage(s *Session, sender *Client, msg []byte) {
 		g.CustomRules[sender.UserID] = append(g.CustomRules[sender.UserID], request.NewRule)
 
 		log.Printf("%s set a new rule: \"%s\". Custom Rules: %v\n", sender.Username, request.NewRule, g.CustomRules)
+		g.CurrentCard = nil
 
 		g.DrawingIndex = (g.DrawingIndex + 1) % len(g.Players)
 		log.Printf("Turn advanced to %s (%s) after rule setting.\n", g.Players[g.DrawingIndex].Username, g.Players[g.DrawingIndex].ID)
