@@ -7,12 +7,12 @@ import (
 	"time"
 )
 
-
 type DailyDrinkingPost struct {
 	ID               string      `json:"id"`
 	UserID           string      `json:"user_id"`
+	Username         string      `json:"username"`
 	UserImageURL     *string     `json:"user_image_url"`
-	Date             time.Time   `json:"date"` 
+	Date             time.Time   `json:"date"`
 	DrankToday       bool        `json:"drank_today"`
 	LoggedAt         time.Time   `json:"logged_at"`
 	ImageURL         *string     `json:"image_url"`

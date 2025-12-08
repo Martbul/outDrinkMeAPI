@@ -191,8 +191,7 @@ func (s *UserService) FriendDiscoveryDisplayProfile(ctx context.Context, clerkID
 		isFriend = false
 	}
 
-
-	    userPostsQuery := `
+	userPostsQuery := `
     SELECT 
         dd.id,
         dd.user_id,
@@ -212,12 +211,12 @@ func (s *UserService) FriendDiscoveryDisplayProfile(ctx context.Context, clerkID
     ORDER BY dd.logged_at DESC
     `
 
-	  rows, err := s.db.Query(ctx, userPostsQuery, friendDiscoveryUUID) 
-    if err != nil {
-        log.Println("failed to get feed")
-        return nil, fmt.Errorf("failed to get feed: %w", err)
-    }
-    defer rows.Close()
+	rows, err := s.db.Query(ctx, userPostsQuery, friendDiscoveryUUID)
+	if err != nil {
+		log.Println("failed to get feed")
+		return nil, fmt.Errorf("failed to get feed: %w", err)
+	}
+	defer rows.Close()
 
 	var userPosts []mix.DailyDrinkingPost
 	for rows.Next() {
@@ -1382,6 +1381,7 @@ func (s *UserService) GetYourMix(ctx context.Context, clerkID string) ([]mix.Dai
 			dd.id,
 			dd.user_id,
 			u.image_url AS user_image_url,
+			u.username,
 			dd.date,
 			dd.drank_today,
 			dd.logged_at,
@@ -1417,6 +1417,7 @@ func (s *UserService) GetYourMix(ctx context.Context, clerkID string) ([]mix.Dai
 			dd.id,
 			dd.user_id,
 			u.image_url AS user_image_url,
+						u.username,
 			dd.date,
 			dd.drank_today,
 			dd.logged_at,
@@ -1446,6 +1447,7 @@ func (s *UserService) GetYourMix(ctx context.Context, clerkID string) ([]mix.Dai
 		id,
 		user_id,
 		user_image_url,
+					u.username,
 		date,
 		drank_today,
 		logged_at,
@@ -1478,6 +1480,7 @@ func (s *UserService) GetYourMix(ctx context.Context, clerkID string) ([]mix.Dai
 			&post.ID,
 			&post.UserID,
 			&post.UserImageURL,
+			&post.Username,
 			&post.Date,
 			&post.DrankToday,
 			&post.LoggedAt,
@@ -2147,15 +2150,15 @@ func (s *UserService) GetAlcoholismChart(ctx context.Context, clerkID string, pe
 	query := `SELECT get_alcoholism_chart_data($1, $2)`
 
 	var jsonResult []byte
-	
+
 	err = s.db.QueryRow(ctx, query, userID, period).Scan(&jsonResult)
 	if err != nil {
 		return nil, fmt.Errorf("failed to fetch chart data: %w", err)
 	}
 
-    if len(jsonResult) == 0 {
-        return []byte("[]"), nil
-    }
+	if len(jsonResult) == 0 {
+		return []byte("[]"), nil
+	}
 
 	return jsonResult, nil
 }
