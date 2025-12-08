@@ -1365,7 +1365,6 @@ func (s *UserService) GetUserStats(ctx context.Context, clerkID string) (*stats.
 
 	return stats, nil
 }
-
 func (s *UserService) GetYourMix(ctx context.Context, clerkID string) ([]mix.DailyDrinkingPost, error) {
 	log.Println("getting feed")
 
@@ -1393,7 +1392,7 @@ func (s *UserService) GetYourMix(ctx context.Context, clerkID string) ([]mix.Dai
 		FROM daily_drinking dd
 		JOIN users u ON u.id = dd.user_id
 		WHERE dd.user_id != $1
-			AND dd.logged_at >= NOW() - INTERVAL '5 days'
+			AND dd.logged_at >= NOW() - INTERVAL '14 days' -- UPDATED HERE
 			AND dd.image_url IS NOT NULL
 			AND dd.image_url != ''
 			AND dd.user_id IN (
@@ -1428,7 +1427,7 @@ func (s *UserService) GetYourMix(ctx context.Context, clerkID string) ([]mix.Dai
 		FROM daily_drinking dd
 		JOIN users u ON u.id = dd.user_id
 		WHERE dd.user_id != $1
-			AND dd.logged_at >= NOW() - INTERVAL '5 days'
+			AND dd.logged_at >= NOW() - INTERVAL '14 days' -- UPDATED HERE
 			AND dd.image_url IS NOT NULL
 			AND dd.image_url != ''
 			AND dd.user_id NOT IN (
