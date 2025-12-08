@@ -196,6 +196,7 @@ func (s *UserService) FriendDiscoveryDisplayProfile(ctx context.Context, clerkID
         dd.id,
         dd.user_id,
         u.image_url AS user_image_url,
+		  u.username,
         dd.date,
         dd.drank_today,
         dd.logged_at,
@@ -227,6 +228,7 @@ func (s *UserService) FriendDiscoveryDisplayProfile(ctx context.Context, clerkID
 			&post.ID,
 			&post.UserID,
 			&post.UserImageURL,
+			&post.Username,
 			&post.Date,
 			&post.DrankToday,
 			&post.LoggedAt,
@@ -1364,6 +1366,9 @@ func (s *UserService) GetUserStats(ctx context.Context, clerkID string) (*stats.
 
 	return stats, nil
 }
+
+
+
 func (s *UserService) GetYourMix(ctx context.Context, clerkID string) ([]mix.DailyDrinkingPost, error) {
 	log.Println("getting feed")
 
@@ -1661,6 +1666,7 @@ func (s *UserService) GetMixTimeline(ctx context.Context, clerkID string) ([]mix
 		dd.id,
 		dd.user_id,
 		u.image_url AS user_image_url,
+		u.username,
 		dd.date,
 		dd.drank_today,
 		dd.logged_at,
@@ -1692,6 +1698,7 @@ func (s *UserService) GetMixTimeline(ctx context.Context, clerkID string) ([]mix
 			&post.ID,
 			&post.UserID,
 			&post.UserImageURL,
+			&post.Username,
 			&post.Date,
 			&post.DrankToday,
 			&post.LoggedAt,
