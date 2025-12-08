@@ -120,7 +120,7 @@ func (s *UserService) GetUserByClerkID(ctx context.Context, clerkID string) (*us
 	return user, nil
 }
 
-func (s *UserService) FriendDiscoveryDisplayProfile(ctx context.Context, clerkID string, FriendDiscoveryId string) (*user.FriendDiscoveryDisplayProfileResponse, error) {
+func (s *UserService) FriendDiscoveryDisplayProfile(ctx context.Context, clerkID string, FriendDiscoveryId string) (*mix.FriendDiscoveryDisplayProfileResponse, error) {
 	var currnetUserID uuid.UUID
 	err := s.db.QueryRow(ctx, `SELECT id FROM users WHERE clerk_id = $1`, clerkID).Scan(&currnetUserID)
 	if err != nil {
@@ -191,15 +191,86 @@ func (s *UserService) FriendDiscoveryDisplayProfile(ctx context.Context, clerkID
 		isFriend = false
 	}
 
+
+	    userPostsQuery := `
+    SELECT 
+        dd.id,
+        dd.user_id,
+        u.image_url AS user_image_url,
+        dd.date,
+        dd.drank_today,
+        dd.logged_at,
+        dd.image_url AS post_image_url,
+        dd.location_text,
+        dd.mentioned_buddies,
+        'own' AS source_type
+    FROM daily_drinking dd
+    JOIN users u ON u.id = dd.user_id
+    WHERE dd.user_id = $1  -- This MUST match the argument passed below
+        AND dd.image_url IS NOT NULL
+        AND dd.image_url != ''
+    ORDER BY dd.logged_at DESC
+    `
+
+	  rows, err := s.db.Query(ctx, userPostsQuery, friendDiscoveryUUID) 
+    if err != nil {
+        log.Println("failed to get feed")
+        return nil, fmt.Errorf("failed to get feed: %w", err)
+    }
+    defer rows.Close()
+
+	var userPosts []mix.DailyDrinkingPost
+	for rows.Next() {
+		var post mix.DailyDrinkingPost
+		var mentionedBuddyIDs []string
+
+		err := rows.Scan(
+			&post.ID,
+			&post.UserID,
+			&post.UserImageURL,
+			&post.Date,
+			&post.DrankToday,
+			&post.LoggedAt,
+			&post.ImageURL,
+			&post.LocationText,
+			&mentionedBuddyIDs,
+			&post.SourceType,
+		)
+		if err != nil {
+			log.Println("failed to scan post")
+			return nil, fmt.Errorf("failed to scan post: %w", err)
+		}
+
+		if len(mentionedBuddyIDs) > 0 {
+			post.MentionedBuddies, err = s.getUsersByIDs(ctx, mentionedBuddyIDs)
+			if err != nil {
+				log.Printf("failed to fetch mentioned buddies for post %s: %v", post.ID, err)
+				// Continue without buddies rather than failing
+				post.MentionedBuddies = []user.User{}
+			}
+		} else {
+			post.MentionedBuddies = []user.User{}
+		}
+
+		userPosts = append(userPosts, post)
+	}
+
+	if err = rows.Err(); err != nil {
+		log.Println("error iterating userPosts")
+		return nil, fmt.Errorf("error iterating posts: %w", err)
+	}
+	log.Println(userPosts)
+
 	log.Println("Friend Discovery User Data:", friendDiscoveryUserData)
 	log.Println("Friend Discovery Stats:", friendDiscoveryStats)
 	log.Println("Friend Discovery Achievements:", friendDiscoveryAchievements)
 	log.Println("Is Friend:", isFriend)
 
-	response := &user.FriendDiscoveryDisplayProfileResponse{
+	response := &mix.FriendDiscoveryDisplayProfileResponse{
 		User:         friendDiscoveryUserData,
 		Stats:        friendDiscoveryStats,
 		Achievements: friendDiscoveryAchievements,
+		MixPosts:     userPosts,
 		IsFriend:     isFriend,
 	}
 	return response, nil
@@ -2064,6 +2135,30 @@ func (s *UserService) RemoveAlcoholCollectionItem(ctx context.Context, clerkID s
 	defer rows.Close()
 
 	return true, nil
+}
+
+func (s *UserService) GetAlcoholismChart(ctx context.Context, clerkID string, period string) ([]byte, error) {
+	var userID string
+	userQuery := `SELECT id FROM users WHERE clerk_id = $1`
+	err := s.db.QueryRow(ctx, userQuery, clerkID).Scan(&userID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get user ID: %w", err)
+	}
+
+	query := `SELECT get_alcoholism_chart_data($1, $2)`
+
+	var jsonResult []byte
+	
+	err = s.db.QueryRow(ctx, query, userID, period).Scan(&jsonResult)
+	if err != nil {
+		return nil, fmt.Errorf("failed to fetch chart data: %w", err)
+	}
+
+    if len(jsonResult) == 0 {
+        return []byte("[]"), nil
+    }
+
+	return jsonResult, nil
 }
 
 func (s *UserService) GetUserInventory(ctx context.Context, clerkID string) (map[string][]*store.InventoryItem, error) {

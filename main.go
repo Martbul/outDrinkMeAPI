@@ -36,7 +36,6 @@ var (
 )
 
 func init() {
-	// ... (Your init code remains exactly the same) ...
 	if err := godotenv.Load(); err != nil {
 		log.Println("No .env file found")
 	}
@@ -205,6 +204,7 @@ func main() {
 	protected.HandleFunc("/user/mix-video-chips", userHandler.AddChipsToVideo).Methods("POST")
 	protected.HandleFunc("/user/drunk-friend-thoughts", userHandler.GetDrunkFriendThoughts).Methods("GET")
 	protected.HandleFunc("/user/inventory", userHandler.GetUserInventory).Methods("GET")
+	protected.HandleFunc("/user/alcoholisum_chart", userHandler.GetAlcoholismChart).Methods("GET")
 	protected.HandleFunc("/user/feedback", userHandler.AddUserFeedback).Methods("POST")
 
 	protected.HandleFunc("/min-version", docHandler.GetAppMinVersion).Methods("GET")
@@ -214,9 +214,9 @@ func main() {
 
 	protected.HandleFunc("/notifications", notificationHandler.GetNotifications).Methods("GET")
 	protected.HandleFunc("/notifications/unread-count", notificationHandler.GetUnreadCount).Methods("GET")
-	protected.HandleFunc("/notifications/:id/read", notificationHandler.MarkAsRead).Methods("PUT")
+	protected.HandleFunc("/notifications/{id}/read", notificationHandler.MarkAsRead).Methods("PUT")
 	protected.HandleFunc("/notifications/read-all", notificationHandler.MarkAllAsRead).Methods("PUT")
-	protected.HandleFunc("/notifications/:id", notificationHandler.DeleteNotification).Methods("DELETE")
+	protected.HandleFunc("/notifications/{id}", notificationHandler.DeleteNotification).Methods("DELETE")
 	protected.HandleFunc("/notifications/preferences", notificationHandler.GetPreferences).Methods("GET")
 	protected.HandleFunc("/notifications/preferences", notificationHandler.UpdatePreferences).Methods("PUT")
 	protected.HandleFunc("/notifications/register-device", notificationHandler.RegisterDevice).Methods("POST")
@@ -227,8 +227,8 @@ func main() {
 
 	protected.HandleFunc("/photo-dump/generate", photoDumpHandler.GenerateQrCode).Methods("GET")
 	protected.HandleFunc("/photo-dump/scan", photoDumpHandler.JoinViaQrCode).Methods("POST")
-	protected.HandleFunc("/photo-dump/:sesionId", photoDumpHandler.GetSessionData).Methods("GET")
-	protected.HandleFunc("/photo-dump/:sesionId", photoDumpHandler.AddImages).Methods("POST")
+	protected.HandleFunc("/photo-dump/{sesionId}", photoDumpHandler.GetSessionData).Methods("GET")
+	protected.HandleFunc("/photo-dump/{sesionId}", photoDumpHandler.AddImages).Methods("POST")
 
 	protected.HandleFunc("/drinking-games/create", drinkingGameHandler.CreateDrinkingGame).Methods("POST")
 

@@ -1,9 +1,5 @@
 package user
 
-import (
-	"outDrinkMeAPI/internal/types/achievement"
-	"outDrinkMeAPI/internal/types/stats"
-)
 
 type CreateUserRequest struct {
 	ClerkID   string `json:"clerkId" validate:"required"`
@@ -28,11 +24,4 @@ type AddFriend struct {
 
 type FriendDeiscoveryProfileRequest struct {
 	FriendDiscoveryId string `json:"friendDiscoveryId,omitempty"`
-}
-
-type FriendDiscoveryDisplayProfileResponse struct {
-	User         *User                                `json:"user"`
-	Stats        *stats.UserStats                     `json:"stats"`
-	Achievements []*achievement.AchievementWithStatus `json:"achievements"`
-	IsFriend     bool                                 `json:"is_friend"`
 }
