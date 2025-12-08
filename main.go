@@ -214,7 +214,7 @@ func main() {
 
 	protected.HandleFunc("/notifications", notificationHandler.GetNotifications).Methods("GET")
 	protected.HandleFunc("/notifications/unread-count", notificationHandler.GetUnreadCount).Methods("GET")
-	protected.HandleFunc("/notifications/:id/read", notificationHandler.MarkAsRead).Methods("PUT")
+	protected.HandleFunc("/notifications/{id}/read", notificationHandler.MarkAsRead).Methods("PUT")
 	protected.HandleFunc("/notifications/read-all", notificationHandler.MarkAllAsRead).Methods("PUT")
 	protected.HandleFunc("/notifications/:id", notificationHandler.DeleteNotification).Methods("DELETE")
 	protected.HandleFunc("/notifications/preferences", notificationHandler.GetPreferences).Methods("GET")
