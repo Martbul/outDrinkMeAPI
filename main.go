@@ -216,7 +216,7 @@ func main() {
 	protected.HandleFunc("/notifications/unread-count", notificationHandler.GetUnreadCount).Methods("GET")
 	protected.HandleFunc("/notifications/{id}/read", notificationHandler.MarkAsRead).Methods("PUT")
 	protected.HandleFunc("/notifications/read-all", notificationHandler.MarkAllAsRead).Methods("PUT")
-	protected.HandleFunc("/notifications/:id", notificationHandler.DeleteNotification).Methods("DELETE")
+	protected.HandleFunc("/notifications/{id}", notificationHandler.DeleteNotification).Methods("DELETE")
 	protected.HandleFunc("/notifications/preferences", notificationHandler.GetPreferences).Methods("GET")
 	protected.HandleFunc("/notifications/preferences", notificationHandler.UpdatePreferences).Methods("PUT")
 	protected.HandleFunc("/notifications/register-device", notificationHandler.RegisterDevice).Methods("POST")
@@ -227,8 +227,8 @@ func main() {
 
 	protected.HandleFunc("/photo-dump/generate", photoDumpHandler.GenerateQrCode).Methods("GET")
 	protected.HandleFunc("/photo-dump/scan", photoDumpHandler.JoinViaQrCode).Methods("POST")
-	protected.HandleFunc("/photo-dump/:sesionId", photoDumpHandler.GetSessionData).Methods("GET")
-	protected.HandleFunc("/photo-dump/:sesionId", photoDumpHandler.AddImages).Methods("POST")
+	protected.HandleFunc("/photo-dump/{sesionId}", photoDumpHandler.GetSessionData).Methods("GET")
+	protected.HandleFunc("/photo-dump/{sesionId}", photoDumpHandler.AddImages).Methods("POST")
 
 	protected.HandleFunc("/drinking-games/create", drinkingGameHandler.CreateDrinkingGame).Methods("POST")
 
