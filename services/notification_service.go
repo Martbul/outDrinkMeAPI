@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"log"
 	"outDrinkMeAPI/internal/types/notification"
 	"strings"
 	"time"
@@ -26,11 +27,6 @@ func NewNotificationService(db *pgxpool.Pool) *NotificationService {
 	return service
 }
 
-// ---------------------------------------------------------
-// ID RESOLUTION HELPERS
-// ---------------------------------------------------------
-
-// Internal: Resolve ClerkID (string) -> UserID (UUID)
 func (s *NotificationService) getUserID(ctx context.Context, clerkID string) (uuid.UUID, error) {
 	var userID uuid.UUID
 	err := s.db.QueryRow(ctx, "SELECT id FROM users WHERE clerk_id = $1", clerkID).Scan(&userID)
@@ -40,7 +36,6 @@ func (s *NotificationService) getUserID(ctx context.Context, clerkID string) (uu
 	return userID, nil
 }
 
-// Public: Exposed for Test Handler
 func (s *NotificationService) GetUserIDFromClerkID(ctx context.Context, clerkID string) (uuid.UUID, error) {
 	return s.getUserID(ctx, clerkID)
 }
@@ -51,7 +46,6 @@ func (s *NotificationService) CreateNotification(ctx context.Context, req *notif
 	}
 	req.Data["recipient_user_id"] = req.UserID.String() // Add this!
 
-	// 1. Get Template from DB
 	template, err := s.getTemplate(ctx, req.Type)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get template for type %s: %w", req.Type, err)
@@ -229,10 +223,19 @@ func (s *NotificationService) GetUnreadCount(ctx context.Context, clerkID string
 }
 
 func (s *NotificationService) MarkAsRead(ctx context.Context, notificationID uuid.UUID, clerkID string) error {
+		log.Println("clerkID: ")
+	log.Println(clerkID)
+
+
 	userID, err := s.getUserID(ctx, clerkID)
 	if err != nil {
 		return err
 	}
+
+	log.Println("USERID: ")
+	log.Println(userID)
+
+
 
 	query := `
 		UPDATE notifications

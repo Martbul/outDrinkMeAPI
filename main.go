@@ -204,6 +204,7 @@ func main() {
 	protected.HandleFunc("/user/mix-video-chips", userHandler.AddChipsToVideo).Methods("POST")
 	protected.HandleFunc("/user/drunk-friend-thoughts", userHandler.GetDrunkFriendThoughts).Methods("GET")
 	protected.HandleFunc("/user/inventory", userHandler.GetUserInventory).Methods("GET")
+	protected.HandleFunc("/user/alcoholisum_chart", userHandler.GetAlcoholismChart).Methods("GET")
 	protected.HandleFunc("/user/feedback", userHandler.AddUserFeedback).Methods("POST")
 
 	protected.HandleFunc("/min-version", docHandler.GetAppMinVersion).Methods("GET")

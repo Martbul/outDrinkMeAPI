@@ -2137,6 +2137,30 @@ func (s *UserService) RemoveAlcoholCollectionItem(ctx context.Context, clerkID s
 	return true, nil
 }
 
+func (s *UserService) GetAlcoholismChart(ctx context.Context, clerkID string, period string) ([]byte, error) {
+	var userID string
+	userQuery := `SELECT id FROM users WHERE clerk_id = $1`
+	err := s.db.QueryRow(ctx, userQuery, clerkID).Scan(&userID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get user ID: %w", err)
+	}
+
+	query := `SELECT get_alcoholism_chart_data($1, $2)`
+
+	var jsonResult []byte
+	
+	err = s.db.QueryRow(ctx, query, userID, period).Scan(&jsonResult)
+	if err != nil {
+		return nil, fmt.Errorf("failed to fetch chart data: %w", err)
+	}
+
+    if len(jsonResult) == 0 {
+        return []byte("[]"), nil
+    }
+
+	return jsonResult, nil
+}
+
 func (s *UserService) GetUserInventory(ctx context.Context, clerkID string) (map[string][]*store.InventoryItem, error) {
 	var userID uuid.UUID
 	userQuery := `SELECT id FROM users WHERE clerk_id = $1`

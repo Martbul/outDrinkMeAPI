@@ -351,6 +351,33 @@ func (h *UserHandler) GetMixVideoFeed(w http.ResponseWriter, r *http.Request) {
 	respondWithJSON(w, http.StatusOK, videos)
 }
 
+func (h *UserHandler) GetAlcoholismChart(w http.ResponseWriter, r *http.Request) {
+	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
+	defer cancel()
+
+	// 1. Get User ID from Context
+	clerkID, ok := middleware.GetClerkID(ctx)
+	if !ok {
+		respondWithError(w, http.StatusUnauthorized, "Unauthorized")
+		return
+	}
+
+	period := r.URL.Query().Get("period")
+	switch period {
+	case "1M", "3M", "6M", "1Y", "ALL":
+	default:
+		period = "3M"
+	}
+
+	chartDataBytes, err := h.userService.GetAlcoholismChart(ctx, clerkID, period)
+	if err != nil {
+		respondWithError(w, http.StatusInternalServerError, "Failed to fetch chart data")
+		return
+	}
+
+	respondWithJSON(w, http.StatusOK, json.RawMessage(chartDataBytes))
+}
+
 func (h *UserHandler) AddMixVideo(w http.ResponseWriter, r *http.Request) {
 	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
 	defer cancel()
@@ -407,6 +434,7 @@ func (h *UserHandler) AddUserFeedback(w http.ResponseWriter, r *http.Request) {
 
 	respondWithJSON(w, http.StatusOK, map[string]string{"message": "Drinking activity added successfully"})
 }
+
 func (h *UserHandler) AddChipsToVideo(w http.ResponseWriter, r *http.Request) {
 	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
 	defer cancel()
@@ -901,7 +929,6 @@ func (h *UserHandler) UpdateAccountPage(w http.ResponseWriter, r *http.Request) 
     `)
 }
 
-// Helper functions
 func respondWithJSON(w http.ResponseWriter, code int, payload interface{}) {
 	response, err := json.Marshal(payload)
 	if err != nil {
