@@ -3,6 +3,7 @@ package handlers
 import (
 	"context"
 	"encoding/json"
+	"log"
 	"net/http"
 	"outDrinkMeAPI/internal/types/notification"
 	"outDrinkMeAPI/middleware"
@@ -24,7 +25,6 @@ func NewNotificationHandler(notificationService *services.NotificationService) *
 	}
 }
 
-// GET /api/v1/notifications
 func (h *NotificationHandler) GetNotifications(w http.ResponseWriter, r *http.Request) {
 	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
 	defer cancel()
@@ -36,12 +36,15 @@ func (h *NotificationHandler) GetNotifications(w http.ResponseWriter, r *http.Re
 	}
 
 	page, _ := strconv.Atoi(r.URL.Query().Get("page"))
-	if page < 1 { page = 1 }
+	if page < 1 {
+		page = 1
+	}
 	pageSize, _ := strconv.Atoi(r.URL.Query().Get("page_size"))
-	if pageSize < 1 || pageSize > 100 { pageSize = 20 }
+	if pageSize < 1 || pageSize > 100 {
+		pageSize = 20
+	}
 	unreadOnly := r.URL.Query().Get("unread_only") == "true"
 
-	// Logic moved to service
 	response, err := h.notificationService.GetNotifications(ctx, clerkID, page, pageSize, unreadOnly)
 	if err != nil {
 		respondWithError(w, http.StatusInternalServerError, err.Error())
@@ -51,7 +54,6 @@ func (h *NotificationHandler) GetNotifications(w http.ResponseWriter, r *http.Re
 	respondWithJSON(w, http.StatusOK, response)
 }
 
-// GET /api/v1/notifications/unread-count
 func (h *NotificationHandler) GetUnreadCount(w http.ResponseWriter, r *http.Request) {
 	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
 	defer cancel()
@@ -62,7 +64,6 @@ func (h *NotificationHandler) GetUnreadCount(w http.ResponseWriter, r *http.Requ
 		return
 	}
 
-	// Logic moved to service
 	count, err := h.notificationService.GetUnreadCount(ctx, clerkID)
 	if err != nil {
 		respondWithError(w, http.StatusInternalServerError, err.Error())
@@ -72,8 +73,9 @@ func (h *NotificationHandler) GetUnreadCount(w http.ResponseWriter, r *http.Requ
 	respondWithJSON(w, http.StatusOK, map[string]int{"unread_count": count})
 }
 
-// PUT /api/v1/notifications/:id/read
 func (h *NotificationHandler) MarkAsRead(w http.ResponseWriter, r *http.Request) {
+	log.Println("IN  /api/v1/notifications/:id/read")
+
 	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
 	defer cancel()
 
@@ -85,13 +87,18 @@ func (h *NotificationHandler) MarkAsRead(w http.ResponseWriter, r *http.Request)
 
 	vars := mux.Vars(r)
 	notificationID, err := uuid.Parse(vars["id"])
+	log.Println(notificationID)
 	if err != nil {
+		log.Println("Invalid notification ID")
+		log.Println(err)
 		respondWithError(w, http.StatusBadRequest, "Invalid notification ID")
 		return
 	}
 
 	err = h.notificationService.MarkAsRead(ctx, notificationID, clerkID)
 	if err != nil {
+		log.Println("error")
+		log.Println(err)
 		respondWithError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
@@ -99,7 +106,6 @@ func (h *NotificationHandler) MarkAsRead(w http.ResponseWriter, r *http.Request)
 	respondWithJSON(w, http.StatusOK, map[string]string{"message": "Notification marked as read"})
 }
 
-// PUT /api/v1/notifications/read-all
 func (h *NotificationHandler) MarkAllAsRead(w http.ResponseWriter, r *http.Request) {
 	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
 	defer cancel()
@@ -129,7 +135,7 @@ func (h *NotificationHandler) DeleteNotification(w http.ResponseWriter, r *http.
 		respondWithError(w, http.StatusUnauthorized, "User not authenticated")
 		return
 	}
-	
+
 	vars := mux.Vars(r)
 	notificationID, err := uuid.Parse(vars["id"])
 	if err != nil {
