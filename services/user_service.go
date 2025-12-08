@@ -119,7 +119,6 @@ func (s *UserService) GetUserByClerkID(ctx context.Context, clerkID string) (*us
 
 	return user, nil
 }
-
 func (s *UserService) FriendDiscoveryDisplayProfile(ctx context.Context, clerkID string, FriendDiscoveryId string) (*mix.FriendDiscoveryDisplayProfileResponse, error) {
 	var currnetUserID uuid.UUID
 	err := s.db.QueryRow(ctx, `SELECT id FROM users WHERE clerk_id = $1`, clerkID).Scan(&currnetUserID)
@@ -177,6 +176,19 @@ func (s *UserService) FriendDiscoveryDisplayProfile(ctx context.Context, clerkID
 		return nil, fmt.Errorf("failed to get user achievements: %w", err)
 	}
 
+	// ---------------------------------------------------------
+	// NEW: Fetch Inventory using the existing GetUserInventory
+	// ---------------------------------------------------------
+	friendDiscoveryInventory, err := s.GetUserInventory(ctx, friendDiscoveryUserData.ClerkID)
+	if err != nil {
+		log.Printf("FriendDiscoveryDisplayProfile: Failed to get user inventory: %v", err)
+		// Option A: Return error if inventory is critical
+		return nil, fmt.Errorf("failed to get user inventory: %w", err)
+		
+		// Option B: If you prefer to return the profile even if inventory fails, un-comment below and comment out the return above:
+		// friendDiscoveryInventory = make(map[string][]*store.InventoryItem) 
+	}
+
 	var isFriend bool
 	friendCheckQuery := `
         SELECT EXISTS(
@@ -196,7 +208,7 @@ func (s *UserService) FriendDiscoveryDisplayProfile(ctx context.Context, clerkID
         dd.id,
         dd.user_id,
         u.image_url AS user_image_url,
-		  u.username,
+		u.username,
         dd.date,
         dd.drank_today,
         dd.logged_at,
@@ -206,7 +218,7 @@ func (s *UserService) FriendDiscoveryDisplayProfile(ctx context.Context, clerkID
         'own' AS source_type
     FROM daily_drinking dd
     JOIN users u ON u.id = dd.user_id
-    WHERE dd.user_id = $1  -- This MUST match the argument passed below
+    WHERE dd.user_id = $1
         AND dd.image_url IS NOT NULL
         AND dd.image_url != ''
     ORDER BY dd.logged_at DESC
@@ -246,7 +258,6 @@ func (s *UserService) FriendDiscoveryDisplayProfile(ctx context.Context, clerkID
 			post.MentionedBuddies, err = s.getUsersByIDs(ctx, mentionedBuddyIDs)
 			if err != nil {
 				log.Printf("failed to fetch mentioned buddies for post %s: %v", post.ID, err)
-				// Continue without buddies rather than failing
 				post.MentionedBuddies = []user.User{}
 			}
 		} else {
@@ -260,7 +271,6 @@ func (s *UserService) FriendDiscoveryDisplayProfile(ctx context.Context, clerkID
 		log.Println("error iterating userPosts")
 		return nil, fmt.Errorf("error iterating posts: %w", err)
 	}
-	log.Println(userPosts)
 
 	log.Println("Friend Discovery User Data:", friendDiscoveryUserData)
 	log.Println("Friend Discovery Stats:", friendDiscoveryStats)
@@ -273,6 +283,7 @@ func (s *UserService) FriendDiscoveryDisplayProfile(ctx context.Context, clerkID
 		Achievements: friendDiscoveryAchievements,
 		MixPosts:     userPosts,
 		IsFriend:     isFriend,
+		Inventory:    friendDiscoveryInventory, 
 	}
 	return response, nil
 }
