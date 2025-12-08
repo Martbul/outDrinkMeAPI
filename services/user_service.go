@@ -1447,7 +1447,7 @@ func (s *UserService) GetYourMix(ctx context.Context, clerkID string) ([]mix.Dai
 		id,
 		user_id,
 		user_image_url,
-					u.username,
+		username,
 		date,
 		drank_today,
 		logged_at,
