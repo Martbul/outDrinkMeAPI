@@ -728,6 +728,7 @@ func (h *UserHandler) GetCalendar(w http.ResponseWriter, r *http.Request) {
 
 	year := r.URL.Query().Get("year")
 	month := r.URL.Query().Get("month")
+	displyUserId := r.URL.Query().Get("displyUserId")
 
 	if year == "" || month == "" {
 		http.Error(w, "year and month are required", http.StatusBadRequest)
@@ -744,7 +745,7 @@ func (h *UserHandler) GetCalendar(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	calendar, err := h.userService.GetCalendar(ctx, clearkID, yearInt, monthInt)
+	calendar, err := h.userService.GetCalendar(ctx, clearkID, yearInt, monthInt, &displyUserId)
 	if err != nil {
 		respondWithError(w, http.StatusInternalServerError, err.Error())
 		return
@@ -752,7 +753,6 @@ func (h *UserHandler) GetCalendar(w http.ResponseWriter, r *http.Request) {
 
 	respondWithJSON(w, http.StatusOK, calendar)
 }
-
 func (h *UserHandler) GetUserStats(w http.ResponseWriter, r *http.Request) {
 	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
 	defer cancel()

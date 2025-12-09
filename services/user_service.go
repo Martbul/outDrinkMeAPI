@@ -766,7 +766,7 @@ func (s *UserService) AddDrinking(ctx context.Context, clerkID string, drankToda
 		return fmt.Errorf("user not found: %w", err)
 	}
 
-    var postID uuid.UUID
+	var postID uuid.UUID
 
 	query := `
         INSERT INTO daily_drinking (user_id, date, drank_today, logged_at, image_url, location_text, mentioned_buddies)
@@ -1131,17 +1131,30 @@ func (s *UserService) GetAllTimeDaysDrank(ctx context.Context, clerkID string) (
 
 	return stat, nil
 }
+func (s *UserService) GetCalendar(ctx context.Context, clerkID string, year int, month int, displyUserId *string) (*calendar.CalendarResponse, error) {
+	var targetUserID uuid.UUID
+	var err error
 
-func (s *UserService) GetCalendar(ctx context.Context, clerkID string, year int, month int) (*calendar.CalendarResponse, error) {
-	var userID uuid.UUID
-	err := s.db.QueryRow(ctx, `SELECT id FROM users WHERE clerk_id = $1`, clerkID).Scan(&userID)
-	if err != nil {
-		return nil, fmt.Errorf("user not found: %w", err)
+	// 1. Determine which User ID to fetch
+	if displyUserId != nil && *displyUserId != "" {
+		// Case A: A specific user ID was provided via query param
+		targetUserID, err = uuid.Parse(*displyUserId)
+		if err != nil {
+			return nil, fmt.Errorf("invalid display user id format: %w", err)
+		}
+	} else {
+		// Case B: No specific user provided, look up the authenticated user via Clerk ID
+		err = s.db.QueryRow(ctx, `SELECT id FROM users WHERE clerk_id = $1`, clerkID).Scan(&targetUserID)
+		if err != nil {
+			return nil, fmt.Errorf("current user not found: %w", err)
+		}
 	}
 
+	// 2. Setup Date Range
 	startDate := time.Date(year, time.Month(month), 1, 0, 0, 0, 0, time.UTC)
 	endDate := startDate.AddDate(0, 1, -1)
 
+	// 3. Query using the determined targetUserID
 	query := `
 	SELECT date, drank_today
 	FROM daily_drinking
@@ -1151,12 +1164,13 @@ func (s *UserService) GetCalendar(ctx context.Context, clerkID string, year int,
 	ORDER BY date
 	`
 
-	rows, err := s.db.Query(ctx, query, userID, startDate, endDate)
+	rows, err := s.db.Query(ctx, query, targetUserID, startDate, endDate)
 	if err != nil {
 		return nil, fmt.Errorf("failed to fetch calendar: %w", err)
 	}
 	defer rows.Close()
 
+	// 4. Map Results
 	dayMap := make(map[string]bool)
 	for rows.Next() {
 		var date time.Time
@@ -1167,6 +1181,7 @@ func (s *UserService) GetCalendar(ctx context.Context, clerkID string, year int,
 		dayMap[date.Format("2006-01-02")] = drank
 	}
 
+	// 5. Build Calendar Response
 	var days []*calendar.CalendarDay
 	today := time.Now().Format("2006-01-02")
 
@@ -1186,6 +1201,7 @@ func (s *UserService) GetCalendar(ctx context.Context, clerkID string, year int,
 		Days:  days,
 	}, nil
 }
+
 
 func (s *UserService) GetUserStats(ctx context.Context, clerkID string) (*stats.UserStats, error) {
 	var userID uuid.UUID
