@@ -362,15 +362,20 @@ func (h *UserHandler) GetAlcoholismChart(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
+	// 2. Get the period filter from URL (e.g. ?period=1M)
 	period := r.URL.Query().Get("period")
+	// Validate input against allowed values to be safe, or default to 3M
 	switch period {
 	case "1M", "3M", "6M", "1Y", "ALL":
+		// valid
 	default:
 		period = "3M"
 	}
 
 	chartDataBytes, err := h.userService.GetAlcoholismChart(ctx, clerkID, period)
 	if err != nil {
+		// Log the actual error internally
+		// log.Println("Chart error:", err) 
 		respondWithError(w, http.StatusInternalServerError, "Failed to fetch chart data")
 		return
 	}

@@ -224,7 +224,6 @@ func (h *NotificationHandler) RegisterDevice(w http.ResponseWriter, r *http.Requ
 	respondWithJSON(w, http.StatusOK, map[string]string{"message": "Device registered successfully"})
 }
 
-// POST /api/v1/notifications/test
 func (h *NotificationHandler) SendTestNotification(w http.ResponseWriter, r *http.Request) {
 	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
 	defer cancel()
@@ -235,7 +234,6 @@ func (h *NotificationHandler) SendTestNotification(w http.ResponseWriter, r *htt
 		return
 	}
 
-	// Use helper to get UUID, then create notification
 	userID, err := h.notificationService.GetUserIDFromClerkID(ctx, clerkID)
 	if err != nil {
 		respondWithError(w, http.StatusNotFound, "User not found")

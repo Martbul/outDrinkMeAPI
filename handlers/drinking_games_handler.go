@@ -96,28 +96,24 @@ func (h *DrinkingGamesHandler) JoinDrinkingGame(w http.ResponseWriter, r *http.R
 	vars := mux.Vars(r)
 	sessionID := vars["sessionID"]
 
-	// 1. Validate Session Exists
 	session, exists := h.gameManager.GetSession(sessionID)
 	if !exists {
 		http.Error(w, "Game session not found", http.StatusNotFound)
 		return
 	}
 
-	// 2. Upgrade Connection
 	conn, err := upgrader.Upgrade(w, r, nil)
 	if err != nil {
 		log.Println(err)
 		return
 	}
 
-	// 3. Register User to Session
 	client := &services.Client{
 		Session: session,
 		Conn:    conn,
 		Send:    make(chan []byte, 256),
 	}
 
-	// Start Pumps
 	client.Session.Register <- client
 	go client.WritePump()
 	go client.ReadPump()
