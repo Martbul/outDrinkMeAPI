@@ -1134,6 +1134,8 @@ func (s *UserService) GetAllTimeDaysDrank(ctx context.Context, clerkID string) (
 func (s *UserService) GetCalendar(ctx context.Context, clerkID string, year int, month int, displyUserId *string) (*calendar.CalendarResponse, error) {
 	var targetUserID uuid.UUID
 	var err error
+	log.Println("------------------------------------------------")
+	log.Println(displyUserId)
 
 	// 1. Determine which User ID to fetch
 	if displyUserId != nil && *displyUserId != "" {
