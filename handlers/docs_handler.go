@@ -8,19 +8,15 @@ import (
 	"outDrinkMeAPI/services"
 )
 
-// DocHandler struct - уверете се, че отговаря на дефиницията в main.go
 type DocHandler struct {
 	service *services.DocService
 }
 
-// NewDocHandler - конструкторът, който се ползва в main.go
 func NewDocHandler(s *services.DocService) *DocHandler {
 	return &DocHandler{service: s}
 }
 
-// ServePrivacyPolicy връща HTML страницата
 func (h *DocHandler) ServePrivacyPolicy(w http.ResponseWriter, r *http.Request) {
-	// Това е HTML шаблонът с вашия текст
 	const privacyHtml = `
 	<!DOCTYPE html>
 	<html lang="en">
@@ -130,10 +126,8 @@ func (h *DocHandler) ServePrivacyPolicy(w http.ResponseWriter, r *http.Request) 
 	</html>
 	`
 
-	// Задаваме Header, че връщаме HTML, а не JSON
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	
-	// Парсваме и изпълняваме шаблона
 	tmpl, err := template.New("privacy").Parse(privacyHtml)
 	if err != nil {
 		http.Error(w, "Could not load privacy policy", http.StatusInternalServerError)
@@ -143,7 +137,6 @@ func (h *DocHandler) ServePrivacyPolicy(w http.ResponseWriter, r *http.Request) 
 	tmpl.Execute(w, nil)
 }
 
-// ServeTermsOfServices връща HTML страницата за Условията за ползване
 func (h *DocHandler) ServeTermsOfServices(w http.ResponseWriter, r *http.Request) {
 	const termsHtml = `
 	<!DOCTYPE html>

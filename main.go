@@ -88,7 +88,6 @@ func init() {
 	if err != nil {
 		log.Printf("Warning: Could not initialize FCM: %v", err)
 	} else {
-		// 3. INJECT the provider into the service
 		notificationService.SetPushProvider(fcmService)
 		log.Println("FCM Push Provider initialized successfully")
 	}
@@ -102,7 +101,6 @@ func main() {
 		dbPool.Close()
 	}()
 
-	// Initialize handlers
 	userHandler := handlers.NewUserHandler(userService)
 	docHandler := handlers.NewDocHandler(docService)
 	storeHandler := handlers.NewStoreHandler(storeService)
@@ -154,10 +152,6 @@ func main() {
 
 	standardRouter.HandleFunc("/webhooks/clerk", webhookHandler.HandleClerkWebhook).Methods("POST")
 
-	// -------------------------------------------------------------------------
-	// API V1 SUBROUTER
-	// -------------------------------------------------------------------------
-	// This inherits middleware from standardRouter
 	api := standardRouter.PathPrefix("/api/v1").Subrouter()
 
 	api.HandleFunc("/drinking-games/public", drinkingGameHandler.GetPublicDrinkingGames).Methods("GET")
@@ -167,9 +161,6 @@ func main() {
 	api.HandleFunc("/delete-account-webpage", userHandler.DeleteAccountPage).Methods("GET")
 	api.HandleFunc("/delete-account-details-webpage", userHandler.UpdateAccountPage).Methods("GET")
 
-	// -------------------------------------------------------------------------
-	// PROTECTED ROUTES (REQUIRE AUTH HEADER)
-	// -------------------------------------------------------------------------
 	protected := api.PathPrefix("").Subrouter()
 	protected.Use(middleware.ClerkAuthMiddleware)
 
@@ -232,7 +223,6 @@ func main() {
 
 	protected.HandleFunc("/drinking-games/create", drinkingGameHandler.CreateDrinkingGame).Methods("POST")
 
-	// CORS configuration
 	corsHandler := gorilllaHandlers.CORS(
 		gorilllaHandlers.AllowedOrigins([]string{"*"}),
 		gorilllaHandlers.AllowedMethods([]string{"GET", "POST", "PUT", "DELETE", "OPTIONS"}),
@@ -249,7 +239,7 @@ func main() {
 
 	server := http.Server{
 		Addr:         port,
-		Handler:      corsHandler(r), // Pass the root router 'r'
+		Handler:      corsHandler(r),
 		ReadTimeout:  5 * time.Second,
 		WriteTimeout: 10 * time.Second,
 		IdleTimeout:  120 * time.Second,
@@ -262,7 +252,6 @@ func main() {
 		}
 	}()
 
-	// Graceful shutdown
 	sigChan := make(chan os.Signal, 1)
 	signal.Notify(sigChan, os.Interrupt)
 
