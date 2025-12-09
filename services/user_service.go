@@ -184,9 +184,9 @@ func (s *UserService) FriendDiscoveryDisplayProfile(ctx context.Context, clerkID
 		log.Printf("FriendDiscoveryDisplayProfile: Failed to get user inventory: %v", err)
 		// Option A: Return error if inventory is critical
 		return nil, fmt.Errorf("failed to get user inventory: %w", err)
-		
+
 		// Option B: If you prefer to return the profile even if inventory fails, un-comment below and comment out the return above:
-		// friendDiscoveryInventory = make(map[string][]*store.InventoryItem) 
+		// friendDiscoveryInventory = make(map[string][]*store.InventoryItem)
 	}
 
 	var isFriend bool
@@ -283,7 +283,7 @@ func (s *UserService) FriendDiscoveryDisplayProfile(ctx context.Context, clerkID
 		Achievements: friendDiscoveryAchievements,
 		MixPosts:     userPosts,
 		IsFriend:     isFriend,
-		Inventory:    friendDiscoveryInventory, 
+		Inventory:    friendDiscoveryInventory,
 	}
 	return response, nil
 }
@@ -756,6 +756,7 @@ func (s *UserService) GetAchievements(ctx context.Context, clerkID string) ([]*a
 
 	return achievements, nil
 }
+
 func (s *UserService) AddDrinking(ctx context.Context, clerkID string, drankToday bool, imageUrl *string, locationText *string, clerkIDs []string, date time.Time) error {
 	var userID uuid.UUID
 	var username string
@@ -764,6 +765,8 @@ func (s *UserService) AddDrinking(ctx context.Context, clerkID string, drankToda
 	if err != nil {
 		return fmt.Errorf("user not found: %w", err)
 	}
+
+    var postID uuid.UUID
 
 	query := `
         INSERT INTO daily_drinking (user_id, date, drank_today, logged_at, image_url, location_text, mentioned_buddies)
@@ -775,17 +778,17 @@ func (s *UserService) AddDrinking(ctx context.Context, clerkID string, drankToda
             image_url = $4, 
             location_text = $5, 
             mentioned_buddies = $6
+        RETURNING id
     `
 
-	_, err = s.db.Exec(ctx, query, userID, date, drankToday, imageUrl, locationText, clerkIDs)
+	err = s.db.QueryRow(ctx, query, userID, date, drankToday, imageUrl, locationText, clerkIDs).Scan(&postID)
 	if err != nil {
 		return fmt.Errorf("failed to log drinking: %w", err)
 	}
 
 	if imageUrl != nil {
 		actualURL := *imageUrl
-
-		go utils.FriendPostedImageToMix(s.db, s.notifService, userID, username, actualURL)
+		go utils.FriendPostedImageToMix(s.db, s.notifService, userID, username, actualURL, postID)
 	}
 	return nil
 }
@@ -1377,8 +1380,6 @@ func (s *UserService) GetUserStats(ctx context.Context, clerkID string) (*stats.
 
 	return stats, nil
 }
-
-
 
 func (s *UserService) GetYourMix(ctx context.Context, clerkID string) ([]mix.DailyDrinkingPost, error) {
 	log.Println("getting feed")

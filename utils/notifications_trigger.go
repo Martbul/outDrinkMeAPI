@@ -16,7 +16,7 @@ type NotificationCreator interface {
 	CreateNotification(ctx context.Context, req *notification.CreateNotificationRequest) (*notification.Notification, error)
 }
 
-func FriendPostedImageToMix(db *pgxpool.Pool, notifier NotificationCreator, actorID uuid.UUID, actorName string, imageURL string) {
+func FriendPostedImageToMix(db *pgxpool.Pool, notifier NotificationCreator, actorID uuid.UUID, actorName string, imageURL string, postId uuid.UUID) {
 	log.Printf("DEBUG NOTIF: Starting friend_posted_mix for Actor: %s", actorName)
 
 	bgCtx := context.Background()
@@ -49,6 +49,7 @@ func FriendPostedImageToMix(db *pgxpool.Pool, notifier NotificationCreator, acto
 			Data: map[string]any{
 				"username":  actorName,
 				"image_url": imageURL,
+				"post_id":   postId,
 			},
 			ActionURL: nil,
 		}
