@@ -299,10 +299,12 @@ func (h *UserHandler) AddDrinking(w http.ResponseWriter, r *http.Request) {
 		date = time.Now().Truncate(24 * time.Hour)
 	}
 
+	//! added alcohols slice in req but not implemented in serice
 	var req struct {
-		DrankToday       bool    `json:"drank_today"`
-		ImageUrl         *string `json:"image_url"`
-		LocationText     *string `json:"location_text"`
+		DrankToday       bool      `json:"drank_today"`
+		ImageUrl         *string   `json:"image_url"`
+		LocationText     *string   `json:"location_text"`
+		Alcohols         *[]string `json:"alcohols"`
 		MentionedBuddies []struct {
 			ClerkID string `json:"clerkId"`
 		} `json:"mentioned_buddies"`
@@ -324,7 +326,7 @@ func (h *UserHandler) AddDrinking(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	if err := h.userService.AddDrinking(ctx, clearkID, req.DrankToday, req.ImageUrl, req.LocationText, clerkIDs, date); err != nil {
+	if err := h.userService.AddDrinking(ctx, clearkID, req.DrankToday, req.ImageUrl, req.LocationText, *req.Alcohols,  clerkIDs, date); err != nil {
 		respondWithError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
@@ -375,7 +377,7 @@ func (h *UserHandler) GetAlcoholismChart(w http.ResponseWriter, r *http.Request)
 	chartDataBytes, err := h.userService.GetAlcoholismChart(ctx, clerkID, period)
 	if err != nil {
 		// Log the actual error internally
-		// log.Println("Chart error:", err) 
+		// log.Println("Chart error:", err)
 		respondWithError(w, http.StatusInternalServerError, "Failed to fetch chart data")
 		return
 	}
@@ -423,7 +425,7 @@ func (h *UserHandler) AddUserFeedback(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var req struct {
-		Category      string `json:"category"`
+		Category     string `json:"category"`
 		FeedbackText string `json:"feedback_text"`
 	}
 

@@ -757,7 +757,7 @@ func (s *UserService) GetAchievements(ctx context.Context, clerkID string) ([]*a
 	return achievements, nil
 }
 
-func (s *UserService) AddDrinking(ctx context.Context, clerkID string, drankToday bool, imageUrl *string, locationText *string, clerkIDs []string, date time.Time) error {
+func (s *UserService) AddDrinking(ctx context.Context, clerkID string, drankToday bool, imageUrl *string, locationText *string, alcohols []string, clerkIDs []string, date time.Time) error {
 	var userID uuid.UUID
 	var username string
 
@@ -769,7 +769,7 @@ func (s *UserService) AddDrinking(ctx context.Context, clerkID string, drankToda
 	var postID uuid.UUID
 
 	query := `
-        INSERT INTO daily_drinking (user_id, date, drank_today, logged_at, image_url, location_text, mentioned_buddies)
+        INSERT INTO daily_drinking (user_id, date, drank_today, logged_at, image_url, location_text, alcohols, mentioned_buddies)
         VALUES ($1, $2, $3, NOW(), $4, $5, $6)
         ON CONFLICT (user_id, date) 
         DO UPDATE SET 
@@ -777,7 +777,8 @@ func (s *UserService) AddDrinking(ctx context.Context, clerkID string, drankToda
             logged_at = NOW(), 
             image_url = $4, 
             location_text = $5, 
-            mentioned_buddies = $6
+				alcohols = $6,
+            mentioned_buddies = $7
         RETURNING id
     `
 
@@ -1203,7 +1204,6 @@ func (s *UserService) GetCalendar(ctx context.Context, clerkID string, year int,
 		Days:  days,
 	}, nil
 }
-
 
 func (s *UserService) GetUserStats(ctx context.Context, clerkID string) (*stats.UserStats, error) {
 	var userID uuid.UUID
