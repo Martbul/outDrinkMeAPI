@@ -770,7 +770,7 @@ func (s *UserService) AddDrinking(ctx context.Context, clerkID string, drankToda
 
 	query := `
         INSERT INTO daily_drinking (user_id, date, drank_today, logged_at, image_url, location_text, alcohols, mentioned_buddies)
-        VALUES ($1, $2, $3, NOW(), $4, $5, $6)
+        VALUES ($1, $2, $3, NOW(), $4, $5, $6, $7)
         ON CONFLICT (user_id, date) 
         DO UPDATE SET 
             drank_today = $3, 
@@ -782,7 +782,7 @@ func (s *UserService) AddDrinking(ctx context.Context, clerkID string, drankToda
         RETURNING id
     `
 
-	err = s.db.QueryRow(ctx, query, userID, date, drankToday, imageUrl, locationText, clerkIDs).Scan(&postID)
+	err = s.db.QueryRow(ctx, query, userID, date, drankToday, imageUrl, locationText, alcohols, clerkIDs).Scan(&postID)
 	if err != nil {
 		return fmt.Errorf("failed to log drinking: %w", err)
 	}
