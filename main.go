@@ -171,6 +171,7 @@ func main() {
 	protected.HandleFunc("/user/leaderboards", userHandler.GetLeaderboards).Methods("GET")
 	protected.HandleFunc("/user/friends", userHandler.GetFriends).Methods("GET")
 	protected.HandleFunc("/user/your-mix", userHandler.GetYourMix).Methods("GET")
+	protected.HandleFunc("/user/map-friend-posts", userHandler.GetUserFriendsPosts).Methods("GET")
 	protected.HandleFunc("/user/mix-timeline", userHandler.GetMixTimeline).Methods("GET")
 	protected.HandleFunc("/user/friends", userHandler.AddFriend).Methods("POST")
 	protected.HandleFunc("/user/friends", userHandler.RemoveFriend).Methods("DELETE")

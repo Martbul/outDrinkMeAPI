@@ -299,12 +299,17 @@ func (h *UserHandler) AddDrinking(w http.ResponseWriter, r *http.Request) {
 		date = time.Now().Truncate(24 * time.Hour)
 	}
 
-	//! added alcohols slice in req but not implemented in serice
+	type Coordinates struct {
+		Latitude  float64 `json:"latitude"`
+		Longitude float64 `json:"longitude"`
+	}
+
 	var req struct {
-		DrankToday       bool      `json:"drank_today"`
-		ImageUrl         *string   `json:"image_url"`
-		LocationText     *string   `json:"location_text"`
-		Alcohols         *[]string `json:"alcohols"`
+		DrankToday       bool         `json:"drank_today"`
+		ImageUrl         *string      `json:"image_url"`
+		LocationText     *string      `json:"location_text"`
+		LocationCoords   *Coordinates `json:"location_coords"`
+		Alcohols         *[]string    `json:"alcohols"`
 		MentionedBuddies []struct {
 			ClerkID string `json:"clerkId"`
 		} `json:"mentioned_buddies"`
@@ -315,7 +320,6 @@ func (h *UserHandler) AddDrinking(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Extract just the clerk IDs
 	var clerkIDs []string
 	if len(req.MentionedBuddies) > 0 {
 		clerkIDs = make([]string, 0, len(req.MentionedBuddies))
@@ -326,7 +330,13 @@ func (h *UserHandler) AddDrinking(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	if err := h.userService.AddDrinking(ctx, clearkID, req.DrankToday, req.ImageUrl, req.LocationText, *req.Alcohols,  clerkIDs, date); err != nil {
+	var lat, long *float64
+	if req.LocationCoords != nil {
+		lat = &req.LocationCoords.Latitude
+		long = &req.LocationCoords.Longitude
+	}
+
+	if err := h.userService.AddDrinking(ctx, clearkID, req.DrankToday, req.ImageUrl, req.LocationText, lat, long, *req.Alcohols, clerkIDs, date); err != nil {
 		respondWithError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
@@ -790,10 +800,32 @@ func (h *UserHandler) GetYourMix(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	log.Println(yourMixData)
 
 	respondWithJSON(w, http.StatusOK, yourMixData)
 }
+
+
+func (h *UserHandler) GetUserFriendsPosts(w http.ResponseWriter, r *http.Request) {
+	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
+	defer cancel()
+
+	clearkID, ok := middleware.GetClerkID(ctx)
+	if !ok {
+		respondWithError(w, http.StatusUnauthorized, "User not authenticated")
+		return
+	}
+
+	userFriendsPosts, err := h.userService.GetUserFriendsPosts(ctx, clearkID)
+	if err != nil {
+		respondWithError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+
+
+	respondWithJSON(w, http.StatusOK, userFriendsPosts)
+}
+
+
 
 func (h *UserHandler) GetMixTimeline(w http.ResponseWriter, r *http.Request) {
 	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)

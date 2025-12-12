@@ -756,8 +756,7 @@ func (s *UserService) GetAchievements(ctx context.Context, clerkID string) ([]*a
 
 	return achievements, nil
 }
-
-func (s *UserService) AddDrinking(ctx context.Context, clerkID string, drankToday bool, imageUrl *string, locationText *string, alcohols []string, clerkIDs []string, date time.Time) error {
+func (s *UserService) AddDrinking(ctx context.Context, clerkID string, drankToday bool, imageUrl *string, locationText *string, lat *float64, long *float64, alcohols []string, clerkIDs []string, date time.Time) error {
 	var userID uuid.UUID
 	var username string
 
@@ -769,20 +768,44 @@ func (s *UserService) AddDrinking(ctx context.Context, clerkID string, drankToda
 	var postID uuid.UUID
 
 	query := `
-        INSERT INTO daily_drinking (user_id, date, drank_today, logged_at, image_url, location_text, alcohols, mentioned_buddies)
-        VALUES ($1, $2, $3, NOW(), $4, $5, $6, $7)
+        INSERT INTO daily_drinking (
+            user_id, 
+            date, 
+            drank_today, 
+            logged_at, 
+            image_url, 
+            location_text, 
+            latitude, 
+            longitude, 
+            alcohols, 
+            mentioned_buddies
+        )
+        VALUES ($1, $2, $3, NOW(), $4, $5, $6, $7, $8, $9)
         ON CONFLICT (user_id, date) 
         DO UPDATE SET 
             drank_today = $3, 
             logged_at = NOW(), 
             image_url = $4, 
-            location_text = $5, 
-				alcohols = $6,
-            mentioned_buddies = $7
+            location_text = $5,
+            latitude = $6,
+            longitude = $7,
+            alcohols = $8,
+            mentioned_buddies = $9
         RETURNING id
     `
 
-	err = s.db.QueryRow(ctx, query, userID, date, drankToday, imageUrl, locationText, alcohols, clerkIDs).Scan(&postID)
+	err = s.db.QueryRow(ctx, query,
+		userID,
+		date,
+		drankToday,
+		imageUrl,
+		locationText,
+		lat,
+		long,
+		alcohols,
+		clerkIDs,
+	).Scan(&postID)
+
 	if err != nil {
 		return fmt.Errorf("failed to log drinking: %w", err)
 	}
@@ -1547,6 +1570,101 @@ func (s *UserService) GetYourMix(ctx context.Context, clerkID string) ([]mix.Dai
 		return nil, fmt.Errorf("error iterating posts: %w", err)
 	}
 	log.Printf("Returning %d posts", len(posts))
+
+	return posts, nil
+}
+
+
+func (s *UserService) GetUserFriendsPosts(ctx context.Context, clerkID string) ([]mix.DailyDrinkingPost, error) {
+	var userID string
+	err := s.db.QueryRow(ctx, "SELECT id FROM users WHERE clerk_id = $1", clerkID).Scan(&userID)
+	if err != nil {
+		return nil, fmt.Errorf("user not found: %w", err)
+	}
+
+	query := `
+		SELECT 
+			dd.id,
+			dd.user_id,
+			u.image_url AS user_image_url,
+			u.username,
+			dd.date,
+			dd.drank_today,
+			dd.logged_at,
+			dd.image_url AS post_image_url,
+			dd.location_text,
+			dd.latitude,    -- Fetch Latitude
+			dd.longitude,   -- Fetch Longitude
+			dd.alcohols,    -- Fetch Alcohols
+			dd.mentioned_buddies,
+			'friend' AS source_type
+		FROM daily_drinking dd
+		JOIN users u ON u.id = dd.user_id
+		WHERE dd.user_id != $1
+			AND dd.logged_at >= NOW() - INTERVAL '14 days'
+			AND dd.image_url IS NOT NULL
+			AND dd.image_url != ''
+			AND dd.user_id IN (
+				-- Get all friends (bidirectional check)
+				SELECT friend_id FROM friendships 
+				WHERE user_id = $1 AND status = 'accepted'
+				UNION
+				SELECT user_id FROM friendships 
+				WHERE friend_id = $1 AND status = 'accepted'
+			)
+		ORDER BY dd.logged_at DESC
+		LIMIT 200
+	`
+
+	rows, err := s.db.Query(ctx, query, userID)
+	if err != nil {
+		log.Println("failed to get feed")
+		return nil, fmt.Errorf("failed to get feed: %w", err)
+	}
+	defer rows.Close()
+
+	var posts []mix.DailyDrinkingPost
+	for rows.Next() {
+		var post mix.DailyDrinkingPost
+		var mentionedBuddyIDs []string
+		
+		err := rows.Scan(
+			&post.ID,
+			&post.UserID,
+			&post.UserImageURL,
+			&post.Username,
+			&post.Date,
+			&post.DrankToday,
+			&post.LoggedAt,
+			&post.ImageURL,
+			&post.LocationText,
+			&post.Latitude,    
+			&post.Longitude,   
+			&post.Alcohols,    
+			&mentionedBuddyIDs,
+			&post.SourceType,
+		)
+		if err != nil {
+			log.Println("failed to scan post", err)
+			return nil, fmt.Errorf("failed to scan post: %w", err)
+		}
+
+		if len(mentionedBuddyIDs) > 0 {
+			post.MentionedBuddies, err = s.getUsersByIDs(ctx, mentionedBuddyIDs)
+			if err != nil {
+				log.Printf("failed to fetch mentioned buddies for post %s: %v", post.ID, err)
+				post.MentionedBuddies = []user.User{}
+			}
+		} else {
+			post.MentionedBuddies = []user.User{}
+		}
+
+		posts = append(posts, post)
+	}
+
+	if err = rows.Err(); err != nil {
+		return nil, fmt.Errorf("error iterating posts: %w", err)
+	}
 
 	return posts, nil
 }
