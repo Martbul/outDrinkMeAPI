@@ -1574,7 +1574,6 @@ func (s *UserService) GetYourMix(ctx context.Context, clerkID string) ([]mix.Dai
 	return posts, nil
 }
 
-
 func (s *UserService) GetUserFriendsPosts(ctx context.Context, clerkID string) ([]mix.DailyDrinkingPost, error) {
 	var userID string
 	err := s.db.QueryRow(ctx, "SELECT id FROM users WHERE clerk_id = $1", clerkID).Scan(&userID)
@@ -1593,25 +1592,33 @@ func (s *UserService) GetUserFriendsPosts(ctx context.Context, clerkID string) (
 			dd.logged_at,
 			dd.image_url AS post_image_url,
 			dd.location_text,
-			dd.latitude,    -- Fetch Latitude
-			dd.longitude,   -- Fetch Longitude
-			dd.alcohols,    -- Fetch Alcohols
+			dd.latitude,    
+			dd.longitude,   
+			dd.alcohols,    
 			dd.mentioned_buddies,
-			'friend' AS source_type
+			CASE 
+				WHEN dd.user_id = $1 THEN 'self' 
+				ELSE 'friend' 
+			END AS source_type
 		FROM daily_drinking dd
 		JOIN users u ON u.id = dd.user_id
-		WHERE dd.user_id != $1
-			AND dd.image_url IS NOT NULL
+		WHERE 
+			dd.image_url IS NOT NULL
 			AND dd.latitude IS NOT NULL
 			AND dd.longitude IS NOT NULL
 			AND dd.image_url != ''
-			AND dd.user_id IN (
-				-- Get all friends (bidirectional check)
-				SELECT friend_id FROM friendships 
-				WHERE user_id = $1 AND status = 'accepted'
-				UNION
-				SELECT user_id FROM friendships 
-				WHERE friend_id = $1 AND status = 'accepted'
+			AND (
+				-- Include the user's own posts
+				dd.user_id = $1
+				OR 
+				-- Include friends' posts
+				dd.user_id IN (
+					SELECT friend_id FROM friendships 
+					WHERE user_id = $1 AND status = 'accepted'
+					UNION
+					SELECT user_id FROM friendships 
+					WHERE friend_id = $1 AND status = 'accepted'
+				)
 			)
 		ORDER BY dd.logged_at DESC
 		LIMIT 200
