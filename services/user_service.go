@@ -1601,8 +1601,9 @@ func (s *UserService) GetUserFriendsPosts(ctx context.Context, clerkID string) (
 		FROM daily_drinking dd
 		JOIN users u ON u.id = dd.user_id
 		WHERE dd.user_id != $1
-			AND dd.logged_at >= NOW() - INTERVAL '14 days'
 			AND dd.image_url IS NOT NULL
+			AND dd.latitude IS NOT NULL
+			AND dd.longitude IS NOT NULL
 			AND dd.image_url != ''
 			AND dd.user_id IN (
 				-- Get all friends (bidirectional check)
