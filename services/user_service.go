@@ -1603,8 +1603,10 @@ func (s *UserService) GetUserFriendsPosts(ctx context.Context, clerkID string) (
 		FROM daily_drinking dd
 		JOIN users u ON u.id = dd.user_id
 		WHERE 
+			dd.image_url IS NOT NULL
 			AND dd.latitude IS NOT NULL
 			AND dd.longitude IS NOT NULL
+			AND dd.image_url != ''
 			AND (
 				-- Include the user's own posts
 				dd.user_id = $1
