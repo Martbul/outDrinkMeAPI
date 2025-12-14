@@ -1590,7 +1590,7 @@ func (s *UserService) GetUserFriendsPosts(ctx context.Context, clerkID string) (
 			dd.date,
 			dd.drank_today,
 			dd.logged_at,
-			dd.image_url AS post_image_url,
+			COALESCE(dd.image_url, '') AS post_image_url, -- Use COALESCE to safely handle NULLs
 			dd.location_text,
 			dd.latitude,    
 			dd.longitude,   
@@ -1603,10 +1603,8 @@ func (s *UserService) GetUserFriendsPosts(ctx context.Context, clerkID string) (
 		FROM daily_drinking dd
 		JOIN users u ON u.id = dd.user_id
 		WHERE 
-			dd.image_url IS NOT NULL
-			AND dd.latitude IS NOT NULL
+			dd.latitude IS NOT NULL     -- We still keep location checks for the map
 			AND dd.longitude IS NOT NULL
-			AND dd.image_url != ''
 			AND (
 				-- Include the user's own posts
 				dd.user_id = $1
@@ -1676,6 +1674,7 @@ func (s *UserService) GetUserFriendsPosts(ctx context.Context, clerkID string) (
 
 	return posts, nil
 }
+
 
 func (s *UserService) GetMixVideoFeed(ctx context.Context, clerkID string) ([]mix.VideoPost, error) {
 	log.Println("getting video feed")
