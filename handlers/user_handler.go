@@ -12,6 +12,8 @@ import (
 	"outDrinkMeAPI/services"
 	"strings"
 	"time"
+
+	"github.com/gorilla/mux"
 )
 
 type UserHandler struct {
@@ -344,6 +346,35 @@ func (h *UserHandler) AddDrinking(w http.ResponseWriter, r *http.Request) {
 
 	respondWithJSON(w, http.StatusOK, map[string]string{"message": "Drinking activity added successfully"})
 }
+
+func (h *UserHandler) GetMemoryWall(w http.ResponseWriter, r *http.Request) {
+	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
+	defer cancel()
+
+    // Get PostID from URL parameters (assuming you use mux or similar)
+    // If using query param: r.URL.Query().Get("postId")
+	vars := mux.Vars(r)
+	postID := vars["postId"] 
+
+	if postID == "" {
+		http.Error(w, "missing postId", http.StatusBadRequest)
+		return
+	}
+
+	items, err := h.userService.GetMemoryWall(ctx, postID)
+	if err != nil {
+		respondWithError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+
+    // Return empty array instead of null if no items found
+	if items == nil {
+		items = []canvas.CanvasItem{}
+	}
+
+	respondWithJSON(w, http.StatusOK, items)
+}
+
 
 func (h *UserHandler) AddMemoryToWall(w http.ResponseWriter, r *http.Request) {
 	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)

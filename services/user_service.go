@@ -820,6 +820,57 @@ func (s *UserService) AddDrinking(ctx context.Context, clerkID string, drankToda
 }
 
 
+func (s *UserService) GetMemoryWall(ctx context.Context, postIDStr string) ([]canvas.CanvasItem, error) {
+	postID, err := uuid.Parse(postIDStr)
+	if err != nil {
+		return nil, fmt.Errorf("invalid post uuid: %w", err)
+	}
+
+	query := `
+		SELECT 
+			id, daily_drinking_id, added_by_user_id, item_type, content,
+			pos_x, pos_y, rotation, scale, width, height, z_index, created_at, extra_data
+		FROM canvas_items 
+		WHERE daily_drinking_id = $1
+	`
+
+	rows, err := s.db.Query(ctx, query, postID)
+	if err != nil {
+		return nil, fmt.Errorf("query failed: %w", err)
+	}
+	defer rows.Close()
+
+	var items []canvas.CanvasItem
+
+	for rows.Next() {
+		var i canvas.CanvasItem
+		var extraDataBytes []byte // Temp holder for JSONB
+
+		err := rows.Scan(
+			&i.ID, &i.DailyDrinkingID, &i.AddedByUserID, &i.ItemType, &i.Content,
+			&i.PosX, &i.PosY, &i.Rotation, &i.Scale, &i.Width, &i.Height, &i.ZIndex, &i.CreatedAt, &extraDataBytes,
+		)
+		if err != nil {
+			return nil, fmt.Errorf("scan failed: %w", err)
+		}
+
+		// Convert JSONB bytes back to Map
+		if len(extraDataBytes) > 0 {
+			if err := json.Unmarshal(extraDataBytes, &i.ExtraData); err != nil {
+				return nil, fmt.Errorf("failed to unmarshal extra_data: %w", err)
+			}
+		}
+
+		// Fetch Author Name/Avatar if needed (Optional: usually easier to just send "Me" or store it, 
+		// but here we can look it up or leave it nil if the frontend handles it)
+		// For now, we leave AuthorName nil and let frontend handle it or do a JOIN in the query above.
+
+		items = append(items, i)
+	}
+
+	return items, nil
+}
+
 func (s *UserService) AddMemoryToWall(ctx context.Context, clerkID string, postIDStr string, wallItems *[]canvas.CanvasItem) error {
 	// 1. Get the Internal User ID
 	var userID uuid.UUID
