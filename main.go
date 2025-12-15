@@ -148,20 +148,12 @@ func main() {
 	})
 
 	standardRouter.HandleFunc("/health", func(w http.ResponseWriter, r *http.Request) {
-		ctx, cancel := context.WithTimeout(r.Context(), 2*time.Second)
-		defer cancel()
-
-		if err := dbPool.Ping(ctx); err != nil {
-			w.Header().Set("Content-Type", "application/json")
-			w.WriteHeader(http.StatusServiceUnavailable)
-			w.Write([]byte(`{"status": "unhealthy", "error": "database connection failed"}`))
-			return
-		}
-
-		w.Header().Set("Content-Type", "application/json")
-		w.WriteHeader(http.StatusOK)
-		w.Write([]byte(`{"status": "healthy", "service": "outDrinkMe-api"}`))
-	}).Methods("GET")
+    // Do NOT ping the database.
+    
+    w.Header().Set("Content-Type", "application/json")
+    w.WriteHeader(http.StatusOK)
+    w.Write([]byte(`{"status": "healthy", "service": "outDrinkMe-api"}`))
+}).Methods("GET")
 
 	standardRouter.HandleFunc("/webhooks/clerk", webhookHandler.HandleClerkWebhook).Methods("POST")
 
