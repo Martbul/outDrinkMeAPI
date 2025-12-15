@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log"
 	"net/http"
+	"outDrinkMeAPI/internal/types/canvas"
 	"outDrinkMeAPI/internal/types/user"
 	"outDrinkMeAPI/middleware"
 	"outDrinkMeAPI/services"
@@ -337,6 +338,34 @@ func (h *UserHandler) AddDrinking(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := h.userService.AddDrinking(ctx, clearkID, req.DrankToday, req.ImageUrl, req.LocationText, lat, long, *req.Alcohols, clerkIDs, date); err != nil {
+		respondWithError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+
+	respondWithJSON(w, http.StatusOK, map[string]string{"message": "Drinking activity added successfully"})
+}
+
+func (h *UserHandler) AddMemoryToWall(w http.ResponseWriter, r *http.Request) {
+	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
+	defer cancel()
+
+	clearkID, ok := middleware.GetClerkID(ctx)
+	if !ok {
+		respondWithError(w, http.StatusInternalServerError, "Error while adding drinking")
+		return
+	}
+
+	var req struct {
+		PostId string               `json:"post_id"`
+		WallItems  *[]canvas.CanvasItem `json:"wall_items"`
+	}
+
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "invalid request body", http.StatusBadRequest)
+		return
+	}
+
+	if err := h.userService.AddMemoryToWall(ctx, clearkID, req.PostId, req.WallItems); err != nil {
 		respondWithError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
@@ -800,10 +829,8 @@ func (h *UserHandler) GetYourMix(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-
 	respondWithJSON(w, http.StatusOK, yourMixData)
 }
-
 
 func (h *UserHandler) GetUserFriendsPosts(w http.ResponseWriter, r *http.Request) {
 	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
@@ -821,11 +848,8 @@ func (h *UserHandler) GetUserFriendsPosts(w http.ResponseWriter, r *http.Request
 		return
 	}
 
-
 	respondWithJSON(w, http.StatusOK, userFriendsPosts)
 }
-
-
 
 func (h *UserHandler) GetMixTimeline(w http.ResponseWriter, r *http.Request) {
 	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)

@@ -191,6 +191,7 @@ func main() {
 	protected.HandleFunc("/user/discovery", userHandler.GetDiscovery).Methods("GET")
 	protected.HandleFunc("/user/achievements", userHandler.GetAchievements).Methods("GET")
 	protected.HandleFunc("/user/drink", userHandler.AddDrinking).Methods("POST")
+	protected.HandleFunc("/user/memory-wall", userHandler.AddMemoryToWall).Methods("POST")
 	protected.HandleFunc("/user/drink", userHandler.RemoveDrinking).Methods("DELETE")
 	protected.HandleFunc("/user/drunk-thought", userHandler.GetDrunkThought).Methods("GET")
 	protected.HandleFunc("/user/drunk-thought", userHandler.AddDrunkThought).Methods("POST")

@@ -7,6 +7,7 @@ import (
 	"log"
 	"outDrinkMeAPI/internal/types/achievement"
 	"outDrinkMeAPI/internal/types/calendar"
+	"outDrinkMeAPI/internal/types/canvas"
 	"outDrinkMeAPI/internal/types/collection"
 	"outDrinkMeAPI/internal/types/leaderboard"
 	"outDrinkMeAPI/internal/types/mix"
@@ -761,6 +762,66 @@ func (s *UserService) AddDrinking(ctx context.Context, clerkID string, drankToda
 	var username string
 
 	err := s.db.QueryRow(ctx, `SELECT id, username FROM users WHERE clerk_id = $1`, clerkID).Scan(&userID, &username)
+	if err != nil {
+		return fmt.Errorf("user not found: %w", err)
+	}
+
+	var postID uuid.UUID
+
+	query := `
+        INSERT INTO daily_drinking (
+            user_id, 
+            date, 
+            drank_today, 
+            logged_at, 
+            image_url, 
+            location_text, 
+            latitude, 
+            longitude, 
+            alcohols, 
+            mentioned_buddies
+        )
+        VALUES ($1, $2, $3, NOW(), $4, $5, $6, $7, $8, $9)
+        ON CONFLICT (user_id, date) 
+        DO UPDATE SET 
+            drank_today = $3, 
+            logged_at = NOW(), 
+            image_url = $4, 
+            location_text = $5,
+            latitude = $6,
+            longitude = $7,
+            alcohols = $8,
+            mentioned_buddies = $9
+        RETURNING id
+    `
+
+	err = s.db.QueryRow(ctx, query,
+		userID,
+		date,
+		drankToday,
+		imageUrl,
+		locationText,
+		lat,
+		long,
+		alcohols,
+		clerkIDs,
+	).Scan(&postID)
+
+	if err != nil {
+		return fmt.Errorf("failed to log drinking: %w", err)
+	}
+
+	if imageUrl != nil {
+		actualURL := *imageUrl
+		go utils.FriendPostedImageToMix(s.db, s.notifService, userID, username, actualURL, postID)
+	}
+	return nil
+}
+
+func (s *UserService) AddMemoryToWall(ctx context.Context, clerkID string, PostId string, WallItems *[]canvas.CanvasItem) error {
+	var userID uuid.UUID
+
+	err := s.db.QueryRow(ctx, `SELECT id FROM users WHERE clerk_id = $1`, clerkID).Scan(&userID)
 	if err != nil {
 		return fmt.Errorf("user not found: %w", err)
 	}
@@ -1633,7 +1694,7 @@ func (s *UserService) GetUserFriendsPosts(ctx context.Context, clerkID string) (
 	for rows.Next() {
 		var post mix.DailyDrinkingPost
 		var mentionedBuddyIDs []string
-		
+
 		err := rows.Scan(
 			&post.ID,
 			&post.UserID,
@@ -1644,9 +1705,9 @@ func (s *UserService) GetUserFriendsPosts(ctx context.Context, clerkID string) (
 			&post.LoggedAt,
 			&post.ImageURL,
 			&post.LocationText,
-			&post.Latitude,    
-			&post.Longitude,   
-			&post.Alcohols,    
+			&post.Latitude,
+			&post.Longitude,
+			&post.Alcohols,
 			&mentionedBuddyIDs,
 			&post.SourceType,
 		)
@@ -1674,7 +1735,6 @@ func (s *UserService) GetUserFriendsPosts(ctx context.Context, clerkID string) (
 
 	return posts, nil
 }
-
 
 func (s *UserService) GetMixVideoFeed(ctx context.Context, clerkID string) ([]mix.VideoPost, error) {
 	log.Println("getting video feed")
