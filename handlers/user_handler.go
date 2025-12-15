@@ -351,10 +351,8 @@ func (h *UserHandler) GetMemoryWall(w http.ResponseWriter, r *http.Request) {
 	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
 	defer cancel()
 
-    // Get PostID from URL parameters (assuming you use mux or similar)
-    // If using query param: r.URL.Query().Get("postId")
 	vars := mux.Vars(r)
-	postID := vars["postId"] 
+	postID := vars["postId"]
 
 	if postID == "" {
 		http.Error(w, "missing postId", http.StatusBadRequest)
@@ -367,14 +365,12 @@ func (h *UserHandler) GetMemoryWall(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-    // Return empty array instead of null if no items found
 	if items == nil {
 		items = []canvas.CanvasItem{}
 	}
 
 	respondWithJSON(w, http.StatusOK, items)
 }
-
 
 func (h *UserHandler) AddMemoryToWall(w http.ResponseWriter, r *http.Request) {
 	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
@@ -387,8 +383,8 @@ func (h *UserHandler) AddMemoryToWall(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var req struct {
-		PostId string               `json:"post_id"`
-		WallItems  *[]canvas.CanvasItem `json:"wall_items"`
+		PostId    string               `json:"post_id"`
+		WallItems *[]canvas.CanvasItem `json:"wall_items"`
 	}
 
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {

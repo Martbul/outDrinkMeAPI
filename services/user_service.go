@@ -870,100 +870,123 @@ func (s *UserService) GetMemoryWall(ctx context.Context, postIDStr string) ([]ca
 
 	return items, nil
 }
-
 func (s *UserService) AddMemoryToWall(ctx context.Context, clerkID string, postIDStr string, wallItems *[]canvas.CanvasItem) error {
-	// 1. Get the Internal User ID
+	// 1. Get User ID
 	var userID uuid.UUID
 	err := s.db.QueryRow(ctx, `SELECT id FROM users WHERE clerk_id = $1`, clerkID).Scan(&userID)
 	if err != nil {
 		return fmt.Errorf("user not found: %w", err)
 	}
 
-	// 2. Parse the Post ID (daily_drinking_id)
 	postID, err := uuid.Parse(postIDStr)
 	if err != nil {
 		return fmt.Errorf("invalid post uuid: %w", err)
 	}
 
-	// 3. Start a Transaction
-	// We use a transaction because we are doing a DELETE followed by multiple INSERTs.
-	// If one insert fails, we want to roll back everything so we don't lose the user's data.
+	// 2. Start Transaction
 	tx, err := s.db.Begin(ctx)
 	if err != nil {
 		return fmt.Errorf("failed to begin transaction: %w", err)
 	}
-	defer tx.Rollback(ctx) // Rollback if we don't Commit at the end
+	defer tx.Rollback(ctx)
 
-	// 4. Clear existing items for this post (Sync Strategy)
-	// We delete everything currently on this wall for this post, then re-save the new state.
-	// This is the easiest way to handle items that were deleted or moved on the frontend.
+	// 3. INVENTORY SYNC LOGIC
+	// We need to compare existing stickers vs new stickers to adjust inventory.
+	
+	// A. Fetch existing stickers for this post to count them
+	rows, err := tx.Query(ctx, `SELECT extra_data FROM canvas_items WHERE daily_drinking_id = $1 AND item_type = 'sticker'`, postID)
+	if err != nil {
+		return fmt.Errorf("failed to fetch existing items: %w", err)
+	}
+	
+	existingCounts := make(map[string]int)
+	for rows.Next() {
+		var extraDataJSON []byte
+		if err := rows.Scan(&extraDataJSON); err == nil && len(extraDataJSON) > 0 {
+			var extra map[string]interface{}
+			if json.Unmarshal(extraDataJSON, &extra) == nil {
+				if sid, ok := extra["sticker_id"].(string); ok {
+					existingCounts[sid]++
+				}
+			}
+		}
+	}
+	rows.Close()
+
+	// B. Count new stickers from the request
+	newCounts := make(map[string]int)
+	if wallItems != nil {
+		for _, item := range *wallItems {
+			if item.ItemType == "sticker" && item.ExtraData != nil {
+				if sid, ok := item.ExtraData["sticker_id"].(string); ok {
+					newCounts[sid]++
+				}
+			}
+		}
+	}
+
+	// C. Calculate Delta and Update Inventory
+	// We merge keys from both maps
+	allStickerIDs := make(map[string]bool)
+	for k := range existingCounts { allStickerIDs[k] = true }
+	for k := range newCounts { allStickerIDs[k] = true }
+
+	for stickerID := range allStickerIDs {
+		oldQty := existingCounts[stickerID]
+		newQty := newCounts[stickerID]
+		diff := newQty - oldQty // Positive = Used more, Negative = Removed some
+
+		if diff != 0 {
+			// Update user_inventory
+			// Note: quantity = quantity - diff. 
+			// If diff is positive (added sticker), quantity goes down.
+			// If diff is negative (removed sticker), quantity goes up (refund).
+			_, err := tx.Exec(ctx, `
+				UPDATE user_inventory 
+				SET quantity = quantity - $1 
+				WHERE user_id = $2 AND item_id = $3
+			`, diff, userID, stickerID)
+			
+			if err != nil {
+				return fmt.Errorf("failed to update inventory for item %s: %w", stickerID, err)
+			}
+		}
+	}
+
+	// 4. Standard Save Logic (Delete Old -> Insert New)
 	_, err = tx.Exec(ctx, `DELETE FROM canvas_items WHERE daily_drinking_id = $1`, postID)
 	if err != nil {
 		return fmt.Errorf("failed to clear old items: %w", err)
 	}
 
-	// 5. Insert the new items
 	if wallItems != nil && len(*wallItems) > 0 {
 		query := `
 			INSERT INTO canvas_items (
-				daily_drinking_id,
-				added_by_user_id,
-				item_type,
-				content,
-				pos_x,
-				pos_y,
-				rotation,
-				scale,
-				width,
-				height,
-				z_index,
-				extra_data
+				daily_drinking_id, added_by_user_id, item_type, content,
+				pos_x, pos_y, rotation, scale, width, height, z_index, extra_data
 			) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
 		`
-
 		for _, item := range *wallItems {
-			// Handle ExtraData: Convert Map to JSONB
 			var extraDataJSON []byte
 			if item.ExtraData != nil {
-				extraDataJSON, err = json.Marshal(item.ExtraData)
-				if err != nil {
-					return fmt.Errorf("failed to marshal extra_data: %w", err)
-				}
+				extraDataJSON, _ = json.Marshal(item.ExtraData)
 			} else {
 				extraDataJSON = []byte("{}")
 			}
 
-			// Execute Insert
-			// Note: We intentionally ignore item.ID from frontend because it is likely Math.random()
-			// We let Postgres generate a generic, valid UUID v4 via the DEFAULT gen_random_uuid()
 			_, err := tx.Exec(ctx, query,
-				postID,              // daily_drinking_id
-				userID,              // added_by_user_id (current user)
-				item.ItemType,       // item_type
-				item.Content,        // content
-				item.PosX,           // pos_x
-				item.PosY,           // pos_y
-				item.Rotation,       // rotation
-				item.Scale,          // scale
-				item.Width,          // width
-				item.Height,         // height
-				item.ZIndex,         // z_index
-				extraDataJSON,       // extra_data (JSONB)
+				postID, userID, item.ItemType, item.Content,
+				item.PosX, item.PosY, item.Rotation, item.Scale, item.Width, item.Height, item.ZIndex, extraDataJSON,
 			)
-
 			if err != nil {
-				return fmt.Errorf("failed to insert canvas item: %w", err)
+				return fmt.Errorf("failed to insert item: %w", err)
 			}
 		}
 	}
 
-	// 6. Commit the transaction
-	if err := tx.Commit(ctx); err != nil {
-		return fmt.Errorf("failed to commit transaction: %w", err)
-	}
-
-	return nil
+	return tx.Commit(ctx)
 }
+
 
 func (s *UserService) AddMixVideo(ctx context.Context, clerkID string, videoUrl string, caption *string, duration int) error {
 	var userID uuid.UUID
