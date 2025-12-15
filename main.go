@@ -55,16 +55,29 @@ func init() {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 
+	// poolConfig, err := pgxpool.ParseConfig(dbURL)
+	// if err != nil {
+	// 	log.Fatal("Failed to parse database URL:", err)
+	// }
+
+	// poolConfig.MaxConns = 25
+	// poolConfig.MinConns = 5
+	// poolConfig.MaxConnLifetime = time.Hour
+	// poolConfig.MaxConnIdleTime = 30 * time.Minute
+	// poolConfig.HealthCheckPeriod = time.Minute
+
+	// dbPool, err = pgxpool.NewWithConfig(ctx, poolConfig)
+	// In your init() function:
+
 	poolConfig, err := pgxpool.ParseConfig(dbURL)
 	if err != nil {
 		log.Fatal("Failed to parse database URL:", err)
 	}
-
-	poolConfig.MaxConns = 25
-	poolConfig.MinConns = 5
-	poolConfig.MaxConnLifetime = time.Hour
-	poolConfig.MaxConnIdleTime = 30 * time.Minute
-	poolConfig.HealthCheckPeriod = time.Minute
+	poolConfig.MinConns = 0
+	poolConfig.MaxConns = 20
+	poolConfig.MaxConnIdleTime = 15 * time.Second
+	poolConfig.HealthCheckPeriod = 0
+	poolConfig.MaxConnLifetime = 1 * time.Hour
 
 	dbPool, err = pgxpool.NewWithConfig(ctx, poolConfig)
 	if err != nil {
