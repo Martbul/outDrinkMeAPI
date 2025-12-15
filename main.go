@@ -76,7 +76,7 @@ func init() {
 	poolConfig.MinConns = 0
 	poolConfig.MaxConns = 20
 	poolConfig.MaxConnIdleTime = 15 * time.Second
-	poolConfig.HealthCheckPeriod = 0
+	poolConfig.HealthCheckPeriod = 1 * time.Minute
 	poolConfig.MaxConnLifetime = 1 * time.Hour
 
 	dbPool, err = pgxpool.NewWithConfig(ctx, poolConfig)
