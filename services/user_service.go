@@ -2,6 +2,7 @@ package services
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"log"
@@ -818,63 +819,98 @@ func (s *UserService) AddDrinking(ctx context.Context, clerkID string, drankToda
 	return nil
 }
 
-func (s *UserService) AddMemoryToWall(ctx context.Context, clerkID string, PostId string, WallItems *[]canvas.CanvasItem) error {
-	var userID uuid.UUID
 
+func (s *UserService) AddMemoryToWall(ctx context.Context, clerkID string, postIDStr string, wallItems *[]canvas.CanvasItem) error {
+	// 1. Get the Internal User ID
+	var userID uuid.UUID
 	err := s.db.QueryRow(ctx, `SELECT id FROM users WHERE clerk_id = $1`, clerkID).Scan(&userID)
 	if err != nil {
 		return fmt.Errorf("user not found: %w", err)
 	}
 
-	var postID uuid.UUID
-
-	query := `
-        INSERT INTO daily_drinking (
-            user_id, 
-            date, 
-            drank_today, 
-            logged_at, 
-            image_url, 
-            location_text, 
-            latitude, 
-            longitude, 
-            alcohols, 
-            mentioned_buddies
-        )
-        VALUES ($1, $2, $3, NOW(), $4, $5, $6, $7, $8, $9)
-        ON CONFLICT (user_id, date) 
-        DO UPDATE SET 
-            drank_today = $3, 
-            logged_at = NOW(), 
-            image_url = $4, 
-            location_text = $5,
-            latitude = $6,
-            longitude = $7,
-            alcohols = $8,
-            mentioned_buddies = $9
-        RETURNING id
-    `
-
-	err = s.db.QueryRow(ctx, query,
-		userID,
-		date,
-		drankToday,
-		imageUrl,
-		locationText,
-		lat,
-		long,
-		alcohols,
-		clerkIDs,
-	).Scan(&postID)
-
+	// 2. Parse the Post ID (daily_drinking_id)
+	postID, err := uuid.Parse(postIDStr)
 	if err != nil {
-		return fmt.Errorf("failed to log drinking: %w", err)
+		return fmt.Errorf("invalid post uuid: %w", err)
 	}
 
-	if imageUrl != nil {
-		actualURL := *imageUrl
-		go utils.FriendPostedImageToMix(s.db, s.notifService, userID, username, actualURL, postID)
+	// 3. Start a Transaction
+	// We use a transaction because we are doing a DELETE followed by multiple INSERTs.
+	// If one insert fails, we want to roll back everything so we don't lose the user's data.
+	tx, err := s.db.Begin(ctx)
+	if err != nil {
+		return fmt.Errorf("failed to begin transaction: %w", err)
 	}
+	defer tx.Rollback(ctx) // Rollback if we don't Commit at the end
+
+	// 4. Clear existing items for this post (Sync Strategy)
+	// We delete everything currently on this wall for this post, then re-save the new state.
+	// This is the easiest way to handle items that were deleted or moved on the frontend.
+	_, err = tx.Exec(ctx, `DELETE FROM canvas_items WHERE daily_drinking_id = $1`, postID)
+	if err != nil {
+		return fmt.Errorf("failed to clear old items: %w", err)
+	}
+
+	// 5. Insert the new items
+	if wallItems != nil && len(*wallItems) > 0 {
+		query := `
+			INSERT INTO canvas_items (
+				daily_drinking_id,
+				added_by_user_id,
+				item_type,
+				content,
+				pos_x,
+				pos_y,
+				rotation,
+				scale,
+				width,
+				height,
+				z_index,
+				extra_data
+			) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
+		`
+
+		for _, item := range *wallItems {
+			// Handle ExtraData: Convert Map to JSONB
+			var extraDataJSON []byte
+			if item.ExtraData != nil {
+				extraDataJSON, err = json.Marshal(item.ExtraData)
+				if err != nil {
+					return fmt.Errorf("failed to marshal extra_data: %w", err)
+				}
+			} else {
+				extraDataJSON = []byte("{}")
+			}
+
+			// Execute Insert
+			// Note: We intentionally ignore item.ID from frontend because it is likely Math.random()
+			// We let Postgres generate a generic, valid UUID v4 via the DEFAULT gen_random_uuid()
+			_, err := tx.Exec(ctx, query,
+				postID,              // daily_drinking_id
+				userID,              // added_by_user_id (current user)
+				item.ItemType,       // item_type
+				item.Content,        // content
+				item.PosX,           // pos_x
+				item.PosY,           // pos_y
+				item.Rotation,       // rotation
+				item.Scale,          // scale
+				item.Width,          // width
+				item.Height,         // height
+				item.ZIndex,         // z_index
+				extraDataJSON,       // extra_data (JSONB)
+			)
+
+			if err != nil {
+				return fmt.Errorf("failed to insert canvas item: %w", err)
+			}
+		}
+	}
+
+	// 6. Commit the transaction
+	if err := tx.Commit(ctx); err != nil {
+		return fmt.Errorf("failed to commit transaction: %w", err)
+	}
+
 	return nil
 }
 
