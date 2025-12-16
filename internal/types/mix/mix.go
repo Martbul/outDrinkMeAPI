@@ -7,7 +7,6 @@ import (
 	"outDrinkMeAPI/internal/types/user"
 	"time"
 )
-
 type DailyDrinkingPost struct {
 	ID               string      `json:"id"`
 	UserID           string      `json:"user_id"`
@@ -18,9 +17,13 @@ type DailyDrinkingPost struct {
 	LoggedAt         time.Time   `json:"logged_at"`
 	ImageURL         *string     `json:"image_url"`
 	LocationText     *string     `json:"location_text"`
+	Latitude         *float64    `json:"latitude"`
+	Longitude        *float64    `json:"longitude"`
+	Alcohols         []string    `json:"alcohol"` 
 	MentionedBuddies []user.User `json:"mentioned_buddies"`
 	SourceType       string      `json:"source_type"`
 }
+
 
 type VideoPost struct {
 	ID           string    `json:"id"`

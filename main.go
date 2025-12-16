@@ -148,12 +148,12 @@ func main() {
 	})
 
 	standardRouter.HandleFunc("/health", func(w http.ResponseWriter, r *http.Request) {
-    // Do NOT ping the database.
-    
-    w.Header().Set("Content-Type", "application/json")
-    w.WriteHeader(http.StatusOK)
-    w.Write([]byte(`{"status": "healthy", "service": "outDrinkMe-api"}`))
-}).Methods("GET")
+		// Do NOT ping the database.
+
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		w.Write([]byte(`{"status": "healthy", "service": "outDrinkMe-api"}`))
+	}).Methods("GET")
 
 	standardRouter.HandleFunc("/webhooks/clerk", webhookHandler.HandleClerkWebhook).Methods("POST")
 
@@ -176,12 +176,16 @@ func main() {
 	protected.HandleFunc("/user/leaderboards", userHandler.GetLeaderboards).Methods("GET")
 	protected.HandleFunc("/user/friends", userHandler.GetFriends).Methods("GET")
 	protected.HandleFunc("/user/your-mix", userHandler.GetYourMix).Methods("GET")
+	protected.HandleFunc("/user/global-mix", userHandler.GetGlobalMix).Methods("GET")
+	protected.HandleFunc("/user/map-friend-posts", userHandler.GetUserFriendsPosts).Methods("GET")
 	protected.HandleFunc("/user/mix-timeline", userHandler.GetMixTimeline).Methods("GET")
 	protected.HandleFunc("/user/friends", userHandler.AddFriend).Methods("POST")
 	protected.HandleFunc("/user/friends", userHandler.RemoveFriend).Methods("DELETE")
 	protected.HandleFunc("/user/discovery", userHandler.GetDiscovery).Methods("GET")
 	protected.HandleFunc("/user/achievements", userHandler.GetAchievements).Methods("GET")
 	protected.HandleFunc("/user/drink", userHandler.AddDrinking).Methods("POST")
+	protected.HandleFunc("/user/memory-wall/{postId}", userHandler.GetMemoryWall).Methods("GET")
+	protected.HandleFunc("/user/memory-wall", userHandler.AddMemoryToWall).Methods("POST")
 	protected.HandleFunc("/user/drink", userHandler.RemoveDrinking).Methods("DELETE")
 	protected.HandleFunc("/user/drunk-thought", userHandler.GetDrunkThought).Methods("GET")
 	protected.HandleFunc("/user/drunk-thought", userHandler.AddDrunkThought).Methods("POST")

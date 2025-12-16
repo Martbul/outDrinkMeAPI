@@ -6,11 +6,15 @@ import (
 	"fmt"
 	"log"
 	"net/http"
+	"outDrinkMeAPI/internal/types/canvas"
 	"outDrinkMeAPI/internal/types/user"
 	"outDrinkMeAPI/middleware"
 	"outDrinkMeAPI/services"
+	"strconv"
 	"strings"
 	"time"
+
+	"github.com/gorilla/mux"
 )
 
 type UserHandler struct {
@@ -299,10 +303,17 @@ func (h *UserHandler) AddDrinking(w http.ResponseWriter, r *http.Request) {
 		date = time.Now().Truncate(24 * time.Hour)
 	}
 
+	type Coordinates struct {
+		Latitude  float64 `json:"latitude"`
+		Longitude float64 `json:"longitude"`
+	}
+
 	var req struct {
-		DrankToday       bool    `json:"drank_today"`
-		ImageUrl         *string `json:"image_url"`
-		LocationText     *string `json:"location_text"`
+		DrankToday       bool         `json:"drank_today"`
+		ImageUrl         *string      `json:"image_url"`
+		LocationText     *string      `json:"location_text"`
+		LocationCoords   *Coordinates `json:"location_coords"`
+		Alcohols         *[]string    `json:"alcohols"`
 		MentionedBuddies []struct {
 			ClerkID string `json:"clerkId"`
 		} `json:"mentioned_buddies"`
@@ -313,7 +324,6 @@ func (h *UserHandler) AddDrinking(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Extract just the clerk IDs
 	var clerkIDs []string
 	if len(req.MentionedBuddies) > 0 {
 		clerkIDs = make([]string, 0, len(req.MentionedBuddies))
@@ -324,7 +334,66 @@ func (h *UserHandler) AddDrinking(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	if err := h.userService.AddDrinking(ctx, clearkID, req.DrankToday, req.ImageUrl, req.LocationText, clerkIDs, date); err != nil {
+	var lat, long *float64
+	if req.LocationCoords != nil {
+		lat = &req.LocationCoords.Latitude
+		long = &req.LocationCoords.Longitude
+	}
+
+	if err := h.userService.AddDrinking(ctx, clearkID, req.DrankToday, req.ImageUrl, req.LocationText, lat, long, *req.Alcohols, clerkIDs, date); err != nil {
+		respondWithError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+
+	respondWithJSON(w, http.StatusOK, map[string]string{"message": "Drinking activity added successfully"})
+}
+
+func (h *UserHandler) GetMemoryWall(w http.ResponseWriter, r *http.Request) {
+	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
+	defer cancel()
+
+	vars := mux.Vars(r)
+	postID := vars["postId"]
+
+	if postID == "" {
+		http.Error(w, "missing postId", http.StatusBadRequest)
+		return
+	}
+
+	items, err := h.userService.GetMemoryWall(ctx, postID)
+	if err != nil {
+		respondWithError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+
+	if items == nil {
+		items = []canvas.CanvasItem{}
+	}
+
+	respondWithJSON(w, http.StatusOK, items)
+}
+
+func (h *UserHandler) AddMemoryToWall(w http.ResponseWriter, r *http.Request) {
+	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
+	defer cancel()
+
+	clearkID, ok := middleware.GetClerkID(ctx)
+	if !ok {
+		respondWithError(w, http.StatusInternalServerError, "Error while adding drinking")
+		return
+	}
+
+	var req struct {
+		PostId    string               `json:"post_id"`
+		WallItems *[]canvas.CanvasItem `json:"wall_items"`
+	}
+
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "invalid request body", http.StatusBadRequest)
+		return
+	}
+
+	if err := h.userService.AddMemoryToWall(ctx, clearkID, req.PostId, req.WallItems); err != nil {
 		respondWithError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
@@ -375,7 +444,7 @@ func (h *UserHandler) GetAlcoholismChart(w http.ResponseWriter, r *http.Request)
 	chartDataBytes, err := h.userService.GetAlcoholismChart(ctx, clerkID, period)
 	if err != nil {
 		// Log the actual error internally
-		// log.Println("Chart error:", err) 
+		// log.Println("Chart error:", err)
 		respondWithError(w, http.StatusInternalServerError, "Failed to fetch chart data")
 		return
 	}
@@ -423,7 +492,7 @@ func (h *UserHandler) AddUserFeedback(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var req struct {
-		Category      string `json:"category"`
+		Category     string `json:"category"`
 		FeedbackText string `json:"feedback_text"`
 	}
 
@@ -771,8 +840,70 @@ func (h *UserHandler) GetUserStats(w http.ResponseWriter, r *http.Request) {
 
 	respondWithJSON(w, http.StatusOK, stats)
 }
-
 func (h *UserHandler) GetYourMix(w http.ResponseWriter, r *http.Request) {
+	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
+	defer cancel()
+
+	clerkID, ok := middleware.GetClerkID(ctx)
+	if !ok {
+		respondWithError(w, http.StatusUnauthorized, "User not authenticated")
+		return
+	}
+
+	page, limit := getPaginationParams(r)
+
+	// Pass page and limit to service
+	yourMixData, err := h.userService.GetYourMix(ctx, clerkID, page, limit)
+	if err != nil {
+		respondWithError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+
+	respondWithJSON(w, http.StatusOK, yourMixData)
+}
+
+// 2. GET GLOBAL MIX (Strangers Only)
+func (h *UserHandler) GetGlobalMix(w http.ResponseWriter, r *http.Request) {
+	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
+	defer cancel()
+
+	clerkID, ok := middleware.GetClerkID(ctx)
+	if !ok {
+		respondWithError(w, http.StatusUnauthorized, "User not authenticated")
+		return
+	}
+
+	page, limit := getPaginationParams(r)
+
+	globalMixData, err := h.userService.GetGlobalMix(ctx, clerkID, page, limit)
+	if err != nil {
+		respondWithError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+
+	respondWithJSON(w, http.StatusOK, globalMixData)
+}
+
+func getPaginationParams(r *http.Request) (int, int) {
+	pageStr := r.URL.Query().Get("page")
+	limitStr := r.URL.Query().Get("limit")
+
+	page, err := strconv.Atoi(pageStr)
+	if err != nil || page < 1 {
+		page = 1
+	}
+
+	limit, err := strconv.Atoi(limitStr)
+	if err != nil || limit < 1 {
+		limit = 20 // Default limit
+	} else if limit > 50 {
+		limit = 50 // Max limit cap
+	}
+
+	return page, limit
+}
+
+func (h *UserHandler) GetUserFriendsPosts(w http.ResponseWriter, r *http.Request) {
 	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
 	defer cancel()
 
@@ -782,15 +913,13 @@ func (h *UserHandler) GetYourMix(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	yourMixData, err := h.userService.GetYourMix(ctx, clearkID)
+	userFriendsPosts, err := h.userService.GetUserFriendsPosts(ctx, clearkID)
 	if err != nil {
 		respondWithError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
 
-	log.Println(yourMixData)
-
-	respondWithJSON(w, http.StatusOK, yourMixData)
+	respondWithJSON(w, http.StatusOK, userFriendsPosts)
 }
 
 func (h *UserHandler) GetMixTimeline(w http.ResponseWriter, r *http.Request) {
