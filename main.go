@@ -148,12 +148,12 @@ func main() {
 	})
 
 	standardRouter.HandleFunc("/health", func(w http.ResponseWriter, r *http.Request) {
-    // Do NOT ping the database.
-    
-    w.Header().Set("Content-Type", "application/json")
-    w.WriteHeader(http.StatusOK)
-    w.Write([]byte(`{"status": "healthy", "service": "outDrinkMe-api"}`))
-}).Methods("GET")
+		// Do NOT ping the database.
+
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		w.Write([]byte(`{"status": "healthy", "service": "outDrinkMe-api"}`))
+	}).Methods("GET")
 
 	standardRouter.HandleFunc("/webhooks/clerk", webhookHandler.HandleClerkWebhook).Methods("POST")
 
@@ -176,7 +176,7 @@ func main() {
 	protected.HandleFunc("/user/leaderboards", userHandler.GetLeaderboards).Methods("GET")
 	protected.HandleFunc("/user/friends", userHandler.GetFriends).Methods("GET")
 	protected.HandleFunc("/user/your-mix", userHandler.GetYourMix).Methods("GET")
-	protected.HandleFunc("/user/map-friend-posts", userHandler.GetUserFriendsPosts).Methods("GET")
+	protected.HandleFunc("/user/global-mix", userHandler.GetGlobalMix).Methods("GET")
 	protected.HandleFunc("/user/mix-timeline", userHandler.GetMixTimeline).Methods("GET")
 	protected.HandleFunc("/user/friends", userHandler.AddFriend).Methods("POST")
 	protected.HandleFunc("/user/friends", userHandler.RemoveFriend).Methods("DELETE")

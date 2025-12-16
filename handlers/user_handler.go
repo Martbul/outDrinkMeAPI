@@ -10,6 +10,7 @@ import (
 	"outDrinkMeAPI/internal/types/user"
 	"outDrinkMeAPI/middleware"
 	"outDrinkMeAPI/services"
+	"strconv"
 	"strings"
 	"time"
 
@@ -839,24 +840,67 @@ func (h *UserHandler) GetUserStats(w http.ResponseWriter, r *http.Request) {
 
 	respondWithJSON(w, http.StatusOK, stats)
 }
-
 func (h *UserHandler) GetYourMix(w http.ResponseWriter, r *http.Request) {
 	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
 	defer cancel()
 
-	clearkID, ok := middleware.GetClerkID(ctx)
+	clerkID, ok := middleware.GetClerkID(ctx)
 	if !ok {
 		respondWithError(w, http.StatusUnauthorized, "User not authenticated")
 		return
 	}
 
-	yourMixData, err := h.userService.GetYourMix(ctx, clearkID)
+	page, limit := getPaginationParams(r)
+
+	// Pass page and limit to service
+	yourMixData, err := h.userService.GetYourMix(ctx, clerkID, page, limit)
 	if err != nil {
 		respondWithError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
 
 	respondWithJSON(w, http.StatusOK, yourMixData)
+}
+
+// 2. GET GLOBAL MIX (Strangers Only)
+func (h *UserHandler) GetGlobalMix(w http.ResponseWriter, r *http.Request) {
+	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
+	defer cancel()
+
+	clerkID, ok := middleware.GetClerkID(ctx)
+	if !ok {
+		respondWithError(w, http.StatusUnauthorized, "User not authenticated")
+		return
+	}
+
+	page, limit := getPaginationParams(r)
+
+	globalMixData, err := h.userService.GetGlobalMix(ctx, clerkID, page, limit)
+	if err != nil {
+		respondWithError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+
+	respondWithJSON(w, http.StatusOK, globalMixData)
+}
+
+func getPaginationParams(r *http.Request) (int, int) {
+	pageStr := r.URL.Query().Get("page")
+	limitStr := r.URL.Query().Get("limit")
+
+	page, err := strconv.Atoi(pageStr)
+	if err != nil || page < 1 {
+		page = 1
+	}
+
+	limit, err := strconv.Atoi(limitStr)
+	if err != nil || limit < 1 {
+		limit = 20 // Default limit
+	} else if limit > 50 {
+		limit = 50 // Max limit cap
+	}
+
+	return page, limit
 }
 
 func (h *UserHandler) GetUserFriendsPosts(w http.ResponseWriter, r *http.Request) {

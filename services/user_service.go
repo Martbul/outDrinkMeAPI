@@ -1326,6 +1326,8 @@ func (s *UserService) GetAllTimeDaysDrank(ctx context.Context, clerkID string) (
 
 	return stat, nil
 }
+
+
 func (s *UserService) GetCalendar(ctx context.Context, clerkID string, year int, month int, displyUserId *string) (*calendar.CalendarResponse, error) {
 	var targetUserID uuid.UUID
 	var err error
@@ -1514,6 +1516,9 @@ func (s *UserService) GetUserStats(ctx context.Context, clerkID string) (*stats.
 		return nil, fmt.Errorf("failed to get user stats: %w", err)
 	}
 
+
+	
+
 	stats.AlcoholismCoefficient = utils.CalculateAlcoholismScore(
 		stats.CurrentStreak,
 		stats.TotalDaysDrank,
@@ -1592,157 +1597,145 @@ func (s *UserService) GetUserStats(ctx context.Context, clerkID string) (*stats.
 
 	return stats, nil
 }
+// 1. GetYourMix: Returns posts only from Accepted Friends
+func (s *UserService) GetYourMix(ctx context.Context, clerkID string, page int, limit int) ([]mix.DailyDrinkingPost, error) {
+    var userID string
+    err := s.db.QueryRow(ctx, "SELECT id FROM users WHERE clerk_id = $1", clerkID).Scan(&userID)
+    if err != nil {
+        return nil, fmt.Errorf("user not found: %w", err)
+    }
 
-func (s *UserService) GetYourMix(ctx context.Context, clerkID string) ([]mix.DailyDrinkingPost, error) {
-	log.Println("getting feed")
+    offset := (page - 1) * limit
 
-	var userID string
-	err := s.db.QueryRow(ctx, "SELECT id FROM users WHERE clerk_id = $1", clerkID).Scan(&userID)
-	if err != nil {
-		return nil, fmt.Errorf("user not found: %w", err)
-	}
-	log.Printf("Found user ID: %s for clerk_id: %s", userID, clerkID)
+    query := `
+    SELECT 
+        dd.id,
+        dd.user_id,
+        u.image_url AS user_image_url,
+        u.username,
+        dd.date,
+        dd.drank_today,
+        dd.logged_at,
+        dd.image_url AS post_image_url,
+        dd.location_text,
+        dd.mentioned_buddies,
+        'friend' AS source_type
+    FROM daily_drinking dd
+    JOIN users u ON u.id = dd.user_id
+    WHERE dd.user_id != $1
+        AND dd.image_url IS NOT NULL 
+        AND dd.image_url != ''
+        AND dd.logged_at >= NOW() - INTERVAL '30 days' -- Increased range for pagination
+        AND dd.user_id IN (
+            -- Bidirectional Friendship Check
+            SELECT friend_id FROM friendships WHERE user_id = $1 AND status = 'accepted'
+            UNION
+            SELECT user_id FROM friendships WHERE friend_id = $1 AND status = 'accepted'
+        )
+    ORDER BY dd.logged_at DESC
+    LIMIT $2 OFFSET $3
+    `
 
-	query := `
-	WITH friend_posts AS (
-		-- Get posts from friends (up to 30 posts = 60% of 50)
-		SELECT 
-			dd.id,
-			dd.user_id,
-			u.image_url AS user_image_url,
-			u.username,
-			dd.date,
-			dd.drank_today,
-			dd.logged_at,
-			dd.image_url AS post_image_url,
-			dd.location_text,
-			dd.mentioned_buddies,
-			'friend' AS source_type
-		FROM daily_drinking dd
-		JOIN users u ON u.id = dd.user_id
-		WHERE dd.user_id != $1
-			AND dd.logged_at >= NOW() - INTERVAL '14 days' -- UPDATED HERE
-			AND dd.image_url IS NOT NULL
-			AND dd.image_url != ''
-			AND dd.user_id IN (
-				-- Get all friends (bidirectional)
-				SELECT friend_id FROM friendships 
-				WHERE user_id = $1 AND status = 'accepted'
-				UNION
-				SELECT user_id FROM friendships 
-				WHERE friend_id = $1 AND status = 'accepted'
-			)
-		ORDER BY dd.logged_at DESC
-		LIMIT 30
-	),
-	friend_count AS (
-		-- Count how many friend posts we got
-		SELECT COUNT(*) as cnt FROM friend_posts
-	),
-	other_posts AS (
-		-- Get posts from non-friends
-		-- Calculate limit: 50 - friend_count, with minimum of 20 (40% of 50)
-		SELECT 
-			dd.id,
-			dd.user_id,
-			u.image_url AS user_image_url,
-						u.username,
-			dd.date,
-			dd.drank_today,
-			dd.logged_at,
-			dd.image_url AS post_image_url,
-			dd.location_text,
-			dd.mentioned_buddies,
-			'other' AS source_type
-		FROM daily_drinking dd
-		JOIN users u ON u.id = dd.user_id
-		WHERE dd.user_id != $1
-			AND dd.logged_at >= NOW() - INTERVAL '14 days' -- UPDATED HERE
-			AND dd.image_url IS NOT NULL
-			AND dd.image_url != ''
-			AND dd.user_id NOT IN (
-				-- Exclude friends (bidirectional)
-				SELECT friend_id FROM friendships 
-				WHERE user_id = $1 AND status = 'accepted'
-				UNION
-				SELECT user_id FROM friendships 
-				WHERE friend_id = $1 AND status = 'accepted'
-			)
-		ORDER BY dd.logged_at DESC
-		LIMIT GREATEST(20, 50 - (SELECT cnt FROM friend_count))
-	)
-	-- Combine and return final feed
-	SELECT 
-		id,
-		user_id,
-		user_image_url,
-		username,
-		date,
-		drank_today,
-		logged_at,
-		post_image_url,
-		location_text,
-		mentioned_buddies,
-		source_type
-	FROM (
-		SELECT * FROM friend_posts
-		UNION ALL
-		SELECT * FROM other_posts
-	) AS combined_feed
-	ORDER BY logged_at DESC
-	LIMIT 50
-	`
+    return s.executeFeedQuery(ctx, query, userID, limit, offset)
+}
 
-	rows, err := s.db.Query(ctx, query, userID)
-	if err != nil {
-		log.Println("failed to get feed")
-		return nil, fmt.Errorf("failed to get feed: %w", err)
-	}
-	defer rows.Close()
+// 2. GetGlobalMix: Returns posts from people who are NOT friends
+func (s *UserService) GetGlobalMix(ctx context.Context, clerkID string, page int, limit int) ([]mix.DailyDrinkingPost, error) {
+    var userID string
+    err := s.db.QueryRow(ctx, "SELECT id FROM users WHERE clerk_id = $1", clerkID).Scan(&userID)
+    if err != nil {
+        return nil, fmt.Errorf("user not found: %w", err)
+    }
 
-	var posts []mix.DailyDrinkingPost
-	for rows.Next() {
-		var post mix.DailyDrinkingPost
-		var mentionedBuddyIDs []string
+    offset := (page - 1) * limit
 
-		err := rows.Scan(
-			&post.ID,
-			&post.UserID,
-			&post.UserImageURL,
-			&post.Username,
-			&post.Date,
-			&post.DrankToday,
-			&post.LoggedAt,
-			&post.ImageURL,
-			&post.LocationText,
-			&mentionedBuddyIDs,
-			&post.SourceType,
-		)
-		if err != nil {
-			log.Println("failed to scan post")
-			return nil, fmt.Errorf("failed to scan post: %w", err)
-		}
+    query := `
+    SELECT 
+        dd.id,
+        dd.user_id,
+        u.image_url AS user_image_url,
+        u.username,
+        dd.date,
+        dd.drank_today,
+        dd.logged_at,
+        dd.image_url AS post_image_url,
+        dd.location_text,
+        dd.mentioned_buddies,
+        'other' AS source_type
+    FROM daily_drinking dd
+    JOIN users u ON u.id = dd.user_id
+    WHERE dd.user_id != $1
+        AND dd.image_url IS NOT NULL 
+        AND dd.image_url != ''
+        AND dd.logged_at >= NOW() - INTERVAL '14 days'
+        AND dd.user_id NOT IN (
+            -- Exclude Friends
+            SELECT friend_id FROM friendships WHERE user_id = $1 AND status = 'accepted'
+            UNION
+            SELECT user_id FROM friendships WHERE friend_id = $1 AND status = 'accepted'
+        )
+    ORDER BY dd.logged_at DESC
+    LIMIT $2 OFFSET $3
+    `
 
-		if len(mentionedBuddyIDs) > 0 {
-			post.MentionedBuddies, err = s.getUsersByIDs(ctx, mentionedBuddyIDs)
-			if err != nil {
-				log.Printf("failed to fetch mentioned buddies for post %s: %v", post.ID, err)
-				post.MentionedBuddies = []user.User{}
-			}
-		} else {
-			post.MentionedBuddies = []user.User{}
-		}
+    return s.executeFeedQuery(ctx, query, userID, limit, offset)
+}
 
-		posts = append(posts, post)
-	}
+// --- Helper to avoid duplicating the Scan logic ---
+func (s *UserService) executeFeedQuery(ctx context.Context, query string, userID string, limit, offset int) ([]mix.DailyDrinkingPost, error) {
+    rows, err := s.db.Query(ctx, query, userID, limit, offset)
+    if err != nil {
+        log.Println("failed to get feed")
+        return nil, fmt.Errorf("failed to get feed: %w", err)
+    }
+    defer rows.Close()
 
-	if err = rows.Err(); err != nil {
-		log.Println("error iterating posts")
-		return nil, fmt.Errorf("error iterating posts: %w", err)
-	}
-	log.Printf("Returning %d posts", len(posts))
+    var posts []mix.DailyDrinkingPost
+    for rows.Next() {
+        var post mix.DailyDrinkingPost
+        var mentionedBuddyIDs []string
 
-	return posts, nil
+        err := rows.Scan(
+            &post.ID,
+            &post.UserID,
+            &post.UserImageURL,
+            &post.Username,
+            &post.Date,
+            &post.DrankToday,
+            &post.LoggedAt,
+            &post.ImageURL,
+            &post.LocationText,
+            &mentionedBuddyIDs,
+            &post.SourceType,
+        )
+        if err != nil {
+            return nil, fmt.Errorf("failed to scan post: %w", err)
+        }
+
+        // Hydrate Buddies
+        if len(mentionedBuddyIDs) > 0 {
+            post.MentionedBuddies, err = s.getUsersByIDs(ctx, mentionedBuddyIDs)
+            if err != nil {
+                // Log error but don't fail the whole feed
+                log.Printf("failed to fetch buddies for post %s: %v", post.ID, err)
+                post.MentionedBuddies = []user.User{}
+            }
+        } else {
+            post.MentionedBuddies = []user.User{}
+        }
+
+        posts = append(posts, post)
+    }
+
+    if err = rows.Err(); err != nil {
+        return nil, fmt.Errorf("error iterating posts: %w", err)
+    }
+
+    if posts == nil {
+        posts = []mix.DailyDrinkingPost{}
+    }
+
+    return posts, nil
 }
 
 func (s *UserService) GetUserFriendsPosts(ctx context.Context, clerkID string) ([]mix.DailyDrinkingPost, error) {
