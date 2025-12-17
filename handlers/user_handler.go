@@ -340,7 +340,12 @@ func (h *UserHandler) AddDrinking(w http.ResponseWriter, r *http.Request) {
 		long = &req.LocationCoords.Longitude
 	}
 
-	if err := h.userService.AddDrinking(ctx, clearkID, req.DrankToday, req.ImageUrl, req.LocationText, lat, long, *req.Alcohols, clerkIDs, date); err != nil {
+	var alcohols []string
+	if req.Alcohols != nil {
+		alcohols = *req.Alcohols
+	}
+
+	if err := h.userService.AddDrinking(ctx, clearkID, req.DrankToday, req.ImageUrl, req.LocationText, lat, long, alcohols, clerkIDs, date); err != nil {
 		respondWithError(w, http.StatusInternalServerError, err.Error())
 		return
 	}

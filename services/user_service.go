@@ -758,6 +758,9 @@ func (s *UserService) GetAchievements(ctx context.Context, clerkID string) ([]*a
 
 	return achievements, nil
 }
+
+
+
 func (s *UserService) AddDrinking(ctx context.Context, clerkID string, drankToday bool, imageUrl *string, locationText *string, lat *float64, long *float64, alcohols []string, clerkIDs []string, date time.Time) error {
 	var userID uuid.UUID
 	var username string
