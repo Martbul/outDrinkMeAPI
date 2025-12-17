@@ -74,10 +74,10 @@ func init() {
 		log.Fatal("Failed to parse database URL:", err)
 	}
 	poolConfig.MinConns = 0
-	poolConfig.MaxConns = 20
+	poolConfig.MaxConns = 15
 	poolConfig.MaxConnIdleTime = 15 * time.Second
 	poolConfig.HealthCheckPeriod = 1 * time.Minute
-	poolConfig.MaxConnLifetime = 1 * time.Hour
+	poolConfig.MaxConnLifetime = 20 * time.Minute
 
 	dbPool, err = pgxpool.NewWithConfig(ctx, poolConfig)
 	if err != nil {
@@ -148,8 +148,6 @@ func main() {
 	})
 
 	standardRouter.HandleFunc("/health", func(w http.ResponseWriter, r *http.Request) {
-		// Do NOT ping the database.
-
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusOK)
 		w.Write([]byte(`{"status": "healthy", "service": "outDrinkMe-api"}`))

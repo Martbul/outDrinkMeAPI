@@ -1597,7 +1597,8 @@ func (s *UserService) GetUserStats(ctx context.Context, clerkID string) (*stats.
 
 	return stats, nil
 }
-// 1. GetYourMix: Returns posts only from Accepted Friends
+
+
 func (s *UserService) GetYourMix(ctx context.Context, clerkID string, page int, limit int) ([]mix.DailyDrinkingPost, error) {
     var userID string
     err := s.db.QueryRow(ctx, "SELECT id FROM users WHERE clerk_id = $1", clerkID).Scan(&userID)
@@ -1619,18 +1620,25 @@ func (s *UserService) GetYourMix(ctx context.Context, clerkID string, page int, 
         dd.image_url AS post_image_url,
         dd.location_text,
         dd.mentioned_buddies,
-        'friend' AS source_type
+        CASE 
+            WHEN dd.user_id = $1 THEN 'me' 
+            ELSE 'friend' 
+        END AS source_type
     FROM daily_drinking dd
     JOIN users u ON u.id = dd.user_id
-    WHERE dd.user_id != $1
-        AND dd.image_url IS NOT NULL 
+    WHERE 
+        dd.image_url IS NOT NULL 
         AND dd.image_url != ''
-        AND dd.logged_at >= NOW() - INTERVAL '30 days' -- Increased range for pagination
-        AND dd.user_id IN (
-            -- Bidirectional Friendship Check
-            SELECT friend_id FROM friendships WHERE user_id = $1 AND status = 'accepted'
-            UNION
-            SELECT user_id FROM friendships WHERE friend_id = $1 AND status = 'accepted'
+        AND (
+            -- Include Self
+            dd.user_id = $1
+            OR 
+            -- Include Friends (Bidirectional)
+            dd.user_id IN (
+                SELECT friend_id FROM friendships WHERE user_id = $1 AND status = 'accepted'
+                UNION
+                SELECT user_id FROM friendships WHERE friend_id = $1 AND status = 'accepted'
+            )
         )
     ORDER BY dd.logged_at DESC
     LIMIT $2 OFFSET $3
@@ -1639,7 +1647,7 @@ func (s *UserService) GetYourMix(ctx context.Context, clerkID string, page int, 
     return s.executeFeedQuery(ctx, query, userID, limit, offset)
 }
 
-// 2. GetGlobalMix: Returns posts from people who are NOT friends
+
 func (s *UserService) GetGlobalMix(ctx context.Context, clerkID string, page int, limit int) ([]mix.DailyDrinkingPost, error) {
     var userID string
     err := s.db.QueryRow(ctx, "SELECT id FROM users WHERE clerk_id = $1", clerkID).Scan(&userID)
@@ -1667,7 +1675,6 @@ func (s *UserService) GetGlobalMix(ctx context.Context, clerkID string, page int
     WHERE dd.user_id != $1
         AND dd.image_url IS NOT NULL 
         AND dd.image_url != ''
-        AND dd.logged_at >= NOW() - INTERVAL '14 days'
         AND dd.user_id NOT IN (
             -- Exclude Friends
             SELECT friend_id FROM friendships WHERE user_id = $1 AND status = 'accepted'

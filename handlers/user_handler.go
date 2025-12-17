@@ -852,7 +852,6 @@ func (h *UserHandler) GetYourMix(w http.ResponseWriter, r *http.Request) {
 
 	page, limit := getPaginationParams(r)
 
-	// Pass page and limit to service
 	yourMixData, err := h.userService.GetYourMix(ctx, clerkID, page, limit)
 	if err != nil {
 		respondWithError(w, http.StatusInternalServerError, err.Error())
