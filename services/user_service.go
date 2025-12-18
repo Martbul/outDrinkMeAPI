@@ -873,7 +873,168 @@ func (s *UserService) GetMemoryWall(ctx context.Context, postIDStr string) ([]ca
 
 	return items, nil
 }
-func (s *UserService) AddMemoryToWall(ctx context.Context, clerkID string, postIDStr string, wallItems *[]canvas.CanvasItem) error {
+
+// func (s *UserService) AddMemoryToWall(ctx context.Context, clerkID string, postIDStr string, wallItems *[]canvas.CanvasItem, reactions []canvas.CanvasItem) error {
+// 	// 1. Get User ID
+// 	var userID uuid.UUID
+// 	err := s.db.QueryRow(ctx, `SELECT id FROM users WHERE clerk_id = $1`, clerkID).Scan(&userID)
+// 	if err != nil {
+// 		return fmt.Errorf("user not found: %w", err)
+// 	}
+
+// 	postID, err := uuid.Parse(postIDStr)
+// 	if err != nil {
+// 		return fmt.Errorf("invalid post uuid: %w", err)
+// 	}
+
+// 	// 2. Start Transaction
+// 	tx, err := s.db.Begin(ctx)
+// 	if err != nil {
+// 		return fmt.Errorf("failed to begin transaction: %w", err)
+// 	}
+// 	defer tx.Rollback(ctx)
+
+// 	// 3. INVENTORY SYNC LOGIC
+	
+// 	// A. Fetch existing stickers AND reactions for this post to count them
+// 	// We check for both types because removing a reaction should also refund the inventory.
+// 	rows, err := tx.Query(ctx, `
+// 		SELECT extra_data 
+// 		FROM canvas_items 
+// 		WHERE daily_drinking_id = $1 AND item_type IN ('sticker', 'reaction')`, 
+// 		postID,
+// 	)
+// 	if err != nil {
+// 		return fmt.Errorf("failed to fetch existing items: %w", err)
+// 	}
+	
+// 	existingCounts := make(map[string]int)
+// 	for rows.Next() {
+// 		var extraDataJSON []byte
+// 		if err := rows.Scan(&extraDataJSON); err == nil && len(extraDataJSON) > 0 {
+// 			var extra map[string]interface{}
+// 			if json.Unmarshal(extraDataJSON, &extra) == nil {
+// 				// Check for inventory_item_id (based on your React code) or sticker_id
+// 				if sid, ok := extra["inventory_item_id"].(string); ok {
+// 					existingCounts[sid]++
+// 				} else if sid, ok := extra["sticker_id"].(string); ok {
+// 					existingCounts[sid]++
+// 				}
+// 			}
+// 		}
+// 	}
+// 	rows.Close()
+
+// 	// B. Count new stickers AND reactions from the request
+// 	newCounts := make(map[string]int)
+	
+// 	// Count Wall Items
+// 	if wallItems != nil {
+// 		for _, item := range *wallItems {
+// 			if item.ItemType == "sticker" && item.ExtraData != nil {
+// 				if sid, ok := item.ExtraData["inventory_item_id"].(string); ok {
+// 					newCounts[sid]++
+// 				} else if sid, ok := item.ExtraData["sticker_id"].(string); ok {
+// 					newCounts[sid]++
+// 				}
+// 			}
+// 		}
+// 	}
+
+// 	// Count Reactions (These also consume inventory)
+// 	for _, item := range reactions {
+// 		// Note: Reactions implicitly consume inventory, so we check their ID too
+// 		if item.ExtraData != nil {
+// 			if sid, ok := item.ExtraData["inventory_item_id"].(string); ok {
+// 				newCounts[sid]++
+// 			} else if sid, ok := item.ExtraData["sticker_id"].(string); ok {
+// 				newCounts[sid]++
+// 			}
+// 		}
+// 	}
+
+// 	// C. Calculate Delta and Update Inventory
+// 	allStickerIDs := make(map[string]bool)
+// 	for k := range existingCounts { allStickerIDs[k] = true }
+// 	for k := range newCounts { allStickerIDs[k] = true }
+
+// 	for stickerID := range allStickerIDs {
+// 		oldQty := existingCounts[stickerID]
+// 		newQty := newCounts[stickerID]
+// 		diff := newQty - oldQty 
+
+// 		if diff != 0 {
+// 			// Update user_inventory
+// 			_, err := tx.Exec(ctx, `
+// 				UPDATE user_inventory 
+// 				SET quantity = quantity - $1 
+// 				WHERE user_id = $2 AND item_id = $3
+// 			`, diff, userID, stickerID)
+			
+// 			if err != nil {
+// 				return fmt.Errorf("failed to update inventory for item %s: %w", stickerID, err)
+// 			}
+// 		}
+// 	}
+
+// 	// 4. Standard Save Logic (Delete Old -> Insert New)
+// 	// This clears both old stickers/text and old reactions
+// 	_, err = tx.Exec(ctx, `DELETE FROM canvas_items WHERE daily_drinking_id = $1`, postID)
+// 	if err != nil {
+// 		return fmt.Errorf("failed to clear old items: %w", err)
+// 	}
+
+// 	insertQuery := `
+// 		INSERT INTO canvas_items (
+// 			daily_drinking_id, added_by_user_id, item_type, content,
+// 			pos_x, pos_y, rotation, scale, width, height, z_index, extra_data
+// 		) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
+// 	`
+
+// 	// 5. Insert Wall Items
+// 	if wallItems != nil && len(*wallItems) > 0 {
+// 		for _, item := range *wallItems {
+// 			var extraDataJSON []byte
+// 			if item.ExtraData != nil {
+// 				extraDataJSON, _ = json.Marshal(item.ExtraData)
+// 			} else {
+// 				extraDataJSON = []byte("{}")
+// 			}
+
+// 			_, err := tx.Exec(ctx, insertQuery,
+// 				postID, userID, item.ItemType, item.Content,
+// 				item.PosX, item.PosY, item.Rotation, item.Scale, item.Width, item.Height, item.ZIndex, extraDataJSON,
+// 			)
+// 			if err != nil {
+// 				return fmt.Errorf("failed to insert wall item: %w", err)
+// 			}
+// 		}
+// 	}
+
+// 	// 6. Insert Reactions (Force item_type = 'reaction')
+// 	if len(reactions) > 0 {
+// 		for _, item := range reactions {
+// 			var extraDataJSON []byte
+// 			if item.ExtraData != nil {
+// 				extraDataJSON, _ = json.Marshal(item.ExtraData)
+// 			} else {
+// 				extraDataJSON = []byte("{}")
+// 			}
+
+// 			// We explicitly pass "reaction" as the 3rd argument (item_type)
+// 			_, err := tx.Exec(ctx, insertQuery,
+// 				postID, userID, "reaction", item.Content,
+// 				item.PosX, item.PosY, item.Rotation, item.Scale, item.Width, item.Height, item.ZIndex, extraDataJSON,
+// 			)
+// 			if err != nil {
+// 				return fmt.Errorf("failed to insert reaction: %w", err)
+// 			}
+// 		}
+// 	}
+
+// 	return tx.Commit(ctx)
+// }
+func (s *UserService) AddMemoryToWall(ctx context.Context, clerkID string, postIDStr string, wallItems *[]canvas.CanvasItem, reactions []canvas.CanvasItem) error {
 	// 1. Get User ID
 	var userID uuid.UUID
 	err := s.db.QueryRow(ctx, `SELECT id FROM users WHERE clerk_id = $1`, clerkID).Scan(&userID)
@@ -893,83 +1054,33 @@ func (s *UserService) AddMemoryToWall(ctx context.Context, clerkID string, postI
 	}
 	defer tx.Rollback(ctx)
 
-	// 3. INVENTORY SYNC LOGIC
-	// We need to compare existing stickers vs new stickers to adjust inventory.
-	
-	// A. Fetch existing stickers for this post to count them
-	rows, err := tx.Query(ctx, `SELECT extra_data FROM canvas_items WHERE daily_drinking_id = $1 AND item_type = 'sticker'`, postID)
-	if err != nil {
-		return fmt.Errorf("failed to fetch existing items: %w", err)
-	}
-	
-	existingCounts := make(map[string]int)
-	for rows.Next() {
-		var extraDataJSON []byte
-		if err := rows.Scan(&extraDataJSON); err == nil && len(extraDataJSON) > 0 {
-			var extra map[string]interface{}
-			if json.Unmarshal(extraDataJSON, &extra) == nil {
-				if sid, ok := extra["sticker_id"].(string); ok {
-					existingCounts[sid]++
+	insertQuery := `
+		INSERT INTO canvas_items (
+			daily_drinking_id, added_by_user_id, item_type, content,
+			pos_x, pos_y, rotation, scale, width, height, z_index, extra_data
+		) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
+	`
+
+	// ---------------------------------------------------------
+	// PART A: HANDLE REACTIONS (Append Only)
+	// Strategy: Reactions sent here are NEW. 
+	// 1. Deduct inventory for all of them. 
+	// 2. Insert them.
+	// ---------------------------------------------------------
+	if len(reactions) > 0 {
+		reactionCounts := make(map[string]int)
+
+		for _, item := range reactions {
+			// 1. Count for Inventory Deduction
+			if item.ExtraData != nil {
+				if sid, ok := item.ExtraData["inventory_item_id"].(string); ok {
+					reactionCounts[sid]++
+				} else if sid, ok := item.ExtraData["sticker_id"].(string); ok {
+					reactionCounts[sid]++
 				}
 			}
-		}
-	}
-	rows.Close()
 
-	// B. Count new stickers from the request
-	newCounts := make(map[string]int)
-	if wallItems != nil {
-		for _, item := range *wallItems {
-			if item.ItemType == "sticker" && item.ExtraData != nil {
-				if sid, ok := item.ExtraData["sticker_id"].(string); ok {
-					newCounts[sid]++
-				}
-			}
-		}
-	}
-
-	// C. Calculate Delta and Update Inventory
-	// We merge keys from both maps
-	allStickerIDs := make(map[string]bool)
-	for k := range existingCounts { allStickerIDs[k] = true }
-	for k := range newCounts { allStickerIDs[k] = true }
-
-	for stickerID := range allStickerIDs {
-		oldQty := existingCounts[stickerID]
-		newQty := newCounts[stickerID]
-		diff := newQty - oldQty // Positive = Used more, Negative = Removed some
-
-		if diff != 0 {
-			// Update user_inventory
-			// Note: quantity = quantity - diff. 
-			// If diff is positive (added sticker), quantity goes down.
-			// If diff is negative (removed sticker), quantity goes up (refund).
-			_, err := tx.Exec(ctx, `
-				UPDATE user_inventory 
-				SET quantity = quantity - $1 
-				WHERE user_id = $2 AND item_id = $3
-			`, diff, userID, stickerID)
-			
-			if err != nil {
-				return fmt.Errorf("failed to update inventory for item %s: %w", stickerID, err)
-			}
-		}
-	}
-
-	// 4. Standard Save Logic (Delete Old -> Insert New)
-	_, err = tx.Exec(ctx, `DELETE FROM canvas_items WHERE daily_drinking_id = $1`, postID)
-	if err != nil {
-		return fmt.Errorf("failed to clear old items: %w", err)
-	}
-
-	if wallItems != nil && len(*wallItems) > 0 {
-		query := `
-			INSERT INTO canvas_items (
-				daily_drinking_id, added_by_user_id, item_type, content,
-				pos_x, pos_y, rotation, scale, width, height, z_index, extra_data
-			) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
-		`
-		for _, item := range *wallItems {
+			// 2. Insert into DB (Force item_type = 'reaction')
 			var extraDataJSON []byte
 			if item.ExtraData != nil {
 				extraDataJSON, _ = json.Marshal(item.ExtraData)
@@ -977,20 +1088,140 @@ func (s *UserService) AddMemoryToWall(ctx context.Context, clerkID string, postI
 				extraDataJSON = []byte("{}")
 			}
 
-			_, err := tx.Exec(ctx, query,
+			_, err := tx.Exec(ctx, insertQuery,
+				postID, userID, "reaction", item.Content,
+				item.PosX, item.PosY, item.Rotation, item.Scale, item.Width, item.Height, item.ZIndex, extraDataJSON,
+			)
+			if err != nil {
+				return fmt.Errorf("failed to insert reaction: %w", err)
+			}
+		}
+
+		// 3. Update Inventory (Decrement only)
+		for stickerID, count := range reactionCounts {
+			if count > 0 {
+				_, err := tx.Exec(ctx, `
+					UPDATE user_inventory 
+					SET quantity = quantity - $1 
+					WHERE user_id = $2 AND item_id = $3
+				`, count, userID, stickerID)
+				if err != nil {
+					return fmt.Errorf("failed to deduct inventory for reaction %s: %w", stickerID, err)
+				}
+			}
+		}
+	}
+
+	// ---------------------------------------------------------
+	// PART B: HANDLE WALL ITEMS (Sync/Edit)
+	// Strategy: Only run this if wallItems is NOT nil.
+	// This compares 'sticker' types against DB and Syncs them.
+	// ---------------------------------------------------------
+	if wallItems != nil {
+		// 1. Fetch EXISTING 'sticker' items for this user (ignore reactions)
+		rows, err := tx.Query(ctx, `
+			SELECT extra_data 
+			FROM canvas_items 
+			WHERE daily_drinking_id = $1 
+			AND added_by_user_id = $2
+			AND item_type = 'sticker'`, // Only sync stickers, leave reactions alone
+			postID, userID,
+		)
+		if err != nil {
+			return fmt.Errorf("failed to fetch existing stickers: %w", err)
+		}
+
+		existingCounts := make(map[string]int)
+		for rows.Next() {
+			var extraDataJSON []byte
+			if err := rows.Scan(&extraDataJSON); err == nil && len(extraDataJSON) > 0 {
+				var extra map[string]interface{}
+				if json.Unmarshal(extraDataJSON, &extra) == nil {
+					if sid, ok := extra["inventory_item_id"].(string); ok {
+						existingCounts[sid]++
+					} else if sid, ok := extra["sticker_id"].(string); ok {
+						existingCounts[sid]++
+					}
+				}
+			}
+		}
+		rows.Close()
+
+		// 2. Count NEW 'sticker' items from payload
+		newCounts := make(map[string]int)
+		userIDStr := userID.String()
+		for _, item := range *wallItems {
+			// Only count my own stickers
+			isMyItem := item.AddedByUserID == "" || item.AddedByUserID == userIDStr
+			if isMyItem && item.ItemType == "sticker" && item.ExtraData != nil {
+				if sid, ok := item.ExtraData["inventory_item_id"].(string); ok {
+					newCounts[sid]++
+				} else if sid, ok := item.ExtraData["sticker_id"].(string); ok {
+					newCounts[sid]++
+				}
+			}
+		}
+
+		// 3. Calculate Delta & Update Inventory
+		allStickerIDs := make(map[string]bool)
+		for k := range existingCounts { allStickerIDs[k] = true }
+		for k := range newCounts { allStickerIDs[k] = true }
+
+		for stickerID := range allStickerIDs {
+			oldQty := existingCounts[stickerID]
+			newQty := newCounts[stickerID]
+			diff := newQty - oldQty
+
+			if diff != 0 {
+				_, err := tx.Exec(ctx, `
+					UPDATE user_inventory 
+					SET quantity = quantity - $1 
+					WHERE user_id = $2 AND item_id = $3
+				`, diff, userID, stickerID)
+				if err != nil {
+					return fmt.Errorf("failed to update inventory for sticker %s: %w", stickerID, err)
+				}
+			}
+		}
+
+		// 4. Delete OLD 'sticker' items (leave reactions alone)
+		_, err = tx.Exec(ctx, `
+			DELETE FROM canvas_items 
+			WHERE daily_drinking_id = $1 
+			AND added_by_user_id = $2 
+			AND item_type != 'reaction'`, // IMPORTANT: Don't delete reactions during a wall sync
+			postID, userID,
+		)
+		if err != nil {
+			return fmt.Errorf("failed to clear old stickers: %w", err)
+		}
+
+		// 5. Insert NEW wall items
+		for _, item := range *wallItems {
+			// Ensure we only insert items marked as mine
+			if item.AddedByUserID != "" && item.AddedByUserID != userIDStr {
+				continue
+			}
+
+			var extraDataJSON []byte
+			if item.ExtraData != nil {
+				extraDataJSON, _ = json.Marshal(item.ExtraData)
+			} else {
+				extraDataJSON = []byte("{}")
+			}
+
+			_, err := tx.Exec(ctx, insertQuery,
 				postID, userID, item.ItemType, item.Content,
 				item.PosX, item.PosY, item.Rotation, item.Scale, item.Width, item.Height, item.ZIndex, extraDataJSON,
 			)
 			if err != nil {
-				return fmt.Errorf("failed to insert item: %w", err)
+				return fmt.Errorf("failed to insert wall item: %w", err)
 			}
 		}
 	}
 
 	return tx.Commit(ctx)
 }
-
-
 func (s *UserService) AddMixVideo(ctx context.Context, clerkID string, videoUrl string, caption *string, duration int) error {
 	var userID uuid.UUID
 	err := s.db.QueryRow(ctx, `SELECT id FROM users WHERE clerk_id = $1`, clerkID).Scan(&userID)
@@ -1602,6 +1833,54 @@ func (s *UserService) GetUserStats(ctx context.Context, clerkID string) (*stats.
 }
 
 
+// func (s *UserService) GetYourMix(ctx context.Context, clerkID string, page int, limit int) ([]mix.DailyDrinkingPost, error) {
+//     var userID string
+//     err := s.db.QueryRow(ctx, "SELECT id FROM users WHERE clerk_id = $1", clerkID).Scan(&userID)
+//     if err != nil {
+//         return nil, fmt.Errorf("user not found: %w", err)
+//     }
+
+//     offset := (page - 1) * limit
+
+//     query := `
+//     SELECT 
+//         dd.id,
+//         dd.user_id,
+//         u.image_url AS user_image_url,
+//         u.username,
+//         dd.date,
+//         dd.drank_today,
+//         dd.logged_at,
+//         dd.image_url AS post_image_url,
+//         dd.location_text,
+//         dd.mentioned_buddies,
+//         CASE 
+//             WHEN dd.user_id = $1 THEN 'me' 
+//             ELSE 'friend' 
+//         END AS source_type
+//     FROM daily_drinking dd
+//     JOIN users u ON u.id = dd.user_id
+//     WHERE 
+//         dd.image_url IS NOT NULL 
+//         AND dd.image_url != ''
+//         AND (
+//             -- Include Self
+//             dd.user_id = $1
+//             OR 
+//             -- Include Friends (Bidirectional)
+//             dd.user_id IN (
+//                 SELECT friend_id FROM friendships WHERE user_id = $1 AND status = 'accepted'
+//                 UNION
+//                 SELECT user_id FROM friendships WHERE friend_id = $1 AND status = 'accepted'
+//             )
+//         )
+//     ORDER BY dd.logged_at DESC
+//     LIMIT $2 OFFSET $3
+//     `
+
+//     return s.executeFeedQuery(ctx, query, userID, limit, offset)
+// }
+
 func (s *UserService) GetYourMix(ctx context.Context, clerkID string, page int, limit int) ([]mix.DailyDrinkingPost, error) {
     var userID string
     err := s.db.QueryRow(ctx, "SELECT id FROM users WHERE clerk_id = $1", clerkID).Scan(&userID)
@@ -1626,7 +1905,29 @@ func (s *UserService) GetYourMix(ctx context.Context, clerkID string, page int, 
         CASE 
             WHEN dd.user_id = $1 THEN 'me' 
             ELSE 'friend' 
-        END AS source_type
+        END AS source_type,
+        -- AGGREGATE REACTIONS HERE
+        COALESCE(
+            (
+                SELECT json_agg(json_build_object(
+                    'id', ci.id,
+                    'item_type', ci.item_type,
+                    'content', ci.content,
+                    'pos_x', ci.pos_x,
+                    'pos_y', ci.pos_y,
+                    'rotation', ci.rotation,
+                    'scale', ci.scale,
+                    'width', ci.width,
+                    'height', ci.height,
+                    'z_index', ci.z_index,
+                    'extra_data', ci.extra_data
+                ))
+                FROM canvas_items ci
+                WHERE ci.daily_drinking_id = dd.id 
+                AND ci.item_type = 'reaction' -- Only fetch items marked as reactions
+            ), 
+            '[]'::json
+        ) AS reactions
     FROM daily_drinking dd
     JOIN users u ON u.id = dd.user_id
     WHERE 
@@ -1650,17 +1951,56 @@ func (s *UserService) GetYourMix(ctx context.Context, clerkID string, page int, 
     return s.executeFeedQuery(ctx, query, userID, limit, offset)
 }
 
+// func (s *UserService) GetGlobalMix(ctx context.Context, clerkID string, page int, limit int) ([]mix.DailyDrinkingPost, error) {
+//     var userID string
+//     err := s.db.QueryRow(ctx, "SELECT id FROM users WHERE clerk_id = $1", clerkID).Scan(&userID)
+//     if err != nil {
+//         return nil, fmt.Errorf("user not found: %w", err)
+//     }
+
+//     offset := (page - 1) * limit
+
+//     query := `
+//     SELECT 
+//         dd.id,
+//         dd.user_id,
+//         u.image_url AS user_image_url,
+//         u.username,
+//         dd.date,
+//         dd.drank_today,
+//         dd.logged_at,
+//         dd.image_url AS post_image_url,
+//         dd.location_text,
+//         dd.mentioned_buddies,
+//         'other' AS source_type
+//     FROM daily_drinking dd
+//     JOIN users u ON u.id = dd.user_id
+//     WHERE dd.user_id != $1
+//         AND dd.image_url IS NOT NULL 
+//         AND dd.image_url != ''
+//         AND dd.user_id NOT IN (
+//             -- Exclude Friends
+//             SELECT friend_id FROM friendships WHERE user_id = $1 AND status = 'accepted'
+//             UNION
+//             SELECT user_id FROM friendships WHERE friend_id = $1 AND status = 'accepted'
+//         )
+//     ORDER BY dd.logged_at DESC
+//     LIMIT $2 OFFSET $3
+//     `
+
+//     return s.executeFeedQuery(ctx, query, userID, limit, offset)
+// }
 
 func (s *UserService) GetGlobalMix(ctx context.Context, clerkID string, page int, limit int) ([]mix.DailyDrinkingPost, error) {
-    var userID string
-    err := s.db.QueryRow(ctx, "SELECT id FROM users WHERE clerk_id = $1", clerkID).Scan(&userID)
-    if err != nil {
-        return nil, fmt.Errorf("user not found: %w", err)
-    }
+	var userID string
+	err := s.db.QueryRow(ctx, "SELECT id FROM users WHERE clerk_id = $1", clerkID).Scan(&userID)
+	if err != nil {
+		return nil, fmt.Errorf("user not found: %w", err)
+	}
 
-    offset := (page - 1) * limit
+	offset := (page - 1) * limit
 
-    query := `
+	query := `
     SELECT 
         dd.id,
         dd.user_id,
@@ -1672,7 +2012,29 @@ func (s *UserService) GetGlobalMix(ctx context.Context, clerkID string, page int
         dd.image_url AS post_image_url,
         dd.location_text,
         dd.mentioned_buddies,
-        'other' AS source_type
+        'other' AS source_type,
+        -- AGGREGATE REACTIONS
+        COALESCE(
+            (
+                SELECT json_agg(json_build_object(
+                    'id', ci.id,
+                    'item_type', ci.item_type,
+                    'content', ci.content,
+                    'pos_x', ci.pos_x,
+                    'pos_y', ci.pos_y,
+                    'rotation', ci.rotation,
+                    'scale', ci.scale,
+                    'width', ci.width,
+                    'height', ci.height,
+                    'z_index', ci.z_index,
+                    'extra_data', ci.extra_data
+                ))
+                FROM canvas_items ci
+                WHERE ci.daily_drinking_id = dd.id 
+                AND ci.item_type = 'reaction'
+            ), 
+            '[]'::json
+        ) AS reactions
     FROM daily_drinking dd
     JOIN users u ON u.id = dd.user_id
     WHERE dd.user_id != $1
@@ -1688,64 +2050,130 @@ func (s *UserService) GetGlobalMix(ctx context.Context, clerkID string, page int
     LIMIT $2 OFFSET $3
     `
 
-    return s.executeFeedQuery(ctx, query, userID, limit, offset)
+	return s.executeFeedQuery(ctx, query, userID, limit, offset)
 }
 
-// --- Helper to avoid duplicating the Scan logic ---
+// func (s *UserService) executeFeedQuery(ctx context.Context, query string, userID string, limit, offset int) ([]mix.DailyDrinkingPost, error) {
+//     rows, err := s.db.Query(ctx, query, userID, limit, offset)
+//     if err != nil {
+//         log.Println("failed to get feed")
+//         return nil, fmt.Errorf("failed to get feed: %w", err)
+//     }
+//     defer rows.Close()
+
+//     var posts []mix.DailyDrinkingPost
+//     for rows.Next() {
+//         var post mix.DailyDrinkingPost
+//         var mentionedBuddyIDs []string
+
+//         err := rows.Scan(
+//             &post.ID,
+//             &post.UserID,
+//             &post.UserImageURL,
+//             &post.Username,
+//             &post.Date,
+//             &post.DrankToday,
+//             &post.LoggedAt,
+//             &post.ImageURL,
+//             &post.LocationText,
+//             &mentionedBuddyIDs,
+//             &post.SourceType,
+//         )
+//         if err != nil {
+//             return nil, fmt.Errorf("failed to scan post: %w", err)
+//         }
+
+//         // Hydrate Buddies
+//         if len(mentionedBuddyIDs) > 0 {
+//             post.MentionedBuddies, err = s.getUsersByIDs(ctx, mentionedBuddyIDs)
+//             if err != nil {
+//                 // Log error but don't fail the whole feed
+//                 log.Printf("failed to fetch buddies for post %s: %v", post.ID, err)
+//                 post.MentionedBuddies = []user.User{}
+//             }
+//         } else {
+//             post.MentionedBuddies = []user.User{}
+//         }
+
+//         posts = append(posts, post)
+//     }
+
+//     if err = rows.Err(); err != nil {
+//         return nil, fmt.Errorf("error iterating posts: %w", err)
+//     }
+
+//     if posts == nil {
+//         posts = []mix.DailyDrinkingPost{}
+//     }
+
+//     return posts, nil
+// }
 func (s *UserService) executeFeedQuery(ctx context.Context, query string, userID string, limit, offset int) ([]mix.DailyDrinkingPost, error) {
-    rows, err := s.db.Query(ctx, query, userID, limit, offset)
-    if err != nil {
-        log.Println("failed to get feed")
-        return nil, fmt.Errorf("failed to get feed: %w", err)
-    }
-    defer rows.Close()
+	rows, err := s.db.Query(ctx, query, userID, limit, offset)
+	if err != nil {
+		log.Println("failed to get feed")
+		return nil, fmt.Errorf("failed to get feed: %w", err)
+	}
+	defer rows.Close()
 
-    var posts []mix.DailyDrinkingPost
-    for rows.Next() {
-        var post mix.DailyDrinkingPost
-        var mentionedBuddyIDs []string
+	var posts []mix.DailyDrinkingPost
+	for rows.Next() {
+		var post mix.DailyDrinkingPost
+		var mentionedBuddyIDs []string
+		var reactionsJSON []byte // <--- 1. Buffer for raw JSON
 
-        err := rows.Scan(
-            &post.ID,
-            &post.UserID,
-            &post.UserImageURL,
-            &post.Username,
-            &post.Date,
-            &post.DrankToday,
-            &post.LoggedAt,
-            &post.ImageURL,
-            &post.LocationText,
-            &mentionedBuddyIDs,
-            &post.SourceType,
-        )
-        if err != nil {
-            return nil, fmt.Errorf("failed to scan post: %w", err)
-        }
+		err := rows.Scan(
+			&post.ID,
+			&post.UserID,
+			&post.UserImageURL,
+			&post.Username,
+			&post.Date,
+			&post.DrankToday,
+			&post.LoggedAt,
+			&post.ImageURL,
+			&post.LocationText,
+			&mentionedBuddyIDs,
+			&post.SourceType,
+			&reactionsJSON, // <--- 2. Scan the new column
+		)
+		if err != nil {
+			return nil, fmt.Errorf("failed to scan post: %w", err)
+		}
 
-        // Hydrate Buddies
-        if len(mentionedBuddyIDs) > 0 {
-            post.MentionedBuddies, err = s.getUsersByIDs(ctx, mentionedBuddyIDs)
-            if err != nil {
-                // Log error but don't fail the whole feed
-                log.Printf("failed to fetch buddies for post %s: %v", post.ID, err)
-                post.MentionedBuddies = []user.User{}
-            }
-        } else {
-            post.MentionedBuddies = []user.User{}
-        }
+		// 3. Unmarshal Reactions
+		if len(reactionsJSON) > 0 {
+			if err := json.Unmarshal(reactionsJSON, &post.Reactions); err != nil {
+				log.Printf("failed to unmarshal reactions for post %s: %v", post.ID, err)
+				post.Reactions = []canvas.CanvasItem{}
+			}
+		} else {
+			post.Reactions = []canvas.CanvasItem{}
+		}
 
-        posts = append(posts, post)
-    }
+		// Hydrate Buddies
+		if len(mentionedBuddyIDs) > 0 {
+			post.MentionedBuddies, err = s.getUsersByIDs(ctx, mentionedBuddyIDs)
+			if err != nil {
+				// Log error but don't fail the whole feed
+				log.Printf("failed to fetch buddies for post %s: %v", post.ID, err)
+				post.MentionedBuddies = []user.User{}
+			}
+		} else {
+			post.MentionedBuddies = []user.User{}
+		}
 
-    if err = rows.Err(); err != nil {
-        return nil, fmt.Errorf("error iterating posts: %w", err)
-    }
+		posts = append(posts, post)
+	}
 
-    if posts == nil {
-        posts = []mix.DailyDrinkingPost{}
-    }
+	if err = rows.Err(); err != nil {
+		return nil, fmt.Errorf("error iterating posts: %w", err)
+	}
 
-    return posts, nil
+	if posts == nil {
+		posts = []mix.DailyDrinkingPost{}
+	}
+
+	return posts, nil
 }
 
 func (s *UserService) GetUserFriendsPosts(ctx context.Context, clerkID string) ([]mix.DailyDrinkingPost, error) {
