@@ -1951,16 +1951,56 @@ func (s *UserService) GetYourMix(ctx context.Context, clerkID string, page int, 
     return s.executeFeedQuery(ctx, query, userID, limit, offset)
 }
 
+// func (s *UserService) GetGlobalMix(ctx context.Context, clerkID string, page int, limit int) ([]mix.DailyDrinkingPost, error) {
+//     var userID string
+//     err := s.db.QueryRow(ctx, "SELECT id FROM users WHERE clerk_id = $1", clerkID).Scan(&userID)
+//     if err != nil {
+//         return nil, fmt.Errorf("user not found: %w", err)
+//     }
+
+//     offset := (page - 1) * limit
+
+//     query := `
+//     SELECT 
+//         dd.id,
+//         dd.user_id,
+//         u.image_url AS user_image_url,
+//         u.username,
+//         dd.date,
+//         dd.drank_today,
+//         dd.logged_at,
+//         dd.image_url AS post_image_url,
+//         dd.location_text,
+//         dd.mentioned_buddies,
+//         'other' AS source_type
+//     FROM daily_drinking dd
+//     JOIN users u ON u.id = dd.user_id
+//     WHERE dd.user_id != $1
+//         AND dd.image_url IS NOT NULL 
+//         AND dd.image_url != ''
+//         AND dd.user_id NOT IN (
+//             -- Exclude Friends
+//             SELECT friend_id FROM friendships WHERE user_id = $1 AND status = 'accepted'
+//             UNION
+//             SELECT user_id FROM friendships WHERE friend_id = $1 AND status = 'accepted'
+//         )
+//     ORDER BY dd.logged_at DESC
+//     LIMIT $2 OFFSET $3
+//     `
+
+//     return s.executeFeedQuery(ctx, query, userID, limit, offset)
+// }
+
 func (s *UserService) GetGlobalMix(ctx context.Context, clerkID string, page int, limit int) ([]mix.DailyDrinkingPost, error) {
-    var userID string
-    err := s.db.QueryRow(ctx, "SELECT id FROM users WHERE clerk_id = $1", clerkID).Scan(&userID)
-    if err != nil {
-        return nil, fmt.Errorf("user not found: %w", err)
-    }
+	var userID string
+	err := s.db.QueryRow(ctx, "SELECT id FROM users WHERE clerk_id = $1", clerkID).Scan(&userID)
+	if err != nil {
+		return nil, fmt.Errorf("user not found: %w", err)
+	}
 
-    offset := (page - 1) * limit
+	offset := (page - 1) * limit
 
-    query := `
+	query := `
     SELECT 
         dd.id,
         dd.user_id,
@@ -1972,7 +2012,29 @@ func (s *UserService) GetGlobalMix(ctx context.Context, clerkID string, page int
         dd.image_url AS post_image_url,
         dd.location_text,
         dd.mentioned_buddies,
-        'other' AS source_type
+        'other' AS source_type,
+        -- AGGREGATE REACTIONS
+        COALESCE(
+            (
+                SELECT json_agg(json_build_object(
+                    'id', ci.id,
+                    'item_type', ci.item_type,
+                    'content', ci.content,
+                    'pos_x', ci.pos_x,
+                    'pos_y', ci.pos_y,
+                    'rotation', ci.rotation,
+                    'scale', ci.scale,
+                    'width', ci.width,
+                    'height', ci.height,
+                    'z_index', ci.z_index,
+                    'extra_data', ci.extra_data
+                ))
+                FROM canvas_items ci
+                WHERE ci.daily_drinking_id = dd.id 
+                AND ci.item_type = 'reaction'
+            ), 
+            '[]'::json
+        ) AS reactions
     FROM daily_drinking dd
     JOIN users u ON u.id = dd.user_id
     WHERE dd.user_id != $1
@@ -1988,7 +2050,7 @@ func (s *UserService) GetGlobalMix(ctx context.Context, clerkID string, page int
     LIMIT $2 OFFSET $3
     `
 
-    return s.executeFeedQuery(ctx, query, userID, limit, offset)
+	return s.executeFeedQuery(ctx, query, userID, limit, offset)
 }
 
 // func (s *UserService) executeFeedQuery(ctx context.Context, query string, userID string, limit, offset int) ([]mix.DailyDrinkingPost, error) {
