@@ -349,7 +349,6 @@ func (h *UserHandler) AddDrinking(w http.ResponseWriter, r *http.Request) {
 		respondWithError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
-
 	respondWithJSON(w, http.StatusOK, map[string]string{"message": "Drinking activity added successfully"})
 }
 
@@ -391,14 +390,21 @@ func (h *UserHandler) AddMemoryToWall(w http.ResponseWriter, r *http.Request) {
 	var req struct {
 		PostId    string               `json:"post_id"`
 		WallItems *[]canvas.CanvasItem `json:"wall_items"`
+		Reactions *[]canvas.CanvasItem `json:"reactions"`
 	}
+
+	var reactions []canvas.CanvasItem
+	if req.Reactions != nil {
+		reactions = *req.Reactions
+	}
+	log.Println(reactions)
 
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		http.Error(w, "invalid request body", http.StatusBadRequest)
 		return
 	}
 
-	if err := h.userService.AddMemoryToWall(ctx, clearkID, req.PostId, req.WallItems); err != nil {
+	if err := h.userService.AddMemoryToWall(ctx, clearkID, req.PostId, req.WallItems, reactions); err != nil {
 		respondWithError(w, http.StatusInternalServerError, err.Error())
 		return
 	}

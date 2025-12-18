@@ -873,7 +873,8 @@ func (s *UserService) GetMemoryWall(ctx context.Context, postIDStr string) ([]ca
 
 	return items, nil
 }
-func (s *UserService) AddMemoryToWall(ctx context.Context, clerkID string, postIDStr string, wallItems *[]canvas.CanvasItem) error {
+
+func (s *UserService) AddMemoryToWall(ctx context.Context, clerkID string, postIDStr string, wallItems *[]canvas.CanvasItem, reactions []canvas.CanvasItem) error {
 	// 1. Get User ID
 	var userID uuid.UUID
 	err := s.db.QueryRow(ctx, `SELECT id FROM users WHERE clerk_id = $1`, clerkID).Scan(&userID)
@@ -894,10 +895,15 @@ func (s *UserService) AddMemoryToWall(ctx context.Context, clerkID string, postI
 	defer tx.Rollback(ctx)
 
 	// 3. INVENTORY SYNC LOGIC
-	// We need to compare existing stickers vs new stickers to adjust inventory.
 	
-	// A. Fetch existing stickers for this post to count them
-	rows, err := tx.Query(ctx, `SELECT extra_data FROM canvas_items WHERE daily_drinking_id = $1 AND item_type = 'sticker'`, postID)
+	// A. Fetch existing stickers AND reactions for this post to count them
+	// We check for both types because removing a reaction should also refund the inventory.
+	rows, err := tx.Query(ctx, `
+		SELECT extra_data 
+		FROM canvas_items 
+		WHERE daily_drinking_id = $1 AND item_type IN ('sticker', 'reaction')`, 
+		postID,
+	)
 	if err != nil {
 		return fmt.Errorf("failed to fetch existing items: %w", err)
 	}
@@ -908,7 +914,10 @@ func (s *UserService) AddMemoryToWall(ctx context.Context, clerkID string, postI
 		if err := rows.Scan(&extraDataJSON); err == nil && len(extraDataJSON) > 0 {
 			var extra map[string]interface{}
 			if json.Unmarshal(extraDataJSON, &extra) == nil {
-				if sid, ok := extra["sticker_id"].(string); ok {
+				// Check for inventory_item_id (based on your React code) or sticker_id
+				if sid, ok := extra["inventory_item_id"].(string); ok {
+					existingCounts[sid]++
+				} else if sid, ok := extra["sticker_id"].(string); ok {
 					existingCounts[sid]++
 				}
 			}
@@ -916,20 +925,35 @@ func (s *UserService) AddMemoryToWall(ctx context.Context, clerkID string, postI
 	}
 	rows.Close()
 
-	// B. Count new stickers from the request
+	// B. Count new stickers AND reactions from the request
 	newCounts := make(map[string]int)
+	
+	// Count Wall Items
 	if wallItems != nil {
 		for _, item := range *wallItems {
 			if item.ItemType == "sticker" && item.ExtraData != nil {
-				if sid, ok := item.ExtraData["sticker_id"].(string); ok {
+				if sid, ok := item.ExtraData["inventory_item_id"].(string); ok {
+					newCounts[sid]++
+				} else if sid, ok := item.ExtraData["sticker_id"].(string); ok {
 					newCounts[sid]++
 				}
 			}
 		}
 	}
 
+	// Count Reactions (These also consume inventory)
+	for _, item := range reactions {
+		// Note: Reactions implicitly consume inventory, so we check their ID too
+		if item.ExtraData != nil {
+			if sid, ok := item.ExtraData["inventory_item_id"].(string); ok {
+				newCounts[sid]++
+			} else if sid, ok := item.ExtraData["sticker_id"].(string); ok {
+				newCounts[sid]++
+			}
+		}
+	}
+
 	// C. Calculate Delta and Update Inventory
-	// We merge keys from both maps
 	allStickerIDs := make(map[string]bool)
 	for k := range existingCounts { allStickerIDs[k] = true }
 	for k := range newCounts { allStickerIDs[k] = true }
@@ -937,13 +961,10 @@ func (s *UserService) AddMemoryToWall(ctx context.Context, clerkID string, postI
 	for stickerID := range allStickerIDs {
 		oldQty := existingCounts[stickerID]
 		newQty := newCounts[stickerID]
-		diff := newQty - oldQty // Positive = Used more, Negative = Removed some
+		diff := newQty - oldQty 
 
 		if diff != 0 {
 			// Update user_inventory
-			// Note: quantity = quantity - diff. 
-			// If diff is positive (added sticker), quantity goes down.
-			// If diff is negative (removed sticker), quantity goes up (refund).
 			_, err := tx.Exec(ctx, `
 				UPDATE user_inventory 
 				SET quantity = quantity - $1 
@@ -957,18 +978,21 @@ func (s *UserService) AddMemoryToWall(ctx context.Context, clerkID string, postI
 	}
 
 	// 4. Standard Save Logic (Delete Old -> Insert New)
+	// This clears both old stickers/text and old reactions
 	_, err = tx.Exec(ctx, `DELETE FROM canvas_items WHERE daily_drinking_id = $1`, postID)
 	if err != nil {
 		return fmt.Errorf("failed to clear old items: %w", err)
 	}
 
+	insertQuery := `
+		INSERT INTO canvas_items (
+			daily_drinking_id, added_by_user_id, item_type, content,
+			pos_x, pos_y, rotation, scale, width, height, z_index, extra_data
+		) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
+	`
+
+	// 5. Insert Wall Items
 	if wallItems != nil && len(*wallItems) > 0 {
-		query := `
-			INSERT INTO canvas_items (
-				daily_drinking_id, added_by_user_id, item_type, content,
-				pos_x, pos_y, rotation, scale, width, height, z_index, extra_data
-			) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
-		`
 		for _, item := range *wallItems {
 			var extraDataJSON []byte
 			if item.ExtraData != nil {
@@ -977,19 +1001,39 @@ func (s *UserService) AddMemoryToWall(ctx context.Context, clerkID string, postI
 				extraDataJSON = []byte("{}")
 			}
 
-			_, err := tx.Exec(ctx, query,
+			_, err := tx.Exec(ctx, insertQuery,
 				postID, userID, item.ItemType, item.Content,
 				item.PosX, item.PosY, item.Rotation, item.Scale, item.Width, item.Height, item.ZIndex, extraDataJSON,
 			)
 			if err != nil {
-				return fmt.Errorf("failed to insert item: %w", err)
+				return fmt.Errorf("failed to insert wall item: %w", err)
+			}
+		}
+	}
+
+	// 6. Insert Reactions (Force item_type = 'reaction')
+	if len(reactions) > 0 {
+		for _, item := range reactions {
+			var extraDataJSON []byte
+			if item.ExtraData != nil {
+				extraDataJSON, _ = json.Marshal(item.ExtraData)
+			} else {
+				extraDataJSON = []byte("{}")
+			}
+
+			// We explicitly pass "reaction" as the 3rd argument (item_type)
+			_, err := tx.Exec(ctx, insertQuery,
+				postID, userID, "reaction", item.Content,
+				item.PosX, item.PosY, item.Rotation, item.Scale, item.Width, item.Height, item.ZIndex, extraDataJSON,
+			)
+			if err != nil {
+				return fmt.Errorf("failed to insert reaction: %w", err)
 			}
 		}
 	}
 
 	return tx.Commit(ctx)
 }
-
 
 func (s *UserService) AddMixVideo(ctx context.Context, clerkID string, videoUrl string, caption *string, duration int) error {
 	var userID uuid.UUID
