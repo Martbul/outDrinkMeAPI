@@ -393,16 +393,16 @@ func (h *UserHandler) AddMemoryToWall(w http.ResponseWriter, r *http.Request) {
 		Reactions *[]canvas.CanvasItem `json:"reactions"`
 	}
 
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "invalid request body", http.StatusBadRequest)
+		return
+	}
+
 	var reactions []canvas.CanvasItem
 	if req.Reactions != nil {
 		reactions = *req.Reactions
 	}
 	log.Println(reactions)
-
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		http.Error(w, "invalid request body", http.StatusBadRequest)
-		return
-	}
 
 	if err := h.userService.AddMemoryToWall(ctx, clearkID, req.PostId, req.WallItems, reactions); err != nil {
 		respondWithError(w, http.StatusInternalServerError, err.Error())
