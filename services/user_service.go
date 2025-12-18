@@ -1833,6 +1833,54 @@ func (s *UserService) GetUserStats(ctx context.Context, clerkID string) (*stats.
 }
 
 
+// func (s *UserService) GetYourMix(ctx context.Context, clerkID string, page int, limit int) ([]mix.DailyDrinkingPost, error) {
+//     var userID string
+//     err := s.db.QueryRow(ctx, "SELECT id FROM users WHERE clerk_id = $1", clerkID).Scan(&userID)
+//     if err != nil {
+//         return nil, fmt.Errorf("user not found: %w", err)
+//     }
+
+//     offset := (page - 1) * limit
+
+//     query := `
+//     SELECT 
+//         dd.id,
+//         dd.user_id,
+//         u.image_url AS user_image_url,
+//         u.username,
+//         dd.date,
+//         dd.drank_today,
+//         dd.logged_at,
+//         dd.image_url AS post_image_url,
+//         dd.location_text,
+//         dd.mentioned_buddies,
+//         CASE 
+//             WHEN dd.user_id = $1 THEN 'me' 
+//             ELSE 'friend' 
+//         END AS source_type
+//     FROM daily_drinking dd
+//     JOIN users u ON u.id = dd.user_id
+//     WHERE 
+//         dd.image_url IS NOT NULL 
+//         AND dd.image_url != ''
+//         AND (
+//             -- Include Self
+//             dd.user_id = $1
+//             OR 
+//             -- Include Friends (Bidirectional)
+//             dd.user_id IN (
+//                 SELECT friend_id FROM friendships WHERE user_id = $1 AND status = 'accepted'
+//                 UNION
+//                 SELECT user_id FROM friendships WHERE friend_id = $1 AND status = 'accepted'
+//             )
+//         )
+//     ORDER BY dd.logged_at DESC
+//     LIMIT $2 OFFSET $3
+//     `
+
+//     return s.executeFeedQuery(ctx, query, userID, limit, offset)
+// }
+
 func (s *UserService) GetYourMix(ctx context.Context, clerkID string, page int, limit int) ([]mix.DailyDrinkingPost, error) {
     var userID string
     err := s.db.QueryRow(ctx, "SELECT id FROM users WHERE clerk_id = $1", clerkID).Scan(&userID)
@@ -1857,7 +1905,29 @@ func (s *UserService) GetYourMix(ctx context.Context, clerkID string, page int, 
         CASE 
             WHEN dd.user_id = $1 THEN 'me' 
             ELSE 'friend' 
-        END AS source_type
+        END AS source_type,
+        -- AGGREGATE REACTIONS HERE
+        COALESCE(
+            (
+                SELECT json_agg(json_build_object(
+                    'id', ci.id,
+                    'item_type', ci.item_type,
+                    'content', ci.content,
+                    'pos_x', ci.pos_x,
+                    'pos_y', ci.pos_y,
+                    'rotation', ci.rotation,
+                    'scale', ci.scale,
+                    'width', ci.width,
+                    'height', ci.height,
+                    'z_index', ci.z_index,
+                    'extra_data', ci.extra_data
+                ))
+                FROM canvas_items ci
+                WHERE ci.daily_drinking_id = dd.id 
+                AND ci.item_type = 'reaction' -- Only fetch items marked as reactions
+            ), 
+            '[]'::json
+        ) AS reactions
     FROM daily_drinking dd
     JOIN users u ON u.id = dd.user_id
     WHERE 
@@ -1880,7 +1950,6 @@ func (s *UserService) GetYourMix(ctx context.Context, clerkID string, page int, 
 
     return s.executeFeedQuery(ctx, query, userID, limit, offset)
 }
-
 
 func (s *UserService) GetGlobalMix(ctx context.Context, clerkID string, page int, limit int) ([]mix.DailyDrinkingPost, error) {
     var userID string
@@ -1922,61 +1991,127 @@ func (s *UserService) GetGlobalMix(ctx context.Context, clerkID string, page int
     return s.executeFeedQuery(ctx, query, userID, limit, offset)
 }
 
-// --- Helper to avoid duplicating the Scan logic ---
+// func (s *UserService) executeFeedQuery(ctx context.Context, query string, userID string, limit, offset int) ([]mix.DailyDrinkingPost, error) {
+//     rows, err := s.db.Query(ctx, query, userID, limit, offset)
+//     if err != nil {
+//         log.Println("failed to get feed")
+//         return nil, fmt.Errorf("failed to get feed: %w", err)
+//     }
+//     defer rows.Close()
+
+//     var posts []mix.DailyDrinkingPost
+//     for rows.Next() {
+//         var post mix.DailyDrinkingPost
+//         var mentionedBuddyIDs []string
+
+//         err := rows.Scan(
+//             &post.ID,
+//             &post.UserID,
+//             &post.UserImageURL,
+//             &post.Username,
+//             &post.Date,
+//             &post.DrankToday,
+//             &post.LoggedAt,
+//             &post.ImageURL,
+//             &post.LocationText,
+//             &mentionedBuddyIDs,
+//             &post.SourceType,
+//         )
+//         if err != nil {
+//             return nil, fmt.Errorf("failed to scan post: %w", err)
+//         }
+
+//         // Hydrate Buddies
+//         if len(mentionedBuddyIDs) > 0 {
+//             post.MentionedBuddies, err = s.getUsersByIDs(ctx, mentionedBuddyIDs)
+//             if err != nil {
+//                 // Log error but don't fail the whole feed
+//                 log.Printf("failed to fetch buddies for post %s: %v", post.ID, err)
+//                 post.MentionedBuddies = []user.User{}
+//             }
+//         } else {
+//             post.MentionedBuddies = []user.User{}
+//         }
+
+//         posts = append(posts, post)
+//     }
+
+//     if err = rows.Err(); err != nil {
+//         return nil, fmt.Errorf("error iterating posts: %w", err)
+//     }
+
+//     if posts == nil {
+//         posts = []mix.DailyDrinkingPost{}
+//     }
+
+//     return posts, nil
+// }
 func (s *UserService) executeFeedQuery(ctx context.Context, query string, userID string, limit, offset int) ([]mix.DailyDrinkingPost, error) {
-    rows, err := s.db.Query(ctx, query, userID, limit, offset)
-    if err != nil {
-        log.Println("failed to get feed")
-        return nil, fmt.Errorf("failed to get feed: %w", err)
-    }
-    defer rows.Close()
+	rows, err := s.db.Query(ctx, query, userID, limit, offset)
+	if err != nil {
+		log.Println("failed to get feed")
+		return nil, fmt.Errorf("failed to get feed: %w", err)
+	}
+	defer rows.Close()
 
-    var posts []mix.DailyDrinkingPost
-    for rows.Next() {
-        var post mix.DailyDrinkingPost
-        var mentionedBuddyIDs []string
+	var posts []mix.DailyDrinkingPost
+	for rows.Next() {
+		var post mix.DailyDrinkingPost
+		var mentionedBuddyIDs []string
+		var reactionsJSON []byte // <--- 1. Buffer for raw JSON
 
-        err := rows.Scan(
-            &post.ID,
-            &post.UserID,
-            &post.UserImageURL,
-            &post.Username,
-            &post.Date,
-            &post.DrankToday,
-            &post.LoggedAt,
-            &post.ImageURL,
-            &post.LocationText,
-            &mentionedBuddyIDs,
-            &post.SourceType,
-        )
-        if err != nil {
-            return nil, fmt.Errorf("failed to scan post: %w", err)
-        }
+		err := rows.Scan(
+			&post.ID,
+			&post.UserID,
+			&post.UserImageURL,
+			&post.Username,
+			&post.Date,
+			&post.DrankToday,
+			&post.LoggedAt,
+			&post.ImageURL,
+			&post.LocationText,
+			&mentionedBuddyIDs,
+			&post.SourceType,
+			&reactionsJSON, // <--- 2. Scan the new column
+		)
+		if err != nil {
+			return nil, fmt.Errorf("failed to scan post: %w", err)
+		}
 
-        // Hydrate Buddies
-        if len(mentionedBuddyIDs) > 0 {
-            post.MentionedBuddies, err = s.getUsersByIDs(ctx, mentionedBuddyIDs)
-            if err != nil {
-                // Log error but don't fail the whole feed
-                log.Printf("failed to fetch buddies for post %s: %v", post.ID, err)
-                post.MentionedBuddies = []user.User{}
-            }
-        } else {
-            post.MentionedBuddies = []user.User{}
-        }
+		// 3. Unmarshal Reactions
+		if len(reactionsJSON) > 0 {
+			if err := json.Unmarshal(reactionsJSON, &post.Reactions); err != nil {
+				log.Printf("failed to unmarshal reactions for post %s: %v", post.ID, err)
+				post.Reactions = []canvas.CanvasItem{}
+			}
+		} else {
+			post.Reactions = []canvas.CanvasItem{}
+		}
 
-        posts = append(posts, post)
-    }
+		// Hydrate Buddies
+		if len(mentionedBuddyIDs) > 0 {
+			post.MentionedBuddies, err = s.getUsersByIDs(ctx, mentionedBuddyIDs)
+			if err != nil {
+				// Log error but don't fail the whole feed
+				log.Printf("failed to fetch buddies for post %s: %v", post.ID, err)
+				post.MentionedBuddies = []user.User{}
+			}
+		} else {
+			post.MentionedBuddies = []user.User{}
+		}
 
-    if err = rows.Err(); err != nil {
-        return nil, fmt.Errorf("error iterating posts: %w", err)
-    }
+		posts = append(posts, post)
+	}
 
-    if posts == nil {
-        posts = []mix.DailyDrinkingPost{}
-    }
+	if err = rows.Err(); err != nil {
+		return nil, fmt.Errorf("error iterating posts: %w", err)
+	}
 
-    return posts, nil
+	if posts == nil {
+		posts = []mix.DailyDrinkingPost{}
+	}
+
+	return posts, nil
 }
 
 func (s *UserService) GetUserFriendsPosts(ctx context.Context, clerkID string) ([]mix.DailyDrinkingPost, error) {
