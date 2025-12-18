@@ -1054,50 +1054,105 @@ func (s *UserService) AddMemoryToWall(ctx context.Context, clerkID string, postI
 	}
 	defer tx.Rollback(ctx)
 
-	// 3. INVENTORY SYNC LOGIC
+	insertQuery := `
+		INSERT INTO canvas_items (
+			daily_drinking_id, added_by_user_id, item_type, content,
+			pos_x, pos_y, rotation, scale, width, height, z_index, extra_data
+		) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
+	`
 
-	// A. Fetch existing items *OWNED BY THIS USER*
-	// We specifically filter by added_by_user_id = $2. 
-	// This ensures we only calculate inventory changes for the current user's items.
-	rows, err := tx.Query(ctx, `
-		SELECT extra_data 
-		FROM canvas_items 
-		WHERE daily_drinking_id = $1 
-		  AND item_type IN ('sticker', 'reaction')
-		  AND added_by_user_id = $2`, // <--- SCOPED TO USER
-		postID, userID,
-	)
-	if err != nil {
-		return fmt.Errorf("failed to fetch existing items: %w", err)
-	}
+	// ---------------------------------------------------------
+	// PART A: HANDLE REACTIONS (Append Only)
+	// Strategy: Reactions sent here are NEW. 
+	// 1. Deduct inventory for all of them. 
+	// 2. Insert them.
+	// ---------------------------------------------------------
+	if len(reactions) > 0 {
+		reactionCounts := make(map[string]int)
 
-	existingCounts := make(map[string]int)
-	for rows.Next() {
-		var extraDataJSON []byte
-		if err := rows.Scan(&extraDataJSON); err == nil && len(extraDataJSON) > 0 {
-			var extra map[string]interface{}
-			if json.Unmarshal(extraDataJSON, &extra) == nil {
-				if sid, ok := extra["inventory_item_id"].(string); ok {
-					existingCounts[sid]++
-				} else if sid, ok := extra["sticker_id"].(string); ok {
-					existingCounts[sid]++
+		for _, item := range reactions {
+			// 1. Count for Inventory Deduction
+			if item.ExtraData != nil {
+				if sid, ok := item.ExtraData["inventory_item_id"].(string); ok {
+					reactionCounts[sid]++
+				} else if sid, ok := item.ExtraData["sticker_id"].(string); ok {
+					reactionCounts[sid]++
+				}
+			}
+
+			// 2. Insert into DB (Force item_type = 'reaction')
+			var extraDataJSON []byte
+			if item.ExtraData != nil {
+				extraDataJSON, _ = json.Marshal(item.ExtraData)
+			} else {
+				extraDataJSON = []byte("{}")
+			}
+
+			_, err := tx.Exec(ctx, insertQuery,
+				postID, userID, "reaction", item.Content,
+				item.PosX, item.PosY, item.Rotation, item.Scale, item.Width, item.Height, item.ZIndex, extraDataJSON,
+			)
+			if err != nil {
+				return fmt.Errorf("failed to insert reaction: %w", err)
+			}
+		}
+
+		// 3. Update Inventory (Decrement only)
+		for stickerID, count := range reactionCounts {
+			if count > 0 {
+				_, err := tx.Exec(ctx, `
+					UPDATE user_inventory 
+					SET quantity = quantity - $1 
+					WHERE user_id = $2 AND item_id = $3
+				`, count, userID, stickerID)
+				if err != nil {
+					return fmt.Errorf("failed to deduct inventory for reaction %s: %w", stickerID, err)
 				}
 			}
 		}
 	}
-	rows.Close()
 
-	// B. Count new stickers AND reactions from the request
-	newCounts := make(map[string]int)
-	userIDStr := userID.String()
-
-	// Count Wall Items (Only if they belong to me or are new)
+	// ---------------------------------------------------------
+	// PART B: HANDLE WALL ITEMS (Sync/Edit)
+	// Strategy: Only run this if wallItems is NOT nil.
+	// This compares 'sticker' types against DB and Syncs them.
+	// ---------------------------------------------------------
 	if wallItems != nil {
-		for _, item := range *wallItems {
-			// Only count items against my inventory if I am the one adding/keeping them
-			// If the frontend sends back items owned by others, we ignore them for inventory calculation
-			isMyItem := item.AddedByUserID == "" || item.AddedByUserID == userIDStr
+		// 1. Fetch EXISTING 'sticker' items for this user (ignore reactions)
+		rows, err := tx.Query(ctx, `
+			SELECT extra_data 
+			FROM canvas_items 
+			WHERE daily_drinking_id = $1 
+			AND added_by_user_id = $2
+			AND item_type = 'sticker'`, // Only sync stickers, leave reactions alone
+			postID, userID,
+		)
+		if err != nil {
+			return fmt.Errorf("failed to fetch existing stickers: %w", err)
+		}
 
+		existingCounts := make(map[string]int)
+		for rows.Next() {
+			var extraDataJSON []byte
+			if err := rows.Scan(&extraDataJSON); err == nil && len(extraDataJSON) > 0 {
+				var extra map[string]interface{}
+				if json.Unmarshal(extraDataJSON, &extra) == nil {
+					if sid, ok := extra["inventory_item_id"].(string); ok {
+						existingCounts[sid]++
+					} else if sid, ok := extra["sticker_id"].(string); ok {
+						existingCounts[sid]++
+					}
+				}
+			}
+		}
+		rows.Close()
+
+		// 2. Count NEW 'sticker' items from payload
+		newCounts := make(map[string]int)
+		userIDStr := userID.String()
+		for _, item := range *wallItems {
+			// Only count my own stickers
+			isMyItem := item.AddedByUserID == "" || item.AddedByUserID == userIDStr
 			if isMyItem && item.ItemType == "sticker" && item.ExtraData != nil {
 				if sid, ok := item.ExtraData["inventory_item_id"].(string); ok {
 					newCounts[sid]++
@@ -1106,73 +1161,44 @@ func (s *UserService) AddMemoryToWall(ctx context.Context, clerkID string, postI
 				}
 			}
 		}
-	}
 
-	// Count Reactions (Always belong to me in this context)
-	for _, item := range reactions {
-		if item.ExtraData != nil {
-			if sid, ok := item.ExtraData["inventory_item_id"].(string); ok {
-				newCounts[sid]++
-			} else if sid, ok := item.ExtraData["sticker_id"].(string); ok {
-				newCounts[sid]++
+		// 3. Calculate Delta & Update Inventory
+		allStickerIDs := make(map[string]bool)
+		for k := range existingCounts { allStickerIDs[k] = true }
+		for k := range newCounts { allStickerIDs[k] = true }
+
+		for stickerID := range allStickerIDs {
+			oldQty := existingCounts[stickerID]
+			newQty := newCounts[stickerID]
+			diff := newQty - oldQty
+
+			if diff != 0 {
+				_, err := tx.Exec(ctx, `
+					UPDATE user_inventory 
+					SET quantity = quantity - $1 
+					WHERE user_id = $2 AND item_id = $3
+				`, diff, userID, stickerID)
+				if err != nil {
+					return fmt.Errorf("failed to update inventory for sticker %s: %w", stickerID, err)
+				}
 			}
 		}
-	}
 
-	// C. Calculate Delta and Update Inventory
-	allStickerIDs := make(map[string]bool)
-	for k := range existingCounts {
-		allStickerIDs[k] = true
-	}
-	for k := range newCounts {
-		allStickerIDs[k] = true
-	}
-
-	for stickerID := range allStickerIDs {
-		oldQty := existingCounts[stickerID]
-		newQty := newCounts[stickerID]
-		diff := newQty - oldQty
-
-		// If diff is positive (e.g., I added a reaction), we subtract from inventory.
-		// If diff is negative (e.g., I removed my reaction), we add back to inventory.
-		if diff != 0 {
-			_, err := tx.Exec(ctx, `
-				UPDATE user_inventory 
-				SET quantity = quantity - $1 
-				WHERE user_id = $2 AND item_id = $3
-			`, diff, userID, stickerID)
-
-			if err != nil {
-				return fmt.Errorf("failed to update inventory for item %s: %w", stickerID, err)
-			}
+		// 4. Delete OLD 'sticker' items (leave reactions alone)
+		_, err = tx.Exec(ctx, `
+			DELETE FROM canvas_items 
+			WHERE daily_drinking_id = $1 
+			AND added_by_user_id = $2 
+			AND item_type != 'reaction'`, // IMPORTANT: Don't delete reactions during a wall sync
+			postID, userID,
+		)
+		if err != nil {
+			return fmt.Errorf("failed to clear old stickers: %w", err)
 		}
-	}
 
-	// 4. Save Logic (Delete Old -> Insert New)
-	
-	// IMPORTANT: Only delete items *OWNED BY THIS USER*.
-	// This prevents User B from wiping User A's post when adding a reaction.
-	_, err = tx.Exec(ctx, `
-		DELETE FROM canvas_items 
-		WHERE daily_drinking_id = $1 AND added_by_user_id = $2`, // <--- SCOPED TO USER
-		postID, userID,
-	)
-	if err != nil {
-		return fmt.Errorf("failed to clear old items: %w", err)
-	}
-
-	insertQuery := `
-		INSERT INTO canvas_items (
-			daily_drinking_id, added_by_user_id, item_type, content,
-			pos_x, pos_y, rotation, scale, width, height, z_index, extra_data
-		) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
-	`
-
-	// 5. Insert Wall Items (Only mine)
-	if wallItems != nil && len(*wallItems) > 0 {
+		// 5. Insert NEW wall items
 		for _, item := range *wallItems {
-			// Ensure we only insert items marked as mine to prevent duplicating others' items 
-			// (assuming frontend sends back everything). 
+			// Ensure we only insert items marked as mine
 			if item.AddedByUserID != "" && item.AddedByUserID != userIDStr {
 				continue
 			}
@@ -1189,35 +1215,13 @@ func (s *UserService) AddMemoryToWall(ctx context.Context, clerkID string, postI
 				item.PosX, item.PosY, item.Rotation, item.Scale, item.Width, item.Height, item.ZIndex, extraDataJSON,
 			)
 			if err != nil {
-				return fmt.Errorf("failed to insert item: %w", err)
-			}
-		}
-	}
-
-	// 6. Insert Reactions
-	if len(reactions) > 0 {
-		for _, item := range reactions {
-			var extraDataJSON []byte
-			if item.ExtraData != nil {
-				extraDataJSON, _ = json.Marshal(item.ExtraData)
-			} else {
-				extraDataJSON = []byte("{}")
-			}
-
-			// Force item_type to 'reaction'
-			_, err := tx.Exec(ctx, insertQuery,
-				postID, userID, "reaction", item.Content,
-				item.PosX, item.PosY, item.Rotation, item.Scale, item.Width, item.Height, item.ZIndex, extraDataJSON,
-			)
-			if err != nil {
-				return fmt.Errorf("failed to insert reaction: %w", err)
+				return fmt.Errorf("failed to insert wall item: %w", err)
 			}
 		}
 	}
 
 	return tx.Commit(ctx)
 }
-
 func (s *UserService) AddMixVideo(ctx context.Context, clerkID string, videoUrl string, caption *string, duration int) error {
 	var userID uuid.UUID
 	err := s.db.QueryRow(ctx, `SELECT id FROM users WHERE clerk_id = $1`, clerkID).Scan(&userID)
