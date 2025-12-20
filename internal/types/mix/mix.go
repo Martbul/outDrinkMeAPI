@@ -18,6 +18,8 @@ type DailyDrinkingPost struct {
 	DrankToday       bool                `json:"drank_today"`
 	LoggedAt         time.Time           `json:"logged_at"`
 	ImageURL         *string             `json:"image_url"`
+	ImageWidth       int                 `json:"image_width"`
+	ImageHeight      int                 `json:"image_height"`
 	LocationText     *string             `json:"location_text"`
 	Latitude         *float64            `json:"latitude"`
 	Longitude        *float64            `json:"longitude"`
@@ -25,7 +27,6 @@ type DailyDrinkingPost struct {
 	MentionedBuddies []user.User         `json:"mentioned_buddies"`
 	SourceType       string              `json:"source_type"`
 	Reactions        []canvas.CanvasItem `json:"reactions"`
-
 }
 
 type VideoPost struct {
