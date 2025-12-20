@@ -760,37 +760,54 @@ func (s *UserService) GetAchievements(ctx context.Context, clerkID string) ([]*a
 }
 
 
+func (s *UserService) AddDrinking(
+    ctx context.Context, 
+    clerkID string, 
+    drankToday bool, 
+    imageUrl *string, 
+    imageWidth *int,  // New
+    imageHeight *int, // New
+    locationText *string, 
+    lat *float64, 
+    long *float64, 
+    alcohols []string, 
+    clerkIDs []string, 
+    date time.Time,
+) error {
+    var userID uuid.UUID
+    var username string
 
-func (s *UserService) AddDrinking(ctx context.Context, clerkID string, drankToday bool, imageUrl *string, locationText *string, lat *float64, long *float64, alcohols []string, clerkIDs []string, date time.Time) error {
-	var userID uuid.UUID
-	var username string
+    err := s.db.QueryRow(ctx, `SELECT id, username FROM users WHERE clerk_id = $1`, clerkID).Scan(&userID, &username)
+    if err != nil {
+        return fmt.Errorf("user not found: %w", err)
+    }
 
-	err := s.db.QueryRow(ctx, `SELECT id, username FROM users WHERE clerk_id = $1`, clerkID).Scan(&userID, &username)
-	if err != nil {
-		return fmt.Errorf("user not found: %w", err)
-	}
+    var postID uuid.UUID
 
-	var postID uuid.UUID
-
-	query := `
+    // Updated Query to include image_width and image_height
+    query := `
         INSERT INTO daily_drinking (
             user_id, 
             date, 
             drank_today, 
             logged_at, 
             image_url, 
+            image_width,
+            image_height,
             location_text, 
             latitude, 
             longitude, 
             alcohols, 
             mentioned_buddies
         )
-        VALUES ($1, $2, $3, NOW(), $4, $5, $6, $7, $8, $9)
+        VALUES ($1, $2, $3, NOW(), $4, $10, $11, $5, $6, $7, $8, $9)
         ON CONFLICT (user_id, date) 
         DO UPDATE SET 
             drank_today = $3, 
             logged_at = NOW(), 
             image_url = $4, 
+            image_width = $10,
+            image_height = $11,
             location_text = $5,
             latitude = $6,
             longitude = $7,
@@ -799,29 +816,30 @@ func (s *UserService) AddDrinking(ctx context.Context, clerkID string, drankToda
         RETURNING id
     `
 
-	err = s.db.QueryRow(ctx, query,
-		userID,
-		date,
-		drankToday,
-		imageUrl,
-		locationText,
-		lat,
-		long,
-		alcohols,
-		clerkIDs,
-	).Scan(&postID)
+    err = s.db.QueryRow(ctx, query,
+        userID,       // $1
+        date,         // $2
+        drankToday,   // $3
+        imageUrl,     // $4
+        locationText, // $5
+        lat,          // $6
+        long,         // $7
+        alcohols,     // $8
+        clerkIDs,     // $9
+        imageWidth,   // $10
+        imageHeight,  // $11
+    ).Scan(&postID)
 
-	if err != nil {
-		return fmt.Errorf("failed to log drinking: %w", err)
-	}
+    if err != nil {
+        return fmt.Errorf("failed to log drinking: %w", err)
+    }
 
-	if imageUrl != nil {
-		actualURL := *imageUrl
-		go utils.FriendPostedImageToMix(s.db, s.notifService, userID, username, actualURL, postID)
-	}
-	return nil
+    if imageUrl != nil {
+        actualURL := *imageUrl
+        go utils.FriendPostedImageToMix(s.db, s.notifService, userID, username, actualURL, postID)
+    }
+    return nil
 }
-
 
 func (s *UserService) GetMemoryWall(ctx context.Context, postIDStr string) ([]canvas.CanvasItem, error) {
 	postID, err := uuid.Parse(postIDStr)
