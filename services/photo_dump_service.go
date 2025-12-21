@@ -22,8 +22,6 @@ func NewFuncService(db *pgxpool.Pool) *FuncService {
 	}
 }
 
-
-
 // FuncImage represents a single image record within a function session
 type FuncImage struct {
 	ID        uuid.UUID `json:"id"`
@@ -47,9 +45,7 @@ type FuncServiceSessionResponse struct {
 	ExpiresAt    time.Time `json:"expiresAt"`
 }
 
-
 func (s *FuncService) GenerateQrCode(ctx context.Context, clerkID string) (*FuncServiceSessionResponse, error) {
-	// 1. Get the internal User UUID from the Clerk ID
 	var hostUserID uuid.UUID
 	err := s.db.QueryRow(ctx, `SELECT id FROM users WHERE clerk_id = $1`, clerkID).Scan(&hostUserID)
 	if err != nil {
@@ -60,17 +56,17 @@ func (s *FuncService) GenerateQrCode(ctx context.Context, clerkID string) (*Func
 	}
 
 	qrToken := uuid.New().String()
-	expiresAt := time.Now().Add(24 * time.Hour)
+	expiresAt := time.Now().Add(72 * time.Hour) 
 
 	query := `
-		INSERT INTO photo_dump (host_user_id, qr_token, status, expires_at)
+		INSERT INTO funcs (host_user_id, qr_token, status, expires_at)
 		VALUES ($1, $2, 'ACTIVE', $3)
 		RETURNING id
 	`
 	var sessionID uuid.UUID
 	err = s.db.QueryRow(ctx, query, hostUserID, qrToken, expiresAt).Scan(&sessionID)
 	if err != nil {
-		return nil, fmt.Errorf("failed to create photo dump session: %w", err)
+		return nil, fmt.Errorf("failed to create func session: %w", err)
 	}
 
 	qrContent := fmt.Sprintf("outdrinkme://photodump/session/join/%s", qrToken)
@@ -97,7 +93,7 @@ func (s *FuncService) JoinViaQrCode(ctx context.Context, clerkID string, qrToken
 	// 1. Get User ID and Func ID
 	err := s.db.QueryRow(ctx, `
 		SELECT f.id, u.id FROM funcs f, users u 
-		WHERE f.qr_token = $1 AND u.clerk_id = $2 AND f.expires_at > NOW()`, 
+		WHERE f.qr_token = $1 AND u.clerk_id = $2 AND f.expires_at > NOW()`,
 		qrToken, clerkID).Scan(&funcID, &userID)
 	if err != nil {
 		return uuid.Nil, fmt.Errorf("session not found or expired")
@@ -107,20 +103,20 @@ func (s *FuncService) JoinViaQrCode(ctx context.Context, clerkID string, qrToken
 	_, err = s.db.Exec(ctx, `
 		INSERT INTO func_members (func_id, user_id) 
 		VALUES ($1, $2) ON CONFLICT DO NOTHING`, funcID, userID)
-	
+
 	return funcID, err
 }
 
 func (s *FuncService) GetSessionData(ctx context.Context, funcID string) (*FuncDataResponse, error) {
 	resp := &FuncDataResponse{
-		Images: []FuncImage{}, 
+		Images: []FuncImage{},
 	}
 
 	err := s.db.QueryRow(ctx, `
 		SELECT qr_token, expires_at 
 		FROM funcs 
 		WHERE id = $1`, funcID).Scan(&resp.InviteCode, &resp.ExpiresAt)
-	
+
 	if err != nil {
 		return nil, err
 	}
@@ -146,7 +142,6 @@ func (s *FuncService) GetSessionData(ctx context.Context, funcID string) (*FuncD
 
 	return resp, nil
 }
-
 
 func (s *FuncService) AddImages(ctx context.Context, clerkID string, funcID string, imageURL string) error {
 	_, err := s.db.Exec(ctx, `
