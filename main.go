@@ -31,7 +31,7 @@ var (
 	sideQuestService    *services.SideQuestService
 	notificationService *services.NotificationService
 	fcmService          *notification.FCMService
-	photoDumpService    *services.PhotoDumpService
+	photoDumpService    *services.FuncService
 	gameManager         *services.DrinnkingGameManager
 )
 
@@ -94,7 +94,7 @@ func init() {
 	userService = services.NewUserService(dbPool, notificationService)
 	storeService = services.NewStoreService(dbPool)
 	sideQuestService = services.NewSideQuestService(dbPool, notificationService)
-	photoDumpService = services.NewPhotoDumpService(dbPool)
+	photoDumpService = services.NewFuncService(dbPool)
 	fcmService, err = notification.NewFCMService("./serviceAccountKey.json")
 	gameManager = services.NewDrinnkingGameManager()
 
@@ -120,7 +120,7 @@ func main() {
 	sideQuestHandler := handlers.NewSideQuestHandler(sideQuestService)
 	notificationHandler := handlers.NewNotificationHandler(notificationService)
 	webhookHandler := handlers.NewWebhookHandler(userService)
-	photoDumpHandler := handlers.NewPhotoDumpHandler(photoDumpService)
+	funcHandler := handlers.NewFuncHandler(photoDumpService)
 	drinkingGameHandler := handlers.NewDrinkingGamesHandler(gameManager, userService)
 
 	r := mux.NewRouter()
@@ -223,10 +223,10 @@ func main() {
 	protected.HandleFunc("/sidequest/board", sideQuestHandler.GetSideQuestBoard).Methods("GET")
 	protected.HandleFunc("/sidequest", sideQuestHandler.PostNewSideQuest).Methods("POST")
 
-	protected.HandleFunc("/photo-dump/generate", photoDumpHandler.GenerateQrCode).Methods("GET")
-	protected.HandleFunc("/photo-dump/scan", photoDumpHandler.JoinViaQrCode).Methods("POST")
-	protected.HandleFunc("/photo-dump/{sesionId}", photoDumpHandler.GetSessionData).Methods("GET")
-	protected.HandleFunc("/photo-dump/{sesionId}", photoDumpHandler.AddImages).Methods("POST")
+	protected.HandleFunc("/func/create", funcHandler.CreateFunction).Methods("GET")
+	protected.HandleFunc("/func/join", funcHandler.JoinViaQrCode).Methods("POST")
+	protected.HandleFunc("/func/data/{id}", funcHandler.GetSessionData).Methods("GET")
+	protected.HandleFunc("/func/upload", funcHandler.AddImages).Methods("POST")
 
 	protected.HandleFunc("/drinking-games/create", drinkingGameHandler.CreateDrinkingGame).Methods("POST")
 
