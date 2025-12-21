@@ -7,6 +7,8 @@ import (
 	"outDrinkMeAPI/middleware"
 	"outDrinkMeAPI/services"
 	"time"
+
+	"github.com/gorilla/mux"
 )
 
 type FuncHandler struct {
@@ -73,17 +75,22 @@ func (h *FuncHandler) GetSessionData(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	vars := mux.Vars(r)
+	funcID := vars["id"]
 
-	photoDumpSessionData, err := h.funcService.GetSessionData(ctx, clerkID)
+	if funcID == "" {
+		respondWithError(w, http.StatusBadRequest, "Function ID is required")
+		return
+	}
+
+	photoDumpSessionData, err := h.funcService.GetSessionData(ctx, funcID, clerkID)
 	if err != nil {
-		respondWithError(w, http.StatusNotFound, "unable to get photo dump session")
+		respondWithError(w, http.StatusNotFound, "Unable to get session: "+err.Error())
 		return
 	}
 
 	respondWithJSON(w, http.StatusOK, photoDumpSessionData)
-
 }
-
 func (h *FuncHandler) AddImages(w http.ResponseWriter, r *http.Request) {
 	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
 	defer cancel()
