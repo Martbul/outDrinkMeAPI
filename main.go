@@ -228,6 +228,7 @@ func main() {
 	protected.HandleFunc("/func/join", funcHandler.JoinViaQrCode).Methods("POST")
 	protected.HandleFunc("/func/data/{id}", funcHandler.GetSessionData).Methods("GET")
 	protected.HandleFunc("/func/upload", funcHandler.AddImages).Methods("POST")
+	protected.HandleFunc("/func/leave", funcHandler.LeaveFunction).Methods("POST")
 
 	protected.HandleFunc("/drinking-games/create", drinkingGameHandler.CreateDrinkingGame).Methods("POST")
 

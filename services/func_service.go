@@ -258,3 +258,17 @@ func (s *FuncService) GetUserActiveSession(ctx context.Context, clerkID string) 
 
 	return s.GetSessionData(ctx, funcID.String(), clerkID)
 }
+
+
+func (s *FuncService) LeaveFunction(ctx context.Context, clerkID string, funcID string) error {
+	_, err := s.db.Exec(ctx, `
+		DELETE FROM func_members 
+		WHERE func_id = $1 
+		AND user_id = (SELECT id FROM users WHERE clerk_id = $2)`,
+		funcID, clerkID)
+	
+	if err != nil {
+		return fmt.Errorf("failed to leave function: %w", err)
+	}
+	return nil
+}

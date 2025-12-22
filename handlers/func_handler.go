@@ -141,3 +141,30 @@ func (h *FuncHandler) GetUserActiveSession(w http.ResponseWriter, r *http.Reques
 
 	respondWithJSON(w, http.StatusOK, userActiveSession)
 }
+
+func (h *FuncHandler) LeaveFunction(w http.ResponseWriter, r *http.Request) {
+	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
+	defer cancel()
+
+	clerkID, ok := middleware.GetClerkID(ctx)
+	if !ok {
+		respondWithError(w, http.StatusUnauthorized, "User not authenticated")
+		return
+	}
+
+	var body struct {
+		FuncID string `json:"funcId"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		respondWithError(w, http.StatusBadRequest, "Invalid request body")
+		return
+	}
+
+	err := h.funcService.LeaveFunction(ctx, clerkID, body.FuncID)
+	if err != nil {
+		respondWithError(w, http.StatusInternalServerError, "Unable to leave function")
+		return
+	}
+
+	respondWithJSON(w, http.StatusOK, map[string]string{"message": "Successfully left the function"})
+}
