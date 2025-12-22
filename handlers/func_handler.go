@@ -38,6 +38,7 @@ func (h *FuncHandler) CreateFunction(w http.ResponseWriter, r *http.Request) {
 
 	respondWithJSON(w, http.StatusCreated, qrCodeResponse)
 }
+
 func (h *FuncHandler) JoinViaQrCode(w http.ResponseWriter, r *http.Request) {
 	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
 	defer cancel()
@@ -91,6 +92,8 @@ func (h *FuncHandler) GetSessionData(w http.ResponseWriter, r *http.Request) {
 
 	respondWithJSON(w, http.StatusOK, photoDumpSessionData)
 }
+
+
 func (h *FuncHandler) AddImages(w http.ResponseWriter, r *http.Request) {
 	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
 	defer cancel()
@@ -117,4 +120,24 @@ func (h *FuncHandler) AddImages(w http.ResponseWriter, r *http.Request) {
 	}
 
 	respondWithJSON(w, http.StatusCreated, map[string]string{"message": "image added successfully"})
+}
+
+
+func (h *FuncHandler) GetUserActiveSession(w http.ResponseWriter, r *http.Request) {
+	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
+	defer cancel()
+
+	clerkID, ok := middleware.GetClerkID(ctx)
+	if !ok {
+		respondWithError(w, http.StatusUnauthorized, "User not authenticated")
+		return
+	}
+
+	userActiveSession, err := h.funcService.GetUserActiveSession(ctx, clerkID)
+	if err != nil {
+		respondWithError(w, http.StatusNotFound, "Unable to get session: "+err.Error())
+		return
+	}
+
+	respondWithJSON(w, http.StatusOK, userActiveSession)
 }

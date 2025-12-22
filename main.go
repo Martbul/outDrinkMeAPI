@@ -224,6 +224,7 @@ func main() {
 	protected.HandleFunc("/sidequest", sideQuestHandler.PostNewSideQuest).Methods("POST")
 
 	protected.HandleFunc("/func/create", funcHandler.CreateFunction).Methods("GET")
+	protected.HandleFunc("/func/active", funcHandler.GetUserActiveSession).Methods("GET")
 	protected.HandleFunc("/func/join", funcHandler.JoinViaQrCode).Methods("POST")
 	protected.HandleFunc("/func/data/{id}", funcHandler.GetSessionData).Methods("GET")
 	protected.HandleFunc("/func/upload", funcHandler.AddImages).Methods("POST")

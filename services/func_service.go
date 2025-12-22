@@ -234,3 +234,27 @@ func (s *FuncService) AddImages(ctx context.Context, clerkID string, funcID stri
 		funcID, clerkID, imageURL)
 	return err
 }
+
+
+
+func (s *FuncService) GetUserActiveSession(ctx context.Context, clerkID string) (*FuncDataResponse, error) {
+	var funcID uuid.UUID
+    
+    // Find the most recent active session this user is a member of
+	err := s.db.QueryRow(ctx, `
+		SELECT fm.func_id 
+		FROM func_members fm
+		JOIN funcs f ON fm.func_id = f.id
+		JOIN users u ON fm.user_id = u.id
+		WHERE u.clerk_id = $1 AND f.expires_at > NOW()
+		ORDER BY f.created_at DESC LIMIT 1`, clerkID).Scan(&funcID)
+
+	if err != nil {
+		if err == pgx.ErrNoRows {
+			return &FuncDataResponse{IsPartOfActiveFunc: false}, nil
+		}
+		return nil, err
+	}
+
+	return s.GetSessionData(ctx, funcID.String(), clerkID)
+}
