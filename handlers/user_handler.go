@@ -311,6 +311,8 @@ func (h *UserHandler) AddDrinking(w http.ResponseWriter, r *http.Request) {
 	var req struct {
 		DrankToday       bool         `json:"drank_today"`
 		ImageUrl         *string      `json:"image_url"`
+		ImageWidth       *int         `json:"image_width"`  
+        ImageHeight      *int         `json:"image_height"` 
 		LocationText     *string      `json:"location_text"`
 		LocationCoords   *Coordinates `json:"location_coords"`
 		Alcohols         *[]string    `json:"alcohols"`
@@ -345,10 +347,23 @@ func (h *UserHandler) AddDrinking(w http.ResponseWriter, r *http.Request) {
 		alcohols = *req.Alcohols
 	}
 
-	if err := h.userService.AddDrinking(ctx, clearkID, req.DrankToday, req.ImageUrl, req.LocationText, lat, long, alcohols, clerkIDs, date); err != nil {
-		respondWithError(w, http.StatusInternalServerError, err.Error())
-		return
-	}
+	  if err := h.userService.AddDrinking(
+        ctx, 
+        clearkID, 
+        req.DrankToday, 
+        req.ImageUrl, 
+        req.ImageWidth,  // New
+        req.ImageHeight, // New
+        req.LocationText, 
+        lat, 
+        long, 
+        alcohols, 
+        clerkIDs, 
+        date,
+    ); err != nil {
+        respondWithError(w, http.StatusInternalServerError, err.Error())
+        return
+    }
 	respondWithJSON(w, http.StatusOK, map[string]string{"message": "Drinking activity added successfully"})
 }
 
