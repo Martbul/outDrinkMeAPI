@@ -3,6 +3,7 @@ package handlers
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"outDrinkMeAPI/middleware"
 	"outDrinkMeAPI/services"
@@ -93,9 +94,8 @@ func (h *FuncHandler) GetSessionData(w http.ResponseWriter, r *http.Request) {
 	respondWithJSON(w, http.StatusOK, photoDumpSessionData)
 }
 
-
 func (h *FuncHandler) AddImages(w http.ResponseWriter, r *http.Request) {
-	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
+	ctx, cancel := context.WithTimeout(r.Context(), 10*time.Second) // Increased timeout for bulk
 	defer cancel()
 
 	clerkID, ok := middleware.GetClerkID(ctx)
@@ -105,21 +105,29 @@ func (h *FuncHandler) AddImages(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var body struct {
-		FuncID   string `json:"funcId"`
-		ImageURL string `json:"imageUrl"`
+		FuncID    string   `json:"funcId"`
+		ImageURLs []string `json:"imageUrls"` // Changed to plural/slice
 	}
+	
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 		respondWithError(w, http.StatusBadRequest, "Invalid request body")
 		return
 	}
 
-	err := h.funcService.AddImages(ctx, clerkID, body.FuncID, body.ImageURL)
-	if err != nil {
-		respondWithError(w, http.StatusInternalServerError, "Unable to add image")
+	if len(body.ImageURLs) == 0 {
+		respondWithError(w, http.StatusBadRequest, "No images provided")
 		return
 	}
 
-	respondWithJSON(w, http.StatusCreated, map[string]string{"message": "image added successfully"})
+	err := h.funcService.AddImages(ctx, clerkID, body.FuncID, body.ImageURLs)
+	if err != nil {
+		respondWithError(w, http.StatusInternalServerError, "Unable to add images")
+		return
+	}
+
+	respondWithJSON(w, http.StatusCreated, map[string]string{
+		"message": fmt.Sprintf("%d images added successfully", len(body.ImageURLs)),
+	})
 }
 
 

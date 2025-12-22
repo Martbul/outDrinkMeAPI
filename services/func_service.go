@@ -226,16 +226,31 @@ func (s *FuncService) GetSessionData(ctx context.Context, funcID string, current
 	return resp, nil
 }
 
-// 4. AddImages inserts an image record linked to the session and user.
-func (s *FuncService) AddImages(ctx context.Context, clerkID string, funcID string, imageURL string) error {
-	_, err := s.db.Exec(ctx, `
-		INSERT INTO funcs_images (func_id, user_id, image_url)
-		VALUES ($1, (SELECT id FROM users WHERE clerk_id = $2), $3)`,
-		funcID, clerkID, imageURL)
-	return err
+func (s *FuncService) AddImages(ctx context.Context, clerkID string, funcID string, imageUrls []string) error {
+	var userID uuid.UUID
+	err := s.db.QueryRow(ctx, `SELECT id FROM users WHERE clerk_id = $1`, clerkID).Scan(&userID)
+	if err != nil {
+		return fmt.Errorf("user not found: %w", err)
+	}
+
+	tx, err := s.db.Begin(ctx)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback(ctx)
+
+	for _, url := range imageUrls {
+		_, err := tx.Exec(ctx, `
+			INSERT INTO funcs_images (func_id, user_id, image_url)
+			VALUES ($1, $2, $3)`,
+			funcID, userID, url)
+		if err != nil {
+			return fmt.Errorf("failed to insert image %s: %w", url, err)
+		}
+	}
+
+	return tx.Commit(ctx)
 }
-
-
 
 func (s *FuncService) GetUserActiveSession(ctx context.Context, clerkID string) (*FuncDataResponse, error) {
 	var funcID uuid.UUID
