@@ -31,6 +31,8 @@ type FuncMember struct {
 
 type FuncMetadata struct {
 	InviteCode   string    `json:"inviteCode"`
+	QrToken      string    `json:"qrToken"`     
+	QrCodeBase64 string    `json:"qrCodeBase64"`
 	ExpiresAt    time.Time `json:"expiresAt"`
 	SessionID    string    `json:"sessionID"`
 	HostUsername string    `json:"hostUsername"`
@@ -51,9 +53,6 @@ type FuncServiceSessionResponse struct {
 	ExpiresAt    time.Time `json:"expiresAt"`
 }
 
-// --- Service Methods ---
-
-// 1. GenerateQrCode creates the session and automatically joins the host as a member.
 func (s *FuncService) GenerateQrCode(ctx context.Context, clerkID string) (*FuncServiceSessionResponse, error) {
 	var hostUserID uuid.UUID
 	err := s.db.QueryRow(ctx, `SELECT id FROM users WHERE clerk_id = $1`, clerkID).Scan(&hostUserID)
@@ -148,7 +147,6 @@ func (s *FuncService) JoinViaQrCode(ctx context.Context, clerkID string, qrToken
 	return funcID, nil
 }
 
-// 3. GetSessionData fetches all metadata, images, and the list of people in the group.
 func (s *FuncService) GetSessionData(ctx context.Context, funcID string, currentClerkID string) (*FuncDataResponse, error) {
 	resp := &FuncDataResponse{
 		FuncMembers:  []FuncMember{},
@@ -173,18 +171,25 @@ func (s *FuncService) GetSessionData(ctx context.Context, funcID string, current
 		return nil, fmt.Errorf("failed to fetch metadata: %w", err)
 	}
 
+	// --- NEW: REGENERATE QR DATA FOR METADATA ---
+	resp.FuncMetadata.QrToken = resp.FuncMetadata.InviteCode
+	qrContent := fmt.Sprintf("outdrinkme://photodump/session/join/%s", resp.FuncMetadata.QrToken)
+	pngBytes, err := qrcode.Encode(qrContent, qrcode.Medium, 256)
+	if err == nil {
+		resp.FuncMetadata.QrCodeBase64 = base64.StdEncoding.EncodeToString(pngBytes)
+	}
+	// --------------------------------------------
+
 	// 2. Check if the requesting user is a member
-	var isMember bool
 	err = s.db.QueryRow(ctx, `
 		SELECT EXISTS (
 			SELECT 1 FROM func_members fm 
 			JOIN users u ON fm.user_id = u.id 
 			WHERE fm.func_id = $1 AND u.clerk_id = $2
-		)`, funcID, currentClerkID).Scan(&isMember)
+		)`, funcID, currentClerkID).Scan(&resp.IsPartOfActiveFunc)
 	if err != nil {
 		return nil, err
 	}
-	resp.IsPartOfActiveFunc = isMember
 
 	// 3. Get All Members
 	rows, err := s.db.Query(ctx, `
@@ -201,9 +206,6 @@ func (s *FuncService) GetSessionData(ctx context.Context, funcID string, current
 				resp.FuncMembers = append(resp.FuncMembers, m)
 			}
 		}
-		if rows.Err() != nil {
-			return nil, rows.Err()
-		}
 	}
 
 	// 4. Get Image URLs
@@ -218,9 +220,6 @@ func (s *FuncService) GetSessionData(ctx context.Context, funcID string, current
 			if err := imgRows.Scan(&url); err == nil {
 				resp.FuncImageIds = append(resp.FuncImageIds, url)
 			}
-		}
-		if imgRows.Err() != nil {
-			return nil, imgRows.Err()
 		}
 	}
 
