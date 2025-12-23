@@ -131,6 +131,44 @@ func (h *FuncHandler) AddImages(w http.ResponseWriter, r *http.Request) {
 }
 
 
+
+func (h *FuncHandler) DeleteImages(w http.ResponseWriter, r *http.Request) {
+	ctx, cancel := context.WithTimeout(r.Context(), 10*time.Second)
+	defer cancel()
+
+	clerkID, ok := middleware.GetClerkID(ctx)
+	if !ok {
+		respondWithError(w, http.StatusUnauthorized, "User not authenticated")
+		return
+	}
+
+	var body struct {
+		FuncID    string   `json:"func_id"`    
+		ImageURLs []string `json:"image_urls"`
+	}
+
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		respondWithError(w, http.StatusBadRequest, "Invalid request body")
+		return
+	}
+
+	if len(body.ImageURLs) == 0 {
+		respondWithError(w, http.StatusBadRequest, "No images selected for deletion")
+		return
+	}
+
+	err := h.funcService.DeleteImages(ctx, clerkID, body.FuncID, body.ImageURLs)
+	if err != nil {
+		respondWithError(w, http.StatusInternalServerError, "Unable to delete images")
+		return
+	}
+
+	// 4. Respond
+	respondWithJSON(w, http.StatusOK, map[string]string{
+		"message": fmt.Sprintf("%d images deleted successfully", len(body.ImageURLs)),
+	})
+}
+
 func (h *FuncHandler) GetUserActiveSession(w http.ResponseWriter, r *http.Request) {
 	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
 	defer cancel()

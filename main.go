@@ -274,8 +274,8 @@
 // 		log.Printf("Server shutdown error: %v", err)
 // 	}
 
-// 	log.Println("Server shutdown complete")
-// }
+//		log.Println("Server shutdown complete")
+//	}
 package main
 
 import (
@@ -338,9 +338,9 @@ func main() {
 	}
 
 	// Optimized for Cold Starts / Serverless
-	poolConfig.MinConns = 0                          // Don't wait for connections to open to start
-	poolConfig.MaxConns = 15                         
-	poolConfig.MaxConnIdleTime = 5 * time.Minute     // Keep connections alive longer
+	poolConfig.MinConns = 0 // Don't wait for connections to open to start
+	poolConfig.MaxConns = 15
+	poolConfig.MaxConnIdleTime = 5 * time.Minute // Keep connections alive longer
 	poolConfig.MaxConnLifetime = 30 * time.Minute
 	poolConfig.HealthCheckPeriod = 1 * time.Minute
 
@@ -357,7 +357,7 @@ func main() {
 	sideQuestService = services.NewSideQuestService(dbPool, notificationService)
 	photoDumpService = services.NewFuncService(dbPool)
 	gameManager = services.NewDrinnkingGameManager()
-	
+
 	// Start FCM in background so disk I/O doesn't block startup
 	go func() {
 		fcm, err := notification.NewFCMService("./serviceAccountKey.json")
@@ -394,7 +394,7 @@ func main() {
 	// Standard endpoints
 	standardRouter.Handle("/metrics", middleware.BasicAuthMiddleware(promhttp.Handler()))
 	standardRouter.PathPrefix("/debug/pprof/").Handler(middleware.PprofSecurityMiddleware(http.DefaultServeMux))
-	
+
 	assetsDir := "./assets"
 	standardRouter.PathPrefix("/assets/").Handler(http.StripPrefix("/assets/", http.FileServer(http.Dir(assetsDir))))
 
@@ -460,14 +460,17 @@ func main() {
 	protected.HandleFunc("/user/inventory", userHandler.GetUserInventory).Methods("GET")
 	protected.HandleFunc("/user/alcoholisum_chart", userHandler.GetAlcoholismChart).Methods("GET")
 	protected.HandleFunc("/user/feedback", userHandler.AddUserFeedback).Methods("POST")
+	// protected.HandleFunc("/user/stories", userHandler.GetStories).Methods("GET")
+	// protected.HandleFunc("/user/stories", userHandler.AddStory).Methods("POST")
+	// protected.HandleFunc("/user/stories", userHandler.DeleteStory).Methods("DELETE")
+	// protected.HandleFunc("/user/stories/relate", userHandler.RelateStory).Methods("POST")
+	// protected.HandleFunc("/user/your-stories", userHandler.GetYourStories).Methods("GET")
 
 	protected.HandleFunc("/min-version", docHandler.GetAppMinVersion).Methods("GET")
 
-	// Store
 	protected.HandleFunc("/store", storeHandler.GetStore).Methods("GET")
 	protected.HandleFunc("/store/purchase/item", storeHandler.PurchaseStoreItem).Methods("POST")
 
-	// Notifications
 	protected.HandleFunc("/notifications", notificationHandler.GetNotifications).Methods("GET")
 	protected.HandleFunc("/notifications/unread-count", notificationHandler.GetUnreadCount).Methods("GET")
 	protected.HandleFunc("/notifications/{id}/read", notificationHandler.MarkAsRead).Methods("PUT")
@@ -478,7 +481,6 @@ func main() {
 	protected.HandleFunc("/notifications/register-device", notificationHandler.RegisterDevice).Methods("POST")
 	protected.HandleFunc("/notifications/test", notificationHandler.SendTestNotification).Methods("POST")
 
-	// Sidequest & Func
 	protected.HandleFunc("/sidequest/board", sideQuestHandler.GetSideQuestBoard).Methods("GET")
 	protected.HandleFunc("/sidequest", sideQuestHandler.PostNewSideQuest).Methods("POST")
 	protected.HandleFunc("/func/create", funcHandler.CreateFunction).Methods("GET")
@@ -487,9 +489,9 @@ func main() {
 	protected.HandleFunc("/func/data/{id}", funcHandler.GetSessionData).Methods("GET")
 	protected.HandleFunc("/func/upload", funcHandler.AddImages).Methods("POST")
 	protected.HandleFunc("/func/leave", funcHandler.LeaveFunction).Methods("POST")
+	protected.HandleFunc("/func/delete", funcHandler.DeleteImages).Methods("DELETE")
 	protected.HandleFunc("/drinking-games/create", drinkingGameHandler.CreateDrinkingGame).Methods("POST")
 
-	// 6. Server Configuration
 	corsHandler := gorilllaHandlers.CORS(
 		gorilllaHandlers.AllowedOrigins([]string{"*"}),
 		gorilllaHandlers.AllowedMethods([]string{"GET", "POST", "PUT", "DELETE", "OPTIONS"}),
@@ -506,7 +508,7 @@ func main() {
 	server := &http.Server{
 		Addr:         ":" + port,
 		Handler:      corsHandler(r),
-		ReadTimeout:  10 * time.Second, // Increased slightly for cold start safety
+		ReadTimeout:  10 * time.Second,
 		WriteTimeout: 15 * time.Second,
 		IdleTimeout:  120 * time.Second,
 	}

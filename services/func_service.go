@@ -252,6 +252,50 @@ func (s *FuncService) AddImages(ctx context.Context, clerkID string, funcID stri
 	return tx.Commit(ctx)
 }
 
+func (s *FuncService) DeleteImages(ctx context.Context, clerkID string, funcID string, imageUrls []string) error {
+	// 1. Get User ID from Clerk ID
+	var userID uuid.UUID
+	err := s.db.QueryRow(ctx, `SELECT id FROM users WHERE clerk_id = $1`, clerkID).Scan(&userID)
+	if err != nil {
+		return fmt.Errorf("user not found: %w", err)
+	}
+
+	// 2. Start Transaction
+	tx, err := s.db.Begin(ctx)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback(ctx)
+
+	// 3. Delete Images
+	// We verify ownership by checking user_id in the WHERE clause.
+	// If funcID is provided, we also scope it to that function.
+	query := `DELETE FROM funcs_images WHERE image_url = $1 AND user_id = $2`
+	
+	// If the frontend provided a FuncID, we add it to the constraint for extra safety
+	if funcID != "" {
+		query += ` AND func_id = $3`
+	}
+
+	for _, url := range imageUrls {
+		var err error
+		// var result interface{} // Placeholder for Exec result if needed
+
+		if funcID != "" {
+			_, err = tx.Exec(ctx, query, url, userID, funcID)
+		} else {
+			_, err = tx.Exec(ctx, query, url, userID)
+		}
+
+		if err != nil {
+			return fmt.Errorf("failed to delete image %s: %w", url, err)
+		}
+	}
+
+	// 4. Commit Transaction
+	return tx.Commit(ctx)
+}
+
 func (s *FuncService) GetUserActiveSession(ctx context.Context, clerkID string) (*FuncDataResponse, error) {
 	var funcID uuid.UUID
     
