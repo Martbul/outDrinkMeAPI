@@ -1072,20 +1072,20 @@ func (h *UserHandler) AddStory(w http.ResponseWriter, r *http.Request) {
 
 	var req struct {
 		VideoUrl         string   `json:"video_url"`
-		VideoWidth       int      `json:"video_width"`
-		VideoHight       int      `json:"video_hight"`
-		VideoDuration    int      `json:"video_duration"`
+		VideoWidth       uint      `json:"video_width"`
+		VideoHight       uint      `json:"video_hight"`
+		VideoDuration    uint      `json:"video_duration"`
 		TaggedBuddiesIds []string `json:"video_buddies"`
 	}
 
-	newStory, err := h.userService.AddStory(ctx, clerkID, req.VideoUrl, req.VideoWidth, req.VideoHight, req.VideoDuration, req.TaggedBuddies)
+	success, err := h.userService.AddStory(ctx, clerkID, req.VideoUrl, req.VideoWidth, req.VideoHight, req.VideoDuration, req.TaggedBuddiesIds)
 
 	if err != nil {
 		respondWithError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
 
-	respondWithJSON(w, http.StatusOK, newStory)
+	respondWithJSON(w, http.StatusOK, success)
 }
 
 func (h *UserHandler) DeleteStory(w http.ResponseWriter, r *http.Request) {
@@ -1102,14 +1102,14 @@ func (h *UserHandler) DeleteStory(w http.ResponseWriter, r *http.Request) {
 		StoryId string `json:"story_id"`
 	}
 
-	deletedStory, err := h.userService.DeleteStory(ctx, clerkID, req.StoryId)
+	success, err := h.userService.DeleteStory(ctx, clerkID, req.StoryId)
 
 	if err != nil {
 		respondWithError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
 
-	respondWithJSON(w, http.StatusOK, deletedStory)
+	respondWithJSON(w, http.StatusOK, success)
 }
 
 func (h *UserHandler) RelateStory(w http.ResponseWriter, r *http.Request) {
@@ -1126,14 +1126,14 @@ func (h *UserHandler) RelateStory(w http.ResponseWriter, r *http.Request) {
 		StoryId string `json:"story_id"`
 	}
 
-	relate, err := h.userService.RelateStory(ctx, clerkID, req.StoryId)
+	success, err := h.userService.RelateStory(ctx, clerkID, req.StoryId)
 
 	if err != nil {
 		respondWithError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
 
-	respondWithJSON(w, http.StatusOK, relate)
+	respondWithJSON(w, http.StatusOK, success)
 }
 
 func (h *UserHandler) GetAllUserStories(w http.ResponseWriter, r *http.Request) {

@@ -14,6 +14,7 @@ import (
 	"outDrinkMeAPI/internal/types/mix"
 	"outDrinkMeAPI/internal/types/stats"
 	"outDrinkMeAPI/internal/types/store"
+	"outDrinkMeAPI/internal/types/story"
 	"outDrinkMeAPI/internal/types/user"
 	"outDrinkMeAPI/utils"
 	"strings"
@@ -2042,27 +2043,27 @@ func (s *UserService) executeFeedQuery(ctx context.Context, query string, userID
 	defer rows.Close()
 
 	var posts []mix.DailyDrinkingPost
-	 for rows.Next() {
-        var post mix.DailyDrinkingPost
-        var mentionedBuddyIDs []string
-        var reactionsJSON []byte
+	for rows.Next() {
+		var post mix.DailyDrinkingPost
+		var mentionedBuddyIDs []string
+		var reactionsJSON []byte
 
-        err := rows.Scan(
-            &post.ID,
-            &post.UserID,
-            &post.UserImageURL,
-            &post.Username,
-            &post.Date,
-            &post.DrankToday,
-            &post.LoggedAt,
-            &post.ImageURL,
-            &post.ImageWidth,  
-            &post.ImageHeight,
-            &post.LocationText,
-            &mentionedBuddyIDs,
-            &post.SourceType,
-            &reactionsJSON,
-        )
+		err := rows.Scan(
+			&post.ID,
+			&post.UserID,
+			&post.UserImageURL,
+			&post.Username,
+			&post.Date,
+			&post.DrankToday,
+			&post.LoggedAt,
+			&post.ImageURL,
+			&post.ImageWidth,
+			&post.ImageHeight,
+			&post.LocationText,
+			&mentionedBuddyIDs,
+			&post.SourceType,
+			&reactionsJSON,
+		)
 		if err != nil {
 			return nil, fmt.Errorf("failed to scan post: %w", err)
 		}
@@ -2909,6 +2910,71 @@ func (s *UserService) GetUserInventory(ctx context.Context, clerkID string) (map
 	}
 
 	return inventory, nil
+}
+
+func (s *UserService) GetStories(ctx context.Context, clerkID string) ([]story.Story, error) {
+	_, err := s.db.Exec(ctx, `
+		DELETE FROM func_members 
+		WHERE func_id = $1 
+		AND user_id = (SELECT id FROM users WHERE clerk_id = $2)`,
+		funcID, clerkID)
+
+	if err != nil {
+		return fmt.Errorf("failed to leave function: %w", err)
+	}
+	return nil
+}
+
+func (s *UserService) AddStory(ctx context.Context, clerkID string, videoUrl string, videoWidth uint, videoHight uint, videoDuration uint, taggedBuddiesIds []string) (bool, error) {
+	_, err := s.db.Exec(ctx, `
+		DELETE FROM func_members 
+		WHERE func_id = $1 
+		AND user_id = (SELECT id FROM users WHERE clerk_id = $2)`,
+		funcID, clerkID)
+
+	if err != nil {
+		return fmt.Errorf("failed to leave function: %w", err)
+	}
+	return nil
+}
+
+func (s *UserService) DeleteStory(ctx context.Context, clerkID string, storyId string) (bool, error) {
+	_, err := s.db.Exec(ctx, `
+		DELETE FROM func_members 
+		WHERE func_id = $1 
+		AND user_id = (SELECT id FROM users WHERE clerk_id = $2)`,
+		funcID, clerkID)
+
+	if err != nil {
+		return fmt.Errorf("failed to leave function: %w", err)
+	}
+	return nil
+}
+
+func (s *UserService) RelateStory(ctx context.Context, clerkID string, storyId string) (bool, error) {
+	_, err := s.db.Exec(ctx, `
+		DELETE FROM func_members 
+		WHERE func_id = $1 
+		AND user_id = (SELECT id FROM users WHERE clerk_id = $2)`,
+		funcID, clerkID)
+
+	if err != nil {
+		return fmt.Errorf("failed to leave function: %w", err)
+	}
+	return nil
+}
+
+func (s *UserService) GetAllUserStories(ctx context.Context, clerkID string) (story.Story, error) {
+	_, err := s.db.Exec(ctx, `
+		DELETE FROM func_members 
+		WHERE func_id = $1 
+		AND user_id = (SELECT id FROM users WHERE clerk_id = $2)`,
+		funcID, clerkID)
+
+	if err != nil {
+		return fmt.Errorf("failed to leave function: %w", err)
+	}
+	return nil
 }
 
 // TODO: Creae theese
