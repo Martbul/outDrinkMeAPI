@@ -460,11 +460,11 @@ func main() {
 	protected.HandleFunc("/user/inventory", userHandler.GetUserInventory).Methods("GET")
 	protected.HandleFunc("/user/alcoholisum_chart", userHandler.GetAlcoholismChart).Methods("GET")
 	protected.HandleFunc("/user/feedback", userHandler.AddUserFeedback).Methods("POST")
-	// protected.HandleFunc("/user/stories", userHandler.GetStories).Methods("GET")
-	// protected.HandleFunc("/user/stories", userHandler.AddStory).Methods("POST")
-	// protected.HandleFunc("/user/stories", userHandler.DeleteStory).Methods("DELETE")
-	// protected.HandleFunc("/user/stories/relate", userHandler.RelateStory).Methods("POST")
-	// protected.HandleFunc("/user/your-stories", userHandler.GetYourStories).Methods("GET")
+	protected.HandleFunc("/user/stories", userHandler.GetStories).Methods("GET")
+	protected.HandleFunc("/user/stories", userHandler.AddStory).Methods("POST")
+	protected.HandleFunc("/user/stories", userHandler.DeleteStory).Methods("DELETE")
+	protected.HandleFunc("/user/stories/relate", userHandler.RelateStory).Methods("POST")
+	protected.HandleFunc("/user/your-stories", userHandler.GetAllUserStories).Methods("GET")
 
 	protected.HandleFunc("/min-version", docHandler.GetAppMinVersion).Methods("GET")
 
