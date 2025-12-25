@@ -1070,22 +1070,19 @@ func (h *UserHandler) AddStory(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// 1. Define struct tags to match TypeScript frontend exactly
 	var req struct {
-		VideoUrl      string   `json:"videoUrl"`
+		VideoUrl      string   `json:"video_url"`
 		VideoWidth    uint     `json:"width"`
 		VideoHeight   uint     `json:"height"`
 		VideoDuration uint     `json:"duration"`
-		TaggedBuddies []string `json:"taggedBuddies"`
+		TaggedBuddies []string `json:"tagged_buddies"`
 	}
 
-	// 2. IMPORTANT: Decode the JSON body
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		respondWithError(w, http.StatusBadRequest, "Invalid request payload")
 		return
 	}
 
-	// 3. Call service with decoded data
 	success, err := h.userService.AddStory(
 		ctx,
 		clerkID,
@@ -1097,7 +1094,6 @@ func (h *UserHandler) AddStory(w http.ResponseWriter, r *http.Request) {
 	)
 
 	if err != nil {
-		// If service returns "USER_NOT_FOUND", this is where it triggers
 		respondWithError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
@@ -1117,6 +1113,11 @@ func (h *UserHandler) DeleteStory(w http.ResponseWriter, r *http.Request) {
 
 	var req struct {
 		StoryId string `json:"story_id"`
+	}
+
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		respondWithError(w, http.StatusBadRequest, "Invalid payload")
+		return
 	}
 
 	success, err := h.userService.DeleteStory(ctx, clerkID, req.StoryId)
@@ -1141,6 +1142,10 @@ func (h *UserHandler) RelateStory(w http.ResponseWriter, r *http.Request) {
 
 	var req struct {
 		StoryId string `json:"story_id"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		respondWithError(w, http.StatusBadRequest, "Invalid payload")
+		return
 	}
 
 	success, err := h.userService.RelateStory(ctx, clerkID, req.StoryId)
