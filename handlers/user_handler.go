@@ -1066,27 +1066,43 @@ func (h *UserHandler) AddStory(w http.ResponseWriter, r *http.Request) {
 
 	clerkID, ok := middleware.GetClerkID(ctx)
 	if !ok {
-		respondWithError(w, http.StatusInternalServerError, "Error while adding drinking")
+		respondWithError(w, http.StatusUnauthorized, "Unauthorized")
 		return
 	}
 
+	// 1. Define struct tags to match TypeScript frontend exactly
 	var req struct {
-		VideoUrl         string   `json:"video_url"`
-		VideoWidth       uint      `json:"video_width"`
-		VideoHight       uint      `json:"video_hight"`
-		VideoDuration    uint      `json:"video_duration"`
-		TaggedBuddiesIds []string `json:"video_buddies"`
+		VideoUrl      string   `json:"videoUrl"`
+		VideoWidth    uint     `json:"width"`
+		VideoHeight   uint     `json:"height"`
+		VideoDuration uint     `json:"duration"`
+		TaggedBuddies []string `json:"taggedBuddies"`
 	}
-	
 
-	success, err := h.userService.AddStory(ctx, clerkID, req.VideoUrl, req.VideoWidth, req.VideoHight, req.VideoDuration, req.TaggedBuddiesIds)
+	// 2. IMPORTANT: Decode the JSON body
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		respondWithError(w, http.StatusBadRequest, "Invalid request payload")
+		return
+	}
+
+	// 3. Call service with decoded data
+	success, err := h.userService.AddStory(
+		ctx,
+		clerkID,
+		req.VideoUrl,
+		req.VideoWidth,
+		req.VideoHeight,
+		req.VideoDuration,
+		req.TaggedBuddies,
+	)
 
 	if err != nil {
+		// If service returns "USER_NOT_FOUND", this is where it triggers
 		respondWithError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
 
-	respondWithJSON(w, http.StatusOK, success)
+	respondWithJSON(w, http.StatusCreated, map[string]bool{"success": success})
 }
 
 func (h *UserHandler) DeleteStory(w http.ResponseWriter, r *http.Request) {
