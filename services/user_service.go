@@ -2913,103 +2913,66 @@ func (s *UserService) GetUserInventory(ctx context.Context, clerkID string) (map
 }
 
 
+// func (s *UserService) GetStories(ctx context.Context, clerkID string) ([]story.Story, error) {
+// 	log.Println("TESGIN THE GETSTORIES")
+// 	query := `
+// 		SELECT 
+// 			s.id, s.user_id, s.video_url, s.video_width, s.video_height, s.video_duration, s.created_at,
+// 			(SELECT COUNT(*) FROM relates WHERE story_id = s.id) as relate_count,
+// 			EXISTS(SELECT 1 FROM relates r WHERE r.story_id = s.id AND r.user_id = u.id) as has_related
+// 		FROM stories s
+// 		JOIN users u ON u.clerk_id = $1
+// 		WHERE s.expires_at > NOW()
+// 		AND s.visibility = 'friends'
+// 		AND (
+// 			s.user_id IN (SELECT friend_id FROM friendships WHERE user_id = u.id AND status = 'accepted')
+// 			OR s.user_id = u.id
+// 		)
+// 		ORDER BY s.created_at DESC`
+
+// 	rows, err := s.db.Query(ctx, query, clerkID)
+// 	if err != nil {
+// 		return nil, fmt.Errorf("failed to fetch feed: %w", err)
+// 	}
+// 	defer rows.Close()
+
+// 	var stories []story.Story
+// 	for rows.Next() {
+// 		var st story.Story
+// 		err := rows.Scan(
+// 			&st.ID, &st.UserID, &st.VideoUrl, &st.VideoWidth, &st.VideoHeight, 
+// 			&st.VideoDuration, &st.CreatedAt, &st.RelateCount, &st.HasRelated,
+// 		)
+// 		if err != nil {
+// 			return nil, err
+// 		}
+// 		stories = append(stories, st)
+// 	}
+// 	log.Println("STORIES")
+// 	log.Println(stories)
+
+// 	return stories, nil
+// }
+
+
+
 func (s *UserService) GetStories(ctx context.Context, clerkID string) ([]story.Story, error) {
-	log.Println("TESGIN THE GETSTORIES")
+	// We join once on the users table to get the internal ID of the requester ($1)
+	// This allows us to check "has_related" and "friendships" efficiently
 	query := `
 		SELECT 
 			s.id, s.user_id, s.video_url, s.video_width, s.video_height, s.video_duration, s.created_at,
 			(SELECT COUNT(*) FROM relates WHERE story_id = s.id) as relate_count,
 			EXISTS(SELECT 1 FROM relates r WHERE r.story_id = s.id AND r.user_id = u.id) as has_related
 		FROM stories s
-		JOIN users u ON u.clerk_id = $1
-		WHERE s.expires_at > NOW()
+		CROSS JOIN users u 
+		WHERE u.clerk_id = $1
+		AND s.expires_at > NOW()
 		AND s.visibility = 'friends'
 		AND (
-			s.user_id IN (SELECT friend_id FROM friendships WHERE user_id = u.id AND status = 'accepted')
-			OR s.user_id = u.id
+			s.user_id = u.id -- Own stories
+			OR s.user_id IN (SELECT friend_id FROM friendships WHERE user_id = u.id AND status = 'accepted') -- Friends' stories
 		)
-		ORDER BY s.created_at DESC`
-
-	rows, err := s.db.Query(ctx, query, clerkID)
-	if err != nil {
-		return nil, fmt.Errorf("failed to fetch feed: %w", err)
-	}
-	defer rows.Close()
-
-	var stories []story.Story
-	for rows.Next() {
-		var st story.Story
-		err := rows.Scan(
-			&st.ID, &st.UserID, &st.VideoUrl, &st.VideoWidth, &st.VideoHeight, 
-			&st.VideoDuration, &st.CreatedAt, &st.RelateCount, &st.HasRelated,
-		)
-		if err != nil {
-			return nil, err
-		}
-		stories = append(stories, st)
-	}
-	log.Println("STORIES")
-	log.Println(stories)
-
-	return stories, nil
-}
-
-
-func (s *UserService) AddStory(ctx context.Context, clerkID string, videoUrl string, videoWidth uint, videoHeight uint, videoDuration uint, taggedBuddiesIds []string) (bool, error) {
-	query := `
-		INSERT INTO stories (user_id, video_url, video_width, video_height, video_duration)
-		VALUES ((SELECT id FROM users WHERE clerk_id = $1), $2, $3, $4, $5)`
-
-	_, err := s.db.Exec(ctx, query, clerkID, videoUrl, videoWidth, videoHeight, videoDuration)
-	if err != nil {
-		log.Printf("AddStory: %v", err)
-		return false, fmt.Errorf("failed to add story")
-	}
-	return true, nil
-}
-
-// RelateStory: Toggles a "like" on a story (If exists delete, else insert)
-func (s *UserService) RelateStory(ctx context.Context, clerkID string, storyID string) (bool, error) {
-	// Toggle logic: try to delete, if nothing deleted, insert.
-	tx, err := s.db.Begin(ctx)
-	if err != nil {
-		return false, err
-	}
-	defer tx.Rollback(ctx)
-
-	deleteQuery := `
-		DELETE FROM relates 
-		WHERE story_id = $1 
-		AND user_id = (SELECT id FROM users WHERE clerk_id = $2)`
-	
-	cmd, err := tx.Exec(ctx, deleteQuery, storyID, clerkID)
-	if err != nil {
-		return false, err
-	}
-
-	if cmd.RowsAffected() == 0 {
-		insertQuery := `
-			INSERT INTO relates (story_id, user_id) 
-			VALUES ($1, (SELECT id FROM users WHERE clerk_id = $2))`
-		_, err = tx.Exec(ctx, insertQuery, storyID, clerkID)
-		if err != nil {
-			return false, err
-		}
-	}
-
-	err = tx.Commit(ctx)
-	return true, err
-}
-
-// GetAllUserStories: Fetches ALL stories of a user (including expired) for their profile
-func (s *UserService) GetAllUserStories(ctx context.Context, clerkID string) ([]story.Story, error) {
-	query := `
-		SELECT 
-			s.id, s.user_id, s.video_url, s.video_width, s.video_height, s.video_duration, s.created_at,
-			(SELECT COUNT(*) FROM relates WHERE story_id = s.id) as relate_count
-		FROM stories s
-		JOIN users u ON u.clerk_id = $1
-		WHERE s.user_id = u.id
 		ORDER BY s.created_at DESC`
 
 	rows, err := s.db.Query(ctx, query, clerkID)
@@ -3021,10 +2984,83 @@ func (s *UserService) GetAllUserStories(ctx context.Context, clerkID string) ([]
 	var stories []story.Story
 	for rows.Next() {
 		var st story.Story
-		err := rows.Scan(
-			&st.ID, &st.UserID, &st.VideoUrl, &st.VideoWidth, &st.VideoHeight, 
-			&st.VideoDuration, &st.CreatedAt, &st.RelateCount,
-		)
+		err := rows.Scan(&st.ID, &st.UserID, &st.VideoUrl, &st.VideoWidth, &st.VideoHeight, &st.VideoDuration, &st.CreatedAt, &st.RelateCount, &st.HasRelated)
+		if err != nil {
+			return nil, err
+		}
+		stories = append(stories, st)
+	}
+	return stories, nil
+}
+
+
+func (s *UserService) AddStory(ctx context.Context, clerkID string, videoUrl string, videoWidth uint, videoHeight uint, videoDuration uint, taggedBuddiesIds []string) (bool, error) {
+	userID, err := s.getInternalID(ctx, clerkID)
+	if err != nil {
+		return false, err
+	}
+
+	query := `
+		INSERT INTO stories (user_id, video_url, video_width, video_height, video_duration)
+		VALUES ($1, $2, $3, $4, $5)`
+
+	_, err = s.db.Exec(ctx, query, userID, videoUrl, videoWidth, videoHeight, videoDuration)
+	if err != nil {
+		return false, err
+	}
+	return true, nil
+}
+
+func (s *UserService) RelateStory(ctx context.Context, clerkID string, storyID string) (bool, error) {
+	userID, err := s.getInternalID(ctx, clerkID)
+	if err != nil {
+		return false, err
+	}
+
+	tx, err := s.db.Begin(ctx)
+	if err != nil {
+		return false, err
+	}
+	defer tx.Rollback(ctx)
+
+	// Attempt to delete (un-relate)
+	cmd, err := tx.Exec(ctx, `DELETE FROM relates WHERE story_id = $1 AND user_id = $2`, storyID, userID)
+	if err != nil {
+		return false, err
+	}
+
+	// If nothing deleted, then Insert (relate)
+	if cmd.RowsAffected() == 0 {
+		_, err = tx.Exec(ctx, `INSERT INTO relates (story_id, user_id) VALUES ($1, $2)`, storyID, userID)
+		if err != nil {
+			return false, err
+		}
+	}
+
+	err = tx.Commit(ctx)
+	return true, err
+}
+
+func (s *UserService) GetAllUserStories(ctx context.Context, clerkID string) ([]story.Story, error) {
+	query := `
+		SELECT 
+			s.id, s.user_id, s.video_url, s.video_width, s.video_height, s.video_duration, s.created_at,
+			(SELECT COUNT(*) FROM relates WHERE story_id = s.id) as relate_count
+		FROM stories s
+		JOIN users u ON u.id = s.user_id
+		WHERE u.clerk_id = $1
+		ORDER BY s.created_at DESC`
+
+	rows, err := s.db.Query(ctx, query, clerkID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var stories []story.Story
+	for rows.Next() {
+		var st story.Story
+		err := rows.Scan(&st.ID, &st.UserID, &st.VideoUrl, &st.VideoWidth, &st.VideoHeight, &st.VideoDuration, &st.CreatedAt, &st.RelateCount)
 		if err != nil {
 			return nil, err
 		}
@@ -3034,17 +3070,96 @@ func (s *UserService) GetAllUserStories(ctx context.Context, clerkID string) ([]
 }
 
 func (s *UserService) DeleteStory(ctx context.Context, clerkID string, storyID string) (bool, error) {
-	query := `
-		DELETE FROM stories 
-		WHERE id = $1 
-		AND user_id = (SELECT id FROM users WHERE clerk_id = $2)`
+	userID, err := s.getInternalID(ctx, clerkID)
+	if err != nil {
+		return false, err
+	}
 
-	cmd, err := s.db.Exec(ctx, query, storyID, clerkID)
+	query := `DELETE FROM stories WHERE id = $1 AND user_id = $2`
+	cmd, err := s.db.Exec(ctx, query, storyID, userID)
 	if err != nil {
 		return false, err
 	}
 	return cmd.RowsAffected() > 0, nil
 }
+
+// // RelateStory: Toggles a "like" on a story (If exists delete, else insert)
+// func (s *UserService) RelateStory(ctx context.Context, clerkID string, storyID string) (bool, error) {
+// 	// Toggle logic: try to delete, if nothing deleted, insert.
+// 	tx, err := s.db.Begin(ctx)
+// 	if err != nil {
+// 		return false, err
+// 	}
+// 	defer tx.Rollback(ctx)
+
+// 	deleteQuery := `
+// 		DELETE FROM relates 
+// 		WHERE story_id = $1 
+// 		AND user_id = (SELECT id FROM users WHERE clerk_id = $2)`
+	
+// 	cmd, err := tx.Exec(ctx, deleteQuery, storyID, clerkID)
+// 	if err != nil {
+// 		return false, err
+// 	}
+
+// 	if cmd.RowsAffected() == 0 {
+// 		insertQuery := `
+// 			INSERT INTO relates (story_id, user_id) 
+// 			VALUES ($1, (SELECT id FROM users WHERE clerk_id = $2))`
+// 		_, err = tx.Exec(ctx, insertQuery, storyID, clerkID)
+// 		if err != nil {
+// 			return false, err
+// 		}
+// 	}
+
+// 	err = tx.Commit(ctx)
+// 	return true, err
+// }
+
+// // GetAllUserStories: Fetches ALL stories of a user (including expired) for their profile
+// func (s *UserService) GetAllUserStories(ctx context.Context, clerkID string) ([]story.Story, error) {
+// 	query := `
+// 		SELECT 
+// 			s.id, s.user_id, s.video_url, s.video_width, s.video_height, s.video_duration, s.created_at,
+// 			(SELECT COUNT(*) FROM relates WHERE story_id = s.id) as relate_count
+// 		FROM stories s
+// 		JOIN users u ON u.clerk_id = $1
+// 		WHERE s.user_id = u.id
+// 		ORDER BY s.created_at DESC`
+
+// 	rows, err := s.db.Query(ctx, query, clerkID)
+// 	if err != nil {
+// 		return nil, err
+// 	}
+// 	defer rows.Close()
+
+// 	var stories []story.Story
+// 	for rows.Next() {
+// 		var st story.Story
+// 		err := rows.Scan(
+// 			&st.ID, &st.UserID, &st.VideoUrl, &st.VideoWidth, &st.VideoHeight, 
+// 			&st.VideoDuration, &st.CreatedAt, &st.RelateCount,
+// 		)
+// 		if err != nil {
+// 			return nil, err
+// 		}
+// 		stories = append(stories, st)
+// 	}
+// 	return stories, nil
+// }
+
+// func (s *UserService) DeleteStory(ctx context.Context, clerkID string, storyID string) (bool, error) {
+// 	query := `
+// 		DELETE FROM stories 
+// 		WHERE id = $1 
+// 		AND user_id = (SELECT id FROM users WHERE clerk_id = $2)`
+
+// 	cmd, err := s.db.Exec(ctx, query, storyID, clerkID)
+// 	if err != nil {
+// 		return false, err
+// 	}
+// 	return cmd.RowsAffected() > 0, nil
+// }
 
 // TODO: Creae theese
 func (s *UserService) EquipItem(ctx context.Context, clerkID string, itemIdForRemoval string) (bool, error) {
@@ -3057,4 +3172,17 @@ func getTotalCount(collection collection.AlcoholCollectionByType) int {
 		total += len(items)
 	}
 	return total
+}
+
+
+func (s *UserService) getInternalID(ctx context.Context, clerkID string) (uuid.UUID, error) {
+	var userID uuid.UUID
+	err := s.db.QueryRow(ctx, `SELECT id FROM users WHERE clerk_id = $1`, clerkID).Scan(&userID)
+	if err != nil {
+		if err == pgx.ErrNoRows {
+			return uuid.Nil, fmt.Errorf("user not found")
+		}
+		return uuid.Nil, err
+	}
+	return userID, nil
 }
