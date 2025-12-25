@@ -1072,9 +1072,9 @@ func (h *UserHandler) AddStory(w http.ResponseWriter, r *http.Request) {
 
 	var req struct {
 		VideoUrl      string   `json:"video_url"`
-		VideoWidth    uint     `json:"width"`
-		VideoHeight   uint     `json:"height"`
-		VideoDuration uint     `json:"duration"`
+		VideoWidth    float64       `json:"width"`
+		VideoHeight   float64       `json:"height"`
+		VideoDuration float64       `json:"duration"`
 		TaggedBuddies []string `json:"tagged_buddies"`
 	}
 
