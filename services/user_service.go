@@ -2912,69 +2912,134 @@ func (s *UserService) GetUserInventory(ctx context.Context, clerkID string) (map
 	return inventory, nil
 }
 
+
 func (s *UserService) GetStories(ctx context.Context, clerkID string) ([]story.Story, error) {
-	_, err := s.db.Exec(ctx, `
-		DELETE FROM func_members 
-		WHERE func_id = $1 
-		AND user_id = (SELECT id FROM users WHERE clerk_id = $2)`,
-		funcID, clerkID)
+	query := `
+		SELECT 
+			s.id, s.user_id, s.video_url, s.video_width, s.video_height, s.video_duration, s.created_at,
+			(SELECT COUNT(*) FROM relates WHERE story_id = s.id) as relate_count,
+			EXISTS(SELECT 1 FROM relates r WHERE r.story_id = s.id AND r.user_id = u.id) as has_related
+		FROM stories s
+		JOIN users u ON u.clerk_id = $1
+		WHERE s.expires_at > NOW()
+		AND s.visibility = 'friends'
+		AND (
+			s.user_id IN (SELECT friend_id FROM friendships WHERE user_id = u.id AND status = 'accepted')
+			OR s.user_id = u.id
+		)
+		ORDER BY s.created_at DESC`
 
+	rows, err := s.db.Query(ctx, query, clerkID)
 	if err != nil {
-		return fmt.Errorf("failed to leave function: %w", err)
+		return nil, fmt.Errorf("failed to fetch feed: %w", err)
 	}
-	return nil
+	defer rows.Close()
+
+	var stories []story.Story
+	for rows.Next() {
+		var st story.Story
+		err := rows.Scan(
+			&st.ID, &st.UserID, &st.VideoUrl, &st.VideoWidth, &st.VideoHeight, 
+			&st.VideoDuration, &st.CreatedAt, &st.RelateCount, &st.HasRelated,
+		)
+		if err != nil {
+			return nil, err
+		}
+		stories = append(stories, st)
+	}
+	return stories, nil
 }
 
-func (s *UserService) AddStory(ctx context.Context, clerkID string, videoUrl string, videoWidth uint, videoHight uint, videoDuration uint, taggedBuddiesIds []string) (bool, error) {
-	_, err := s.db.Exec(ctx, `
-		DELETE FROM func_members 
-		WHERE func_id = $1 
-		AND user_id = (SELECT id FROM users WHERE clerk_id = $2)`,
-		funcID, clerkID)
 
+func (s *UserService) AddStory(ctx context.Context, clerkID string, videoUrl string, videoWidth uint, videoHeight uint, videoDuration uint, taggedBuddiesIds []string) (bool, error) {
+	query := `
+		INSERT INTO stories (user_id, video_url, video_width, video_height, video_duration)
+		VALUES ((SELECT id FROM users WHERE clerk_id = $1), $2, $3, $4, $5)`
+
+	_, err := s.db.Exec(ctx, query, clerkID, videoUrl, videoWidth, videoHeight, videoDuration)
 	if err != nil {
-		return fmt.Errorf("failed to leave function: %w", err)
+		log.Printf("AddStory: %v", err)
+		return false, fmt.Errorf("failed to add story")
 	}
-	return nil
+	return true, nil
 }
 
-func (s *UserService) DeleteStory(ctx context.Context, clerkID string, storyId string) (bool, error) {
-	_, err := s.db.Exec(ctx, `
-		DELETE FROM func_members 
-		WHERE func_id = $1 
-		AND user_id = (SELECT id FROM users WHERE clerk_id = $2)`,
-		funcID, clerkID)
-
+// RelateStory: Toggles a "like" on a story (If exists delete, else insert)
+func (s *UserService) RelateStory(ctx context.Context, clerkID string, storyID string) (bool, error) {
+	// Toggle logic: try to delete, if nothing deleted, insert.
+	tx, err := s.db.Begin(ctx)
 	if err != nil {
-		return fmt.Errorf("failed to leave function: %w", err)
+		return false, err
 	}
-	return nil
+	defer tx.Rollback(ctx)
+
+	deleteQuery := `
+		DELETE FROM relates 
+		WHERE story_id = $1 
+		AND user_id = (SELECT id FROM users WHERE clerk_id = $2)`
+	
+	cmd, err := tx.Exec(ctx, deleteQuery, storyID, clerkID)
+	if err != nil {
+		return false, err
+	}
+
+	if cmd.RowsAffected() == 0 {
+		insertQuery := `
+			INSERT INTO relates (story_id, user_id) 
+			VALUES ($1, (SELECT id FROM users WHERE clerk_id = $2))`
+		_, err = tx.Exec(ctx, insertQuery, storyID, clerkID)
+		if err != nil {
+			return false, err
+		}
+	}
+
+	err = tx.Commit(ctx)
+	return true, err
 }
 
-func (s *UserService) RelateStory(ctx context.Context, clerkID string, storyId string) (bool, error) {
-	_, err := s.db.Exec(ctx, `
-		DELETE FROM func_members 
-		WHERE func_id = $1 
-		AND user_id = (SELECT id FROM users WHERE clerk_id = $2)`,
-		funcID, clerkID)
+// GetAllUserStories: Fetches ALL stories of a user (including expired) for their profile
+func (s *UserService) GetAllUserStories(ctx context.Context, clerkID string) ([]story.Story, error) {
+	query := `
+		SELECT 
+			s.id, s.user_id, s.video_url, s.video_width, s.video_height, s.video_duration, s.created_at,
+			(SELECT COUNT(*) FROM relates WHERE story_id = s.id) as relate_count
+		FROM stories s
+		JOIN users u ON u.clerk_id = $1
+		WHERE s.user_id = u.id
+		ORDER BY s.created_at DESC`
 
+	rows, err := s.db.Query(ctx, query, clerkID)
 	if err != nil {
-		return fmt.Errorf("failed to leave function: %w", err)
+		return nil, err
 	}
-	return nil
+	defer rows.Close()
+
+	var stories []story.Story
+	for rows.Next() {
+		var st story.Story
+		err := rows.Scan(
+			&st.ID, &st.UserID, &st.VideoUrl, &st.VideoWidth, &st.VideoHeight, 
+			&st.VideoDuration, &st.CreatedAt, &st.RelateCount,
+		)
+		if err != nil {
+			return nil, err
+		}
+		stories = append(stories, st)
+	}
+	return stories, nil
 }
 
-func (s *UserService) GetAllUserStories(ctx context.Context, clerkID string) (story.Story, error) {
-	_, err := s.db.Exec(ctx, `
-		DELETE FROM func_members 
-		WHERE func_id = $1 
-		AND user_id = (SELECT id FROM users WHERE clerk_id = $2)`,
-		funcID, clerkID)
+func (s *UserService) DeleteStory(ctx context.Context, clerkID string, storyID string) (bool, error) {
+	query := `
+		DELETE FROM stories 
+		WHERE id = $1 
+		AND user_id = (SELECT id FROM users WHERE clerk_id = $2)`
 
+	cmd, err := s.db.Exec(ctx, query, storyID, clerkID)
 	if err != nil {
-		return fmt.Errorf("failed to leave function: %w", err)
+		return false, err
 	}
-	return nil
+	return cmd.RowsAffected() > 0, nil
 }
 
 // TODO: Creae theese
