@@ -1077,6 +1077,7 @@ func (h *UserHandler) AddStory(w http.ResponseWriter, r *http.Request) {
 		VideoDuration    uint      `json:"video_duration"`
 		TaggedBuddiesIds []string `json:"video_buddies"`
 	}
+	
 
 	success, err := h.userService.AddStory(ctx, clerkID, req.VideoUrl, req.VideoWidth, req.VideoHight, req.VideoDuration, req.TaggedBuddiesIds)
 

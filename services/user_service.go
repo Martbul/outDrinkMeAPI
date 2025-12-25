@@ -2914,6 +2914,7 @@ func (s *UserService) GetUserInventory(ctx context.Context, clerkID string) (map
 
 
 func (s *UserService) GetStories(ctx context.Context, clerkID string) ([]story.Story, error) {
+	log.Println("TESGIN THE GETSTORIES")
 	query := `
 		SELECT 
 			s.id, s.user_id, s.video_url, s.video_width, s.video_height, s.video_duration, s.created_at,
@@ -2947,6 +2948,9 @@ func (s *UserService) GetStories(ctx context.Context, clerkID string) ([]story.S
 		}
 		stories = append(stories, st)
 	}
+	log.Println("STORIES")
+	log.Println(stories)
+
 	return stories, nil
 }
 
