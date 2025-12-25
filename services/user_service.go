@@ -2994,7 +2994,7 @@ func (s *UserService) GetStories(ctx context.Context, clerkID string) ([]story.S
 }
 
 
-func (s *UserService) AddStory(ctx context.Context, clerkID string, videoUrl string, videoWidth uint, videoHeight uint, videoDuration uint, taggedBuddiesIds []string) (bool, error) {
+func (s *UserService) AddStory(ctx context.Context, clerkID string, videoUrl string, videoWidth float64, videoHeight float64, videoDuration float64, taggedBuddiesIds []string) (bool, error) {
 	userID, err := s.getInternalID(ctx, clerkID)
 	if err != nil {
 		return false, err
