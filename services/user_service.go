@@ -2955,23 +2955,30 @@ func (s *UserService) GetUserInventory(ctx context.Context, clerkID string) (map
 // }
 
 
-
 func (s *UserService) GetStories(ctx context.Context, clerkID string) ([]story.Story, error) {
-	// We join once on the users table to get the internal ID of the requester ($1)
-	// This allows us to check "has_related" and "friendships" efficiently
+	// We alias 'author' (the person who made the story) 
+	// and 'viewer' (the person currently logged in)
 	query := `
 		SELECT 
-			s.id, s.user_id, s.video_url, s.video_width, s.video_height, s.video_duration, s.created_at,
+			s.id, 
+			s.user_id, 
+			author.image_url, -- Get the author's image
+			s.video_url, 
+			s.video_width, 
+			s.video_height, 
+			s.video_duration, 
+			s.created_at,
 			(SELECT COUNT(*) FROM relates WHERE story_id = s.id) as relate_count,
-			EXISTS(SELECT 1 FROM relates r WHERE r.story_id = s.id AND r.user_id = u.id) as has_related
+			EXISTS(SELECT 1 FROM relates r WHERE r.story_id = s.id AND r.user_id = viewer.id) as has_related
 		FROM stories s
-		CROSS JOIN users u 
-		WHERE u.clerk_id = $1
+		JOIN users author ON author.id = s.user_id -- Join to get author details
+		CROSS JOIN users viewer                   -- Identify the requester
+		WHERE viewer.clerk_id = $1
 		AND s.expires_at > NOW()
 		AND s.visibility = 'friends'
 		AND (
-			s.user_id = u.id -- Own stories
-			OR s.user_id IN (SELECT friend_id FROM friendships WHERE user_id = u.id AND status = 'accepted') -- Friends' stories
+			s.user_id = viewer.id -- Own stories
+			OR s.user_id IN (SELECT friend_id FROM friendships WHERE user_id = viewer.id AND status = 'accepted') -- Friends' stories
 		)
 		ORDER BY s.created_at DESC`
 
@@ -2984,7 +2991,19 @@ func (s *UserService) GetStories(ctx context.Context, clerkID string) ([]story.S
 	var stories []story.Story
 	for rows.Next() {
 		var st story.Story
-		err := rows.Scan(&st.ID, &st.UserID, &st.VideoUrl, &st.VideoWidth, &st.VideoHeight, &st.VideoDuration, &st.CreatedAt, &st.RelateCount, &st.HasRelated)
+		// Ensure st.UserImageUrl exists in your story.Story struct
+		err := rows.Scan(
+			&st.ID, 
+			&st.UserID, 
+			&st.UserImageUrl, // New field scanned here
+			&st.VideoUrl, 
+			&st.VideoWidth, 
+			&st.VideoHeight, 
+			&st.VideoDuration, 
+			&st.CreatedAt, 
+			&st.RelateCount, 
+			&st.HasRelated,
+		)
 		if err != nil {
 			return nil, err
 		}
@@ -2992,7 +3011,6 @@ func (s *UserService) GetStories(ctx context.Context, clerkID string) ([]story.S
 	}
 	return stories, nil
 }
-
 
 func (s *UserService) AddStory(ctx context.Context, clerkID string, videoUrl string, videoWidth float64, videoHeight float64, videoDuration float64, taggedBuddiesIds []string) (bool, error) {
 	userID, err := s.getInternalID(ctx, clerkID)

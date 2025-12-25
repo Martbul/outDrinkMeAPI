@@ -1,13 +1,14 @@
 package story
 
 import (
-	"time"
 	"github.com/google/uuid"
+	"time"
 )
 
 type Story struct {
 	ID            uuid.UUID `json:"id"`
 	UserID        uuid.UUID `json:"user_id"`
+	UserImageUrl  string    `json:"user_image_url"`
 	VideoUrl      string    `json:"video_url"`
 	VideoWidth    uint      `json:"video_width"`
 	VideoHeight   uint      `json:"video_height"`
@@ -23,12 +24,12 @@ type CreateStoryRequest struct {
 	Width         int      `json:"width"`
 	Height        int      `json:"height"`
 	Duration      float64  `json:"duration"`
-	TaggedBuddies []string `json:"taggedBuddies"` 
+	TaggedBuddies []string `json:"taggedBuddies"`
 }
 
 type RelateStoryRequest struct {
 	StoryID string `json:"storyId"`
-	Action  string `json:"action"` 
+	Action  string `json:"action"`
 }
 
 type DeleteStoryRequest struct {
