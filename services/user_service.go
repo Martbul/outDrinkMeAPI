@@ -2912,73 +2912,76 @@ func (s *UserService) GetUserInventory(ctx context.Context, clerkID string) (map
 	return inventory, nil
 }
 
+type StorySegment struct {
+	ID            uuid.UUID `json:"id"`
+	VideoUrl      string    `json:"video_url"`
+	VideoWidth    uint      `json:"video_width"`
+	VideoHeight   uint      `json:"video_height"`
+	VideoDuration uint      `json:"video_duration"`
+	RelateCount   int       `json:"relate_count"`
+	HasRelated    bool      `json:"has_related"`
+	IsSeen        bool      `json:"is_seen"`
+	CreatedAt     time.Time `json:"created_at"`
+}
 
-// func (s *UserService) GetStories(ctx context.Context, clerkID string) ([]story.Story, error) {
-// 	log.Println("TESGIN THE GETSTORIES")
-// 	query := `
-// 		SELECT 
-// 			s.id, s.user_id, s.video_url, s.video_width, s.video_height, s.video_duration, s.created_at,
-// 			(SELECT COUNT(*) FROM relates WHERE story_id = s.id) as relate_count,
-// 			EXISTS(SELECT 1 FROM relates r WHERE r.story_id = s.id AND r.user_id = u.id) as has_related
-// 		FROM stories s
-// 		JOIN users u ON u.clerk_id = $1
-// 		WHERE s.expires_at > NOW()
-// 		AND s.visibility = 'friends'
-// 		AND (
-// 			s.user_id IN (SELECT friend_id FROM friendships WHERE user_id = u.id AND status = 'accepted')
-// 			OR s.user_id = u.id
-// 		)
-// 		ORDER BY s.created_at DESC`
+type UserStories struct {
+	UserID       uuid.UUID      `json:"user_id"`
+	Username     string         `json:"username"`
+	UserImageUrl string         `json:"user_image_url"`
+	AllSeen      bool           `json:"all_seen"`
+	Items        []StorySegment `json:"items"`
+}
 
-// 	rows, err := s.db.Query(ctx, query, clerkID)
-// 	if err != nil {
-// 		return nil, fmt.Errorf("failed to fetch feed: %w", err)
-// 	}
-// 	defer rows.Close()
-
-// 	var stories []story.Story
-// 	for rows.Next() {
-// 		var st story.Story
-// 		err := rows.Scan(
-// 			&st.ID, &st.UserID, &st.VideoUrl, &st.VideoWidth, &st.VideoHeight, 
-// 			&st.VideoDuration, &st.CreatedAt, &st.RelateCount, &st.HasRelated,
-// 		)
-// 		if err != nil {
-// 			return nil, err
-// 		}
-// 		stories = append(stories, st)
-// 	}
-// 	log.Println("STORIES")
-// 	log.Println(stories)
-
-// 	return stories, nil
-// }
-func (s *UserService) GetStories(ctx context.Context, clerkID string) ([]story.Story, error) {
+func (s *UserService) GetStories(ctx context.Context, clerkID string) ([]UserStories, error) {
+	// 1. We fetch the flat data in a CTE
+	// 2. We group by user and aggregate stories into a JSON array
 	query := `
-		SELECT 
-			s.id, 
-			s.user_id, 
-			author.username,           -- Get author name
-			author.image_url, 
-			s.video_url, 
-			s.video_width, 
-			s.video_height, 
-			s.video_duration, 
-			s.created_at,
-			(SELECT COUNT(*) FROM relates WHERE story_id = s.id) as relate_count,
-			EXISTS(SELECT 1 FROM relates r WHERE r.story_id = s.id AND r.user_id = viewer.id) as has_related,
-			(viewer.id = ANY(COALESCE(s.seen_by, '{}'))) as is_seen -- Check if viewer ID is in array
-		FROM stories s
-		JOIN users author ON author.id = s.user_id 
-		CROSS JOIN users viewer                   
-		WHERE viewer.clerk_id = $1
-		AND s.expires_at > NOW()
-		AND s.visibility = 'friends'
-		AND (
-			s.user_id = viewer.id 
-			OR s.user_id IN (SELECT friend_id FROM friendships WHERE user_id = viewer.id AND status = 'accepted')
+		WITH flat_stories AS (
+			SELECT 
+				s.id, 
+				s.user_id, 
+				author.username,
+				author.image_url, 
+				s.video_url, 
+				s.video_width, 
+				s.video_height, 
+				s.video_duration, 
+				s.created_at,
+				(SELECT COUNT(*) FROM relates WHERE story_id = s.id) as relate_count,
+				EXISTS(SELECT 1 FROM relates r WHERE r.story_id = s.id AND r.user_id = viewer.id) as has_related,
+				(viewer.id = ANY(COALESCE(s.seen_by, '{}'))) as is_seen
+			FROM stories s
+			JOIN users author ON author.id = s.user_id 
+			CROSS JOIN users viewer                   
+			WHERE viewer.clerk_id = $1
+			AND s.expires_at > NOW()
+			AND s.visibility = 'friends'
+			AND (
+				s.user_id = viewer.id 
+				OR s.user_id IN (SELECT friend_id FROM friendships WHERE user_id = viewer.id AND status = 'accepted')
+			)
 		)
-		ORDER BY s.created_at DESC`
+		SELECT 
+			user_id,
+			username,
+			image_url,
+			BOOL_AND(is_seen) as all_seen, -- True only if ALL stories are seen
+			json_agg(
+				json_build_object(
+					'id', id,
+					'video_url', video_url,
+					'video_width', video_width,
+					'video_height', video_height,
+					'video_duration', video_duration,
+					'relate_count', relate_count,
+					'has_related', has_related,
+					'is_seen', is_seen,
+					'created_at', created_at
+				) ORDER BY created_at ASC
+			) as items
+		FROM flat_stories
+		GROUP BY user_id, username, image_url
+		ORDER BY MAX(created_at) DESC`
 
 	rows, err := s.db.Query(ctx, query, clerkID)
 	if err != nil {
@@ -2986,30 +2989,19 @@ func (s *UserService) GetStories(ctx context.Context, clerkID string) ([]story.S
 	}
 	defer rows.Close()
 
-	var stories []story.Story
+	var result []UserStories
 	for rows.Next() {
-		var st story.Story
-		err := rows.Scan(
-			&st.ID, 
-			&st.UserID, 
-			&st.Username,     // Scan username
-			&st.UserImageUrl, 
-			&st.VideoUrl, 
-			&st.VideoWidth, 
-			&st.VideoHeight, 
-			&st.VideoDuration, 
-			&st.CreatedAt, 
-			&st.RelateCount, 
-			&st.HasRelated,
-			&st.IsSeen,       // Scan the boolean result
-		)
+		var u UserStories
+		// Use scanning with a pointer for the JSON items
+		err := rows.Scan(&u.UserID, &u.Username, &u.UserImageUrl, &u.AllSeen, &u.Items)
 		if err != nil {
 			return nil, err
 		}
-		stories = append(stories, st)
+		result = append(result, u)
 	}
-	return stories, nil
+	return result, nil
 }
+
 
 func (s *UserService) AddStory(ctx context.Context, clerkID string, videoUrl string, videoWidth float64, videoHeight float64, videoDuration float64, taggedBuddiesIds []string) (bool, error) {
 	userID, err := s.getInternalID(ctx, clerkID)
