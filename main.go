@@ -35,11 +35,14 @@ var (
 	gameManager         *services.DrinnkingGameManager
 )
 
+// init() handles Environment, Clerk, and Database Connection Setup
 func init() {
+	// 1. Load Env
 	if err := godotenv.Load(); err != nil {
-		log.Println("No .env file found")
+		log.Println("Note: .env file not found, using system env")
 	}
 
+	// 2. Clerk
 	clerkSecretKey := os.Getenv("CLERK_SECRET_KEY")
 	if clerkSecretKey == "" {
 		log.Fatal("CLERK_SECRET_KEY environment variable is not set")
@@ -47,6 +50,7 @@ func init() {
 	clerk.SetKey(clerkSecretKey)
 	log.Println("Clerk initialized successfully")
 
+	// 3. Database Config
 	dbURL := os.Getenv("DATABASE_URL")
 	if dbURL == "" {
 		log.Fatal("DATABASE_URL environment variable is not set")
@@ -60,54 +64,36 @@ func init() {
 		log.Fatal("Failed to parse database URL:", err)
 	}
 
-	// --- NEON OPTIMIZED SETTINGS ---
-
-	// 1. Keep connections alive for 4 minutes.
-	// Neon suspends compute after 5 minutes of inactivity.
-	// We want to keep the connection ready while the user is active,
-	// but let it close before Neon forces a disconnect.
+	// --- NEON OPTIMIZED POOL SETTINGS ---
+	// Keep connections alive for 4 minutes (Neon sleeps at 5m).
 	poolConfig.MaxConnIdleTime = 4 * time.Minute
-
-	// 2. Keep at least 1 connection open.
-	// This prevents the pool from dropping to 0 during short pauses,
-	// avoiding the expensive TCP handshake on every request.
+	// Keep at least 1 connection to avoid handshake lag.
 	poolConfig.MinConns = 1
-
-	// 3. Max connections allowed.
+	// Max connections for your compute size.
 	poolConfig.MaxConns = 15
-
-	// 4. Lifetime jitter to prevent mass reconnections.
+	// Jitter the lifetime.
 	poolConfig.MaxConnLifetime = 30 * time.Minute
-
-	// 5. Check connection health occasionally.
+	// Health check.
 	poolConfig.HealthCheckPeriod = 1 * time.Minute
 
+	// Create Pool
 	dbPool, err = pgxpool.NewWithConfig(ctx, poolConfig)
 	if err != nil {
 		log.Fatal("Failed to create connection pool:", err)
 	}
 
-	// NOTE: We REMOVED the blocking dbPool.Ping(ctx) here.
-	// This allows the server to start immediately even if Neon is sleeping.
-	// The ping is now handled in main() in a background goroutine.
+	// NOTE: We do NOT ping here. We let main() do it in the background
+	// so the server starts immediately.
+	log.Println("Database pool configured (Lazy connection)")
 
-	log.Println("Database pool created (Lazy connection initialized)")
-
+	// 4. Initialize Services (Except FCM, which loads in main)
 	notificationService = services.NewNotificationService(dbPool)
 	userService = services.NewUserService(dbPool, notificationService)
 	storeService = services.NewStoreService(dbPool)
 	sideQuestService = services.NewSideQuestService(dbPool, notificationService)
 	photoDumpService = services.NewFuncService(dbPool)
-	fcmService, err = notification.NewFCMService("./serviceAccountKey.json")
 	gameManager = services.NewDrinnkingGameManager()
-
-	if err != nil {
-		log.Printf("Warning: Could not initialize FCM: %v", err)
-	} else {
-		notificationService.SetPushProvider(fcmService)
-		log.Println("FCM Push Provider initialized successfully")
-	}
-
+	
 	middleware.InitPrometheus()
 }
 
@@ -117,6 +103,20 @@ func main() {
 		dbPool.Close()
 	}()
 
+	// 1. Initialize FCM in Background (As requested, like working main.go)
+	// This prevents file I/O from blocking the server startup.
+	go func() {
+		fcm, err := notification.NewFCMService("./serviceAccountKey.json")
+		if err != nil {
+			log.Printf("Warning: Could not initialize FCM: %v", err)
+			return
+		}
+		// Update the existing service with the new provider
+		notificationService.SetPushProvider(fcm)
+		log.Println("FCM Push Provider initialized in background")
+	}()
+
+	// 2. Setup Handlers
 	userHandler := handlers.NewUserHandler(userService)
 	docHandler := handlers.NewDocHandler(docService)
 	storeHandler := handlers.NewStoreHandler(storeService)
@@ -252,16 +252,17 @@ func main() {
 	if port == "" {
 		port = "3333"
 	}
+	port = ":" + port
 
-	server := &http.Server{
-		Addr:         ":" + port,
+	server := http.Server{
+		Addr:         port,
 		Handler:      corsHandler(r),
 		ReadTimeout:  10 * time.Second,
 		WriteTimeout: 15 * time.Second,
 		IdleTimeout:  120 * time.Second,
 	}
 
-	// 1. Start the Server immediately (Do not wait for DB)
+	// 3. Start Server Immediately (Non-blocking)
 	go func() {
 		log.Printf("Starting server on port %s", port)
 		if err := server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
@@ -269,14 +270,10 @@ func main() {
 		}
 	}()
 
-	// 2. Background DB Warmer
-	// This runs in parallel. If Neon is sleeping, this wakes it up.
-	// The HTTP server is already running, so users see the app immediately.
+	// 4. Background DB Warmer (Parallel)
 	go func() {
-		// Give it a longer timeout for the initial wake up (e.g., 15s)
 		ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 		defer cancel()
-
 		log.Println("Background: Pinging NeonDB to wake it up...")
 		if err := dbPool.Ping(ctx); err != nil {
 			log.Printf("Warning: NeonDB wake-up ping failed (First request might be slow): %v", err)
@@ -287,14 +284,16 @@ func main() {
 
 	sigChan := make(chan os.Signal, 1)
 	signal.Notify(sigChan, os.Interrupt)
-	<-sigChan
 
-	log.Println("Shutting down gracefully...")
-	shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 20*time.Second)
+	sig := <-sigChan
+	log.Println("Got signal:", sig)
+
+	shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer shutdownCancel()
 
 	if err := server.Shutdown(shutdownCtx); err != nil {
 		log.Printf("Server shutdown error: %v", err)
 	}
+
 	log.Println("Server shutdown complete")
 }
