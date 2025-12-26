@@ -3029,7 +3029,8 @@ func (s *UserService) AddStory(ctx context.Context, clerkID string, videoUrl str
 	return true, nil
 }
 
-func (s *UserService) RelateStory(ctx context.Context, clerkID string, storyID string) (bool, error) {
+// RelateStory toggles a reaction (like, love, etc.) based on the 'action' string
+func (s *UserService) RelateStory(ctx context.Context, clerkID, storyID, action string) (bool, error) {
 	userID, err := s.getInternalID(ctx, clerkID)
 	if err != nil {
 		return false, err
@@ -3041,15 +3042,23 @@ func (s *UserService) RelateStory(ctx context.Context, clerkID string, storyID s
 	}
 	defer tx.Rollback(ctx)
 
-	// Attempt to delete (un-relate)
-	cmd, err := tx.Exec(ctx, `DELETE FROM relates WHERE story_id = $1 AND user_id = $2`, storyID, userID)
+	// Attempt to delete the specific reaction type for this user
+	cmd, err := tx.Exec(ctx, `
+		DELETE FROM relates 
+		WHERE story_id = $1 AND user_id = $2 AND relate_type = $3`, 
+		storyID, userID, action,
+	)
 	if err != nil {
 		return false, err
 	}
 
-	// If nothing deleted, then Insert (relate)
+	// If nothing was deleted, it means the user hasn't reacted with this type yet -> Insert it
 	if cmd.RowsAffected() == 0 {
-		_, err = tx.Exec(ctx, `INSERT INTO relates (story_id, user_id) VALUES ($1, $2)`, storyID, userID)
+		_, err = tx.Exec(ctx, `
+			INSERT INTO relates (story_id, user_id, relate_type) 
+			VALUES ($1, $2, $3)`, 
+			storyID, userID, action,
+		)
 		if err != nil {
 			return false, err
 		}
@@ -3057,6 +3066,30 @@ func (s *UserService) RelateStory(ctx context.Context, clerkID string, storyID s
 
 	err = tx.Commit(ctx)
 	return true, err
+}
+
+// MarkStoryAsSeen adds the userID to the seen_by array in the stories table
+func (s *UserService) MarkStoryAsSeen(ctx context.Context, clerkID, storyID string) (bool, error) {
+	userID, err := s.getInternalID(ctx, clerkID)
+	if err != nil {
+		return false, err
+	}
+
+	// We use array_append combined with a check to ensure we don't add the same user twice.
+	// The "NOT ($1 = ANY(seen_by))" check prevents duplicates in the array.
+	_, err = s.db.Exec(ctx, `
+		UPDATE stories 
+		SET seen_by = array_append(seen_by, $1) 
+		WHERE id = $2 
+		AND NOT ($1 = ANY(COALESCE(seen_by, '{}')))`, 
+		userID, storyID,
+	)
+	
+	if err != nil {
+		return false, err
+	}
+
+	return true, nil
 }
 
 func (s *UserService) GetAllUserStories(ctx context.Context, clerkID string) ([]story.Story, error) {

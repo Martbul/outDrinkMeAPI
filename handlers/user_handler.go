@@ -1142,13 +1142,44 @@ func (h *UserHandler) RelateStory(w http.ResponseWriter, r *http.Request) {
 
 	var req struct {
 		StoryId string `json:"story_id"`
+		Action string `json:"action"`
+
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		respondWithError(w, http.StatusBadRequest, "Invalid payload")
 		return
 	}
 
-	success, err := h.userService.RelateStory(ctx, clerkID, req.StoryId)
+	success, err := h.userService.RelateStory(ctx, clerkID, req.StoryId, req.Action)
+
+	if err != nil {
+		respondWithError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+
+	respondWithJSON(w, http.StatusOK, success)
+}
+
+func (h *UserHandler) MarkStoryAsSeen(w http.ResponseWriter, r *http.Request) {
+	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
+	defer cancel()
+
+	clerkID, ok := middleware.GetClerkID(ctx)
+	if !ok {
+		respondWithError(w, http.StatusInternalServerError, "Error while adding drinking")
+		return
+	}
+
+	var req struct {
+		StoryId string `json:"story_id"`
+	}
+
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		respondWithError(w, http.StatusBadRequest, "Invalid payload")
+		return
+	}
+
+	success, err := h.userService.MarkStoryAsSeen(ctx, clerkID, req.StoryId)
 
 	if err != nil {
 		respondWithError(w, http.StatusInternalServerError, err.Error())

@@ -464,6 +464,7 @@ func main() {
 	protected.HandleFunc("/user/stories", userHandler.AddStory).Methods("POST")
 	protected.HandleFunc("/user/stories", userHandler.DeleteStory).Methods("DELETE")
 	protected.HandleFunc("/user/stories/relate", userHandler.RelateStory).Methods("POST")
+	protected.HandleFunc("/user/stories/seen", userHandler.MarkStoryAsSeen).Methods("POST")
 	protected.HandleFunc("/user/your-stories", userHandler.GetAllUserStories).Methods("GET")
 
 	protected.HandleFunc("/min-version", docHandler.GetAppMinVersion).Methods("GET")
