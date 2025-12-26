@@ -2953,32 +2953,30 @@ func (s *UserService) GetUserInventory(ctx context.Context, clerkID string) (map
 
 // 	return stories, nil
 // }
-
-
 func (s *UserService) GetStories(ctx context.Context, clerkID string) ([]story.Story, error) {
-	// We alias 'author' (the person who made the story) 
-	// and 'viewer' (the person currently logged in)
 	query := `
 		SELECT 
 			s.id, 
 			s.user_id, 
-			author.image_url, -- Get the author's image
+			author.username,           -- Get author name
+			author.image_url, 
 			s.video_url, 
 			s.video_width, 
 			s.video_height, 
 			s.video_duration, 
 			s.created_at,
 			(SELECT COUNT(*) FROM relates WHERE story_id = s.id) as relate_count,
-			EXISTS(SELECT 1 FROM relates r WHERE r.story_id = s.id AND r.user_id = viewer.id) as has_related
+			EXISTS(SELECT 1 FROM relates r WHERE r.story_id = s.id AND r.user_id = viewer.id) as has_related,
+			(viewer.id = ANY(COALESCE(s.seen_by, '{}'))) as is_seen -- Check if viewer ID is in array
 		FROM stories s
-		JOIN users author ON author.id = s.user_id -- Join to get author details
-		CROSS JOIN users viewer                   -- Identify the requester
+		JOIN users author ON author.id = s.user_id 
+		CROSS JOIN users viewer                   
 		WHERE viewer.clerk_id = $1
 		AND s.expires_at > NOW()
 		AND s.visibility = 'friends'
 		AND (
-			s.user_id = viewer.id -- Own stories
-			OR s.user_id IN (SELECT friend_id FROM friendships WHERE user_id = viewer.id AND status = 'accepted') -- Friends' stories
+			s.user_id = viewer.id 
+			OR s.user_id IN (SELECT friend_id FROM friendships WHERE user_id = viewer.id AND status = 'accepted')
 		)
 		ORDER BY s.created_at DESC`
 
@@ -2991,11 +2989,11 @@ func (s *UserService) GetStories(ctx context.Context, clerkID string) ([]story.S
 	var stories []story.Story
 	for rows.Next() {
 		var st story.Story
-		// Ensure st.UserImageUrl exists in your story.Story struct
 		err := rows.Scan(
 			&st.ID, 
 			&st.UserID, 
-			&st.UserImageUrl, // New field scanned here
+			&st.Username,     // Scan username
+			&st.UserImageUrl, 
 			&st.VideoUrl, 
 			&st.VideoWidth, 
 			&st.VideoHeight, 
@@ -3003,6 +3001,7 @@ func (s *UserService) GetStories(ctx context.Context, clerkID string) ([]story.S
 			&st.CreatedAt, 
 			&st.RelateCount, 
 			&st.HasRelated,
+			&st.IsSeen,       // Scan the boolean result
 		)
 		if err != nil {
 			return nil, err
