@@ -55,60 +55,43 @@ func init() {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 
-	// poolConfig, err := pgxpool.ParseConfig(dbURL)
-	// if err != nil {
-	// 	log.Fatal("Failed to parse database URL:", err)
-	// }
-
-	// poolConfig.MaxConns = 25
-	// poolConfig.MinConns = 5
-	// poolConfig.MaxConnLifetime = time.Hour
-	// poolConfig.MaxConnIdleTime = 30 * time.Minute
-	// poolConfig.HealthCheckPeriod = time.Minute
-
-	// dbPool, err = pgxpool.NewWithConfig(ctx, poolConfig)
-	// In your init() function:
-
 	poolConfig, err := pgxpool.ParseConfig(dbURL)
 	if err != nil {
 		log.Fatal("Failed to parse database URL:", err)
 	}
 
-	// 1. Keep connections alive longer than 15s.
-	// Set this to 4-5 minutes. Neon usually sleeps after 5 minutes of inactivity.
-	// This ensures that while a user is browsing, the connection stays fast.
+	// --- NEON OPTIMIZED SETTINGS ---
+
+	// 1. Keep connections alive for 4 minutes.
+	// Neon suspends compute after 5 minutes of inactivity.
+	// We want to keep the connection ready while the user is active,
+	// but let it close before Neon forces a disconnect.
 	poolConfig.MaxConnIdleTime = 4 * time.Minute
 
-	// 2. Allow at least 1 connection to stay open if traffic is frequent.
-	// Setting this to 1 prevents the pool from hitting 0 and forcing a full TCP handshake
-	// on every single request.
+	// 2. Keep at least 1 connection open.
+	// This prevents the pool from dropping to 0 during short pauses,
+	// avoiding the expensive TCP handshake on every request.
 	poolConfig.MinConns = 1
 
-	// 3. MaxConns depends on your Neon compute size, but 10-15 is fine for small apps.
+	// 3. Max connections allowed.
 	poolConfig.MaxConns = 15
 
-	// 4. Jitter the lifetime so all connections don't close at once.
+	// 4. Lifetime jitter to prevent mass reconnections.
 	poolConfig.MaxConnLifetime = 30 * time.Minute
 
-	// 5. Health check
+	// 5. Check connection health occasionally.
 	poolConfig.HealthCheckPeriod = 1 * time.Minute
-
-	// CRITICAL FOR NEON + PGX SPEED:
-	// If you are using the Neon Connection Pooler (port 6543 usually),
-	// pgx tries to use "Prepared Statements" which slows things down
-	// or causes errors on serverless pools.
-	// Force Simple Protocol to skip the "Prepare" roundtrip.
-	// (See "Step 2" below on how to add this to your URL if this config doesn't help alone)
 
 	dbPool, err = pgxpool.NewWithConfig(ctx, poolConfig)
 	if err != nil {
 		log.Fatal("Failed to create connection pool:", err)
 	}
-	if err := dbPool.Ping(ctx); err != nil {
-		log.Fatal("Failed to ping database:", err)
-	}
 
-	log.Println("Successfully connected to NeonDB")
+	// NOTE: We REMOVED the blocking dbPool.Ping(ctx) here.
+	// This allows the server to start immediately even if Neon is sleeping.
+	// The ping is now handled in main() in a background goroutine.
+
+	log.Println("Database pool created (Lazy connection initialized)")
 
 	notificationService = services.NewNotificationService(dbPool)
 	userService = services.NewUserService(dbPool, notificationService)
@@ -254,7 +237,7 @@ func main() {
 	protected.HandleFunc("/func/data/{id}", funcHandler.GetSessionData).Methods("GET")
 	protected.HandleFunc("/func/upload", funcHandler.AddImages).Methods("POST")
 	protected.HandleFunc("/func/leave", funcHandler.LeaveFunction).Methods("POST")
-
+	protected.HandleFunc("/func/delete", funcHandler.DeleteImages).Methods("DELETE")
 	protected.HandleFunc("/drinking-games/create", drinkingGameHandler.CreateDrinkingGame).Methods("POST")
 
 	corsHandler := gorilllaHandlers.CORS(
@@ -269,16 +252,16 @@ func main() {
 	if port == "" {
 		port = "3333"
 	}
-	port = ":" + port
 
-	server := http.Server{
-		Addr:         port,
+	server := &http.Server{
+		Addr:         ":" + port,
 		Handler:      corsHandler(r),
-		ReadTimeout:  5 * time.Second,
-		WriteTimeout: 10 * time.Second,
+		ReadTimeout:  10 * time.Second,
+		WriteTimeout: 15 * time.Second,
 		IdleTimeout:  120 * time.Second,
 	}
 
+	// 1. Start the Server immediately (Do not wait for DB)
 	go func() {
 		log.Printf("Starting server on port %s", port)
 		if err := server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
@@ -286,290 +269,32 @@ func main() {
 		}
 	}()
 
+	// 2. Background DB Warmer
+	// This runs in parallel. If Neon is sleeping, this wakes it up.
+	// The HTTP server is already running, so users see the app immediately.
+	go func() {
+		// Give it a longer timeout for the initial wake up (e.g., 15s)
+		ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+		defer cancel()
+
+		log.Println("Background: Pinging NeonDB to wake it up...")
+		if err := dbPool.Ping(ctx); err != nil {
+			log.Printf("Warning: NeonDB wake-up ping failed (First request might be slow): %v", err)
+		} else {
+			log.Println("Success: NeonDB is awake and ready")
+		}
+	}()
+
 	sigChan := make(chan os.Signal, 1)
 	signal.Notify(sigChan, os.Interrupt)
+	<-sigChan
 
-	sig := <-sigChan
-	log.Println("Got signal:", sig)
-
-	shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 30*time.Second)
+	log.Println("Shutting down gracefully...")
+	shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 20*time.Second)
 	defer shutdownCancel()
 
 	if err := server.Shutdown(shutdownCtx); err != nil {
 		log.Printf("Server shutdown error: %v", err)
 	}
-
 	log.Println("Server shutdown complete")
 }
-
-// package main
-
-// import (
-// 	"context"
-// 	"log"
-// 	"net/http"
-// 	"os"
-// 	"os/signal"
-// 	"time"
-
-// 	clerk "github.com/clerk/clerk-sdk-go/v2"
-// 	gorilllaHandlers "github.com/gorilla/handlers"
-// 	"github.com/gorilla/mux"
-// 	"github.com/jackc/pgx/v5/pgxpool"
-// 	"github.com/joho/godotenv"
-// 	"github.com/prometheus/client_golang/prometheus/promhttp"
-
-// 	"outDrinkMeAPI/handlers"
-// 	"outDrinkMeAPI/internal/notification"
-// 	"outDrinkMeAPI/middleware"
-// 	"outDrinkMeAPI/services"
-
-// 	_ "net/http/pprof"
-// )
-
-// var (
-// 	dbPool              *pgxpool.Pool
-// 	userService         *services.UserService
-// 	docService          *services.DocService
-// 	storeService        *services.StoreService
-// 	sideQuestService    *services.SideQuestService
-// 	notificationService *services.NotificationService
-// 	fcmService          *notification.FCMService
-// 	photoDumpService    *services.FuncService
-// 	gameManager         *services.DrinnkingGameManager
-// )
-
-// func main() {
-// 	// 1. Load Environment (Fast)
-// 	if err := godotenv.Load(); err != nil {
-// 		log.Println("Note: .env file not found, using system env")
-// 	}
-
-// 	// 2. Clerk Configuration (Fast)
-// 	clerkSecretKey := os.Getenv("CLERK_SECRET_KEY")
-// 	if clerkSecretKey == "" {
-// 		log.Fatal("CLERK_SECRET_KEY environment variable is not set")
-// 	}
-// 	clerk.SetKey(clerkSecretKey)
-
-// 	// 3. Database Pool Configuration (Fast - does not connect yet)
-// 	dbURL := os.Getenv("DATABASE_URL")
-// 	if dbURL == "" {
-// 		log.Fatal("DATABASE_URL environment variable is not set")
-// 	}
-
-// 	poolConfig, err := pgxpool.ParseConfig(dbURL)
-// 	if err != nil {
-// 		log.Fatal("Failed to parse database URL:", err)
-// 	}
-
-// 	// Optimized for Cold Starts / Serverless
-// 	poolConfig.MinConns = 0 // Don't wait for connections to open to start
-// 	poolConfig.MaxConns = 15
-// 	poolConfig.MaxConnIdleTime = 5 * time.Minute // Keep connections alive longer
-// 	poolConfig.MaxConnLifetime = 30 * time.Minute
-// 	poolConfig.HealthCheckPeriod = 1 * time.Minute
-
-// 	dbPool, err = pgxpool.NewWithConfig(context.Background(), poolConfig)
-// 	if err != nil {
-// 		log.Fatal("Failed to create connection pool:", err)
-// 	}
-// 	defer dbPool.Close()
-
-// 	// 4. Initialize Services
-// 	notificationService = services.NewNotificationService(dbPool)
-// 	userService = services.NewUserService(dbPool, notificationService)
-// 	storeService = services.NewStoreService(dbPool)
-// 	sideQuestService = services.NewSideQuestService(dbPool, notificationService)
-// 	photoDumpService = services.NewFuncService(dbPool)
-// 	gameManager = services.NewDrinnkingGameManager()
-
-// 	// Start FCM in background so disk I/O doesn't block startup
-// 	go func() {
-// 		fcm, err := notification.NewFCMService("./serviceAccountKey.json")
-// 		if err != nil {
-// 			log.Printf("Warning: Could not initialize FCM: %v", err)
-// 			return
-// 		}
-// 		notificationService.SetPushProvider(fcm)
-// 		log.Println("FCM Push Provider initialized in background")
-// 	}()
-
-// 	middleware.InitPrometheus()
-
-// 	// 5. Setup Router and Handlers
-// 	userHandler := handlers.NewUserHandler(userService)
-// 	docHandler := handlers.NewDocHandler(docService)
-// 	storeHandler := handlers.NewStoreHandler(storeService)
-// 	sideQuestHandler := handlers.NewSideQuestHandler(sideQuestService)
-// 	notificationHandler := handlers.NewNotificationHandler(notificationService)
-// 	webhookHandler := handlers.NewWebhookHandler(userService)
-// 	funcHandler := handlers.NewFuncHandler(photoDumpService)
-// 	drinkingGameHandler := handlers.NewDrinkingGamesHandler(gameManager, userService)
-
-// 	r := mux.NewRouter()
-
-// 	// WebSocket and Middleware setup
-// 	r.HandleFunc("/api/v1/drinking-games/ws/{sessionID}", drinkingGameHandler.JoinDrinkingGame)
-// 	standardRouter := r.PathPrefix("/").Subrouter()
-// 	go middleware.CleanupVisitors()
-
-// 	standardRouter.Use(middleware.RateLimitMiddleware)
-// 	standardRouter.Use(middleware.MonitorMiddleware)
-
-// 	// Standard endpoints
-// 	standardRouter.Handle("/metrics", middleware.BasicAuthMiddleware(promhttp.Handler()))
-// 	standardRouter.PathPrefix("/debug/pprof/").Handler(middleware.PprofSecurityMiddleware(http.DefaultServeMux))
-
-// 	assetsDir := "./assets"
-// 	standardRouter.PathPrefix("/assets/").Handler(http.StripPrefix("/assets/", http.FileServer(http.Dir(assetsDir))))
-
-// 	standardRouter.HandleFunc("/app-ads.txt", func(w http.ResponseWriter, r *http.Request) {
-// 		w.Header().Set("Content-Type", "text/plain")
-// 		w.Write([]byte("google.com, pub-1167503921437683, DIRECT, f08c47fec0942fa0"))
-// 	})
-
-// 	standardRouter.HandleFunc("/health", func(w http.ResponseWriter, r *http.Request) {
-// 		w.Header().Set("Content-Type", "application/json")
-// 		w.WriteHeader(http.StatusOK)
-// 		w.Write([]byte(`{"status": "healthy"}`))
-// 	}).Methods("GET")
-
-// 	standardRouter.HandleFunc("/webhooks/clerk", webhookHandler.HandleClerkWebhook).Methods("POST")
-
-// 	// API Groups
-// 	api := standardRouter.PathPrefix("/api/v1").Subrouter()
-// 	api.HandleFunc("/drinking-games/public", drinkingGameHandler.GetPublicDrinkingGames).Methods("GET")
-// 	api.HandleFunc("/privacy-policy", docHandler.ServePrivacyPolicy).Methods("GET")
-// 	api.HandleFunc("/terms-of-services", docHandler.ServeTermsOfServices).Methods("GET")
-// 	api.HandleFunc("/delete-account-webpage", userHandler.DeleteAccountPage).Methods("GET")
-// 	api.HandleFunc("/delete-account-details-webpage", userHandler.UpdateAccountPage).Methods("GET")
-
-// 	protected := api.PathPrefix("").Subrouter()
-// 	protected.Use(middleware.ClerkAuthMiddleware)
-
-// 	// User Routes
-// 	protected.HandleFunc("/user", userHandler.GetProfile).Methods("GET")
-// 	protected.HandleFunc("/user/friend-discovery/display-profile", userHandler.FriendDiscoveryDisplayProfile).Methods("GET")
-// 	protected.HandleFunc("/user/update-profile", userHandler.UpdateProfile).Methods("PUT")
-// 	protected.HandleFunc("/user/delete-account", userHandler.DeleteAccount).Methods("DELETE")
-// 	protected.HandleFunc("/user/leaderboards", userHandler.GetLeaderboards).Methods("GET")
-// 	protected.HandleFunc("/user/friends", userHandler.GetFriends).Methods("GET")
-// 	protected.HandleFunc("/user/your-mix", userHandler.GetYourMix).Methods("GET")
-// 	protected.HandleFunc("/user/global-mix", userHandler.GetGlobalMix).Methods("GET")
-// 	protected.HandleFunc("/user/map-friend-posts", userHandler.GetUserFriendsPosts).Methods("GET")
-// 	protected.HandleFunc("/user/mix-timeline", userHandler.GetMixTimeline).Methods("GET")
-// 	protected.HandleFunc("/user/friends", userHandler.AddFriend).Methods("POST")
-// 	protected.HandleFunc("/user/friends", userHandler.RemoveFriend).Methods("DELETE")
-// 	protected.HandleFunc("/user/discovery", userHandler.GetDiscovery).Methods("GET")
-// 	protected.HandleFunc("/user/achievements", userHandler.GetAchievements).Methods("GET")
-// 	protected.HandleFunc("/user/drink", userHandler.AddDrinking).Methods("POST")
-// 	protected.HandleFunc("/user/memory-wall/{postId}", userHandler.GetMemoryWall).Methods("GET")
-// 	protected.HandleFunc("/user/memory-wall", userHandler.AddMemoryToWall).Methods("POST")
-// 	protected.HandleFunc("/user/drink", userHandler.RemoveDrinking).Methods("DELETE")
-// 	protected.HandleFunc("/user/drunk-thought", userHandler.GetDrunkThought).Methods("GET")
-// 	protected.HandleFunc("/user/drunk-thought", userHandler.AddDrunkThought).Methods("POST")
-// 	protected.HandleFunc("/user/stats", userHandler.GetUserStats).Methods("GET")
-// 	protected.HandleFunc("/user/stats/weekly", userHandler.GetWeeklyDaysDrank).Methods("GET")
-// 	protected.HandleFunc("/user/stats/monthly", userHandler.GetMonthlyDaysDrank).Methods("GET")
-// 	protected.HandleFunc("/user/stats/yearly", userHandler.GetYearlyDaysDrank).Methods("GET")
-// 	protected.HandleFunc("/user/stats/all-time", userHandler.GetAllTimeDaysDrank).Methods("GET")
-// 	protected.HandleFunc("/user/calendar", userHandler.GetCalendar).Methods("GET")
-// 	protected.HandleFunc("/user/search", userHandler.SearchUsers).Methods("GET")
-// 	protected.HandleFunc("/user/search-db-alcohol", userHandler.SearchDbAlcohol).Methods("GET")
-// 	protected.HandleFunc("/user/alcohol-collection", userHandler.GetUserAlcoholCollection).Methods("GET")
-// 	protected.HandleFunc("/user/alcohol-collection", userHandler.RemoveAlcoholCollectionItem).Methods("DELETE")
-// 	protected.HandleFunc("/user/mix-videos", userHandler.GetMixVideoFeed).Methods("GET")
-// 	protected.HandleFunc("/user/mix-videos", userHandler.AddMixVideo).Methods("POST")
-// 	protected.HandleFunc("/user/mix-video-chips", userHandler.AddChipsToVideo).Methods("POST")
-// 	protected.HandleFunc("/user/drunk-friend-thoughts", userHandler.GetDrunkFriendThoughts).Methods("GET")
-// 	protected.HandleFunc("/user/inventory", userHandler.GetUserInventory).Methods("GET")
-// 	protected.HandleFunc("/user/alcoholisum_chart", userHandler.GetAlcoholismChart).Methods("GET")
-// 	protected.HandleFunc("/user/feedback", userHandler.AddUserFeedback).Methods("POST")
-// 	protected.HandleFunc("/user/stories", userHandler.GetStories).Methods("GET")
-// 	protected.HandleFunc("/user/stories", userHandler.AddStory).Methods("POST")
-// 	protected.HandleFunc("/user/stories", userHandler.DeleteStory).Methods("DELETE")
-// 	protected.HandleFunc("/user/stories/relate", userHandler.RelateStory).Methods("POST")
-// 	protected.HandleFunc("/user/stories/seen", userHandler.MarkStoryAsSeen).Methods("POST")
-// 	protected.HandleFunc("/user/your-stories", userHandler.GetAllUserStories).Methods("GET")
-
-// 	protected.HandleFunc("/min-version", docHandler.GetAppMinVersion).Methods("GET")
-
-// 	protected.HandleFunc("/store", storeHandler.GetStore).Methods("GET")
-// 	protected.HandleFunc("/store/purchase/item", storeHandler.PurchaseStoreItem).Methods("POST")
-
-// 	protected.HandleFunc("/notifications", notificationHandler.GetNotifications).Methods("GET")
-// 	protected.HandleFunc("/notifications/unread-count", notificationHandler.GetUnreadCount).Methods("GET")
-// 	protected.HandleFunc("/notifications/{id}/read", notificationHandler.MarkAsRead).Methods("PUT")
-// 	protected.HandleFunc("/notifications/read-all", notificationHandler.MarkAllAsRead).Methods("PUT")
-// 	protected.HandleFunc("/notifications/{id}", notificationHandler.DeleteNotification).Methods("DELETE")
-// 	protected.HandleFunc("/notifications/preferences", notificationHandler.GetPreferences).Methods("GET")
-// 	protected.HandleFunc("/notifications/preferences", notificationHandler.UpdatePreferences).Methods("PUT")
-// 	protected.HandleFunc("/notifications/register-device", notificationHandler.RegisterDevice).Methods("POST")
-// 	protected.HandleFunc("/notifications/test", notificationHandler.SendTestNotification).Methods("POST")
-
-// 	protected.HandleFunc("/sidequest/board", sideQuestHandler.GetSideQuestBoard).Methods("GET")
-// 	protected.HandleFunc("/sidequest", sideQuestHandler.PostNewSideQuest).Methods("POST")
-// 	protected.HandleFunc("/func/create", funcHandler.CreateFunction).Methods("GET")
-// 	protected.HandleFunc("/func/active", funcHandler.GetUserActiveSession).Methods("GET")
-// 	protected.HandleFunc("/func/join", funcHandler.JoinViaQrCode).Methods("POST")
-// 	protected.HandleFunc("/func/data/{id}", funcHandler.GetSessionData).Methods("GET")
-// 	protected.HandleFunc("/func/upload", funcHandler.AddImages).Methods("POST")
-// 	protected.HandleFunc("/func/leave", funcHandler.LeaveFunction).Methods("POST")
-// 	protected.HandleFunc("/func/delete", funcHandler.DeleteImages).Methods("DELETE")
-// 	protected.HandleFunc("/drinking-games/create", drinkingGameHandler.CreateDrinkingGame).Methods("POST")
-
-// 	corsHandler := gorilllaHandlers.CORS(
-// 		gorilllaHandlers.AllowedOrigins([]string{"*"}),
-// 		gorilllaHandlers.AllowedMethods([]string{"GET", "POST", "PUT", "DELETE", "OPTIONS"}),
-// 		gorilllaHandlers.AllowedHeaders([]string{"Content-Type", "Authorization", "X-Pprof-Secret"}),
-// 		gorilllaHandlers.ExposedHeaders([]string{"Content-Length"}),
-// 		gorilllaHandlers.AllowCredentials(),
-// 	)
-
-// 	port := os.Getenv("PORT")
-// 	if port == "" {
-// 		port = "3333"
-// 	}
-
-// 	server := &http.Server{
-// 		Addr:         ":" + port,
-// 		Handler:      corsHandler(r),
-// 		ReadTimeout:  10 * time.Second,
-// 		WriteTimeout: 15 * time.Second,
-// 		IdleTimeout:  120 * time.Second,
-// 	}
-
-// 	// 7. Start Server (Non-blocking)
-// 	go func() {
-// 		log.Printf("Starting server on port %s", port)
-// 		if err := server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
-// 			log.Fatal("Error starting server:", err)
-// 		}
-// 	}()
-
-// 	// 8. Background Warmup (Optional but recommended for Neon)
-// 	go func() {
-// 		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-// 		defer cancel()
-// 		if err := dbPool.Ping(ctx); err != nil {
-// 			log.Printf("Lazy DB Connect: Neon is waking up... %v", err)
-// 		} else {
-// 			log.Println("Database connection established")
-// 		}
-// 	}()
-
-// 	// 9. Graceful Shutdown
-// 	sigChan := make(chan os.Signal, 1)
-// 	signal.Notify(sigChan, os.Interrupt)
-// 	<-sigChan
-
-// 	log.Println("Shutting down gracefully...")
-// 	shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 20*time.Second)
-// 	defer shutdownCancel()
-
-// 	if err := server.Shutdown(shutdownCtx); err != nil {
-// 		log.Printf("Server shutdown error: %v", err)
-// 	}
-// 	log.Println("Server shutdown complete")
-// }
