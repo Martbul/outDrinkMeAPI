@@ -2933,8 +2933,6 @@ type UserStories struct {
 }
 
 func (s *UserService) GetStories(ctx context.Context, clerkID string) ([]UserStories, error) {
-	// 1. We fetch the flat data in a CTE
-	// 2. We group by user and aggregate stories into a JSON array
 	query := `
 		WITH flat_stories AS (
 			SELECT 
@@ -2992,7 +2990,6 @@ func (s *UserService) GetStories(ctx context.Context, clerkID string) ([]UserSto
 	var result []UserStories
 	for rows.Next() {
 		var u UserStories
-		// Use scanning with a pointer for the JSON items
 		err := rows.Scan(&u.UserID, &u.Username, &u.UserImageUrl, &u.AllSeen, &u.Items)
 		if err != nil {
 			return nil, err
@@ -3020,7 +3017,6 @@ func (s *UserService) AddStory(ctx context.Context, clerkID string, videoUrl str
 	return true, nil
 }
 
-// RelateStory toggles a reaction (like, love, etc.) based on the 'action' string
 func (s *UserService) RelateStory(ctx context.Context, clerkID, storyID, action string) (bool, error) {
 	userID, err := s.getInternalID(ctx, clerkID)
 	if err != nil {
