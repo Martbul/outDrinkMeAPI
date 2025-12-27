@@ -3107,97 +3107,34 @@ func (s *UserService) GetAllUserStories(ctx context.Context, clerkID string) ([]
 	return stories, nil
 }
 
+
+
 func (s *UserService) DeleteStory(ctx context.Context, clerkID string, storyID string) (bool, error) {
+	// 1. Get the internal User UUID
+	// Since getInternalID returns a uuid.UUID, this part is safe.
 	userID, err := s.getInternalID(ctx, clerkID)
 	if err != nil {
 		return false, err
 	}
 
+	// 2. FIX: Parse the storyID string into a UUID
+	// This catches the empty string case ("") before it hits the database.
+	storyUUID, err := uuid.Parse(storyID)
+	if err != nil {
+		return false, fmt.Errorf("invalid story ID: %w", err)
+	}
+
+	// 3. Execute Query using both UUIDs
 	query := `DELETE FROM stories WHERE id = $1 AND user_id = $2`
-	cmd, err := s.db.Exec(ctx, query, storyID, userID)
+	
+	// Pass storyUUID (type uuid.UUID) instead of storyID (type string)
+	cmd, err := s.db.Exec(ctx, query, storyUUID, userID)
 	if err != nil {
 		return false, err
 	}
+	
 	return cmd.RowsAffected() > 0, nil
 }
-
-// // RelateStory: Toggles a "like" on a story (If exists delete, else insert)
-// func (s *UserService) RelateStory(ctx context.Context, clerkID string, storyID string) (bool, error) {
-// 	// Toggle logic: try to delete, if nothing deleted, insert.
-// 	tx, err := s.db.Begin(ctx)
-// 	if err != nil {
-// 		return false, err
-// 	}
-// 	defer tx.Rollback(ctx)
-
-// 	deleteQuery := `
-// 		DELETE FROM relates 
-// 		WHERE story_id = $1 
-// 		AND user_id = (SELECT id FROM users WHERE clerk_id = $2)`
-	
-// 	cmd, err := tx.Exec(ctx, deleteQuery, storyID, clerkID)
-// 	if err != nil {
-// 		return false, err
-// 	}
-
-// 	if cmd.RowsAffected() == 0 {
-// 		insertQuery := `
-// 			INSERT INTO relates (story_id, user_id) 
-// 			VALUES ($1, (SELECT id FROM users WHERE clerk_id = $2))`
-// 		_, err = tx.Exec(ctx, insertQuery, storyID, clerkID)
-// 		if err != nil {
-// 			return false, err
-// 		}
-// 	}
-
-// 	err = tx.Commit(ctx)
-// 	return true, err
-// }
-
-// // GetAllUserStories: Fetches ALL stories of a user (including expired) for their profile
-// func (s *UserService) GetAllUserStories(ctx context.Context, clerkID string) ([]story.Story, error) {
-// 	query := `
-// 		SELECT 
-// 			s.id, s.user_id, s.video_url, s.video_width, s.video_height, s.video_duration, s.created_at,
-// 			(SELECT COUNT(*) FROM relates WHERE story_id = s.id) as relate_count
-// 		FROM stories s
-// 		JOIN users u ON u.clerk_id = $1
-// 		WHERE s.user_id = u.id
-// 		ORDER BY s.created_at DESC`
-
-// 	rows, err := s.db.Query(ctx, query, clerkID)
-// 	if err != nil {
-// 		return nil, err
-// 	}
-// 	defer rows.Close()
-
-// 	var stories []story.Story
-// 	for rows.Next() {
-// 		var st story.Story
-// 		err := rows.Scan(
-// 			&st.ID, &st.UserID, &st.VideoUrl, &st.VideoWidth, &st.VideoHeight, 
-// 			&st.VideoDuration, &st.CreatedAt, &st.RelateCount,
-// 		)
-// 		if err != nil {
-// 			return nil, err
-// 		}
-// 		stories = append(stories, st)
-// 	}
-// 	return stories, nil
-// }
-
-// func (s *UserService) DeleteStory(ctx context.Context, clerkID string, storyID string) (bool, error) {
-// 	query := `
-// 		DELETE FROM stories 
-// 		WHERE id = $1 
-// 		AND user_id = (SELECT id FROM users WHERE clerk_id = $2)`
-
-// 	cmd, err := s.db.Exec(ctx, query, storyID, clerkID)
-// 	if err != nil {
-// 		return false, err
-// 	}
-// 	return cmd.RowsAffected() > 0, nil
-// }
 
 // TODO: Creae theese
 func (s *UserService) EquipItem(ctx context.Context, clerkID string, itemIdForRemoval string) (bool, error) {
