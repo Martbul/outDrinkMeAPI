@@ -1102,32 +1102,35 @@ func (h *UserHandler) AddStory(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *UserHandler) DeleteStory(w http.ResponseWriter, r *http.Request) {
-	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
-	defer cancel()
+    ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
+    defer cancel()
 
-	clerkID, ok := middleware.GetClerkID(ctx)
-	if !ok {
-		respondWithError(w, http.StatusInternalServerError, "Error while adding drinking")
-		return
-	}
+    clerkID, ok := middleware.GetClerkID(ctx)
+    if !ok {
+        respondWithError(w, http.StatusInternalServerError, "Error retrieving user")
+        return
+    }
 
-	var req struct {
-		StoryId string `json:"story_id"`
-	}
+    // --- CHANGE START ---
+    // Get ID from URL parameters instead of JSON body
+    vars := mux.Vars(r)
+    storyID := vars["storyId"]
 
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		respondWithError(w, http.StatusBadRequest, "Invalid payload")
-		return
-	}
+    if storyID == "" {
+        respondWithError(w, http.StatusBadRequest, "Missing story ID")
+        return
+    }
+    // --- CHANGE END ---
 
-	success, err := h.userService.DeleteStory(ctx, clerkID, req.StoryId)
+    success, err := h.userService.DeleteStory(ctx, clerkID, storyID)
 
-	if err != nil {
-		respondWithError(w, http.StatusInternalServerError, err.Error())
-		return
-	}
+    if err != nil {
+        // Log the error internally if possible
+        respondWithError(w, http.StatusInternalServerError, err.Error())
+        return
+    }
 
-	respondWithJSON(w, http.StatusOK, success)
+    respondWithJSON(w, http.StatusOK, success)
 }
 
 func (h *UserHandler) RelateStory(w http.ResponseWriter, r *http.Request) {

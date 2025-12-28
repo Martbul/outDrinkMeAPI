@@ -66,7 +66,7 @@ func init() {
 	}
 
 	// --- OPTIMIZED POOL SETTINGS (For Direct Neon Connection) ---
-	
+
 	// Keep connections alive for 4 minutes.
 	// Neon suspends compute after 5 minutes of inactivity.
 	// This keeps the connection "hot" while users are active.
@@ -76,7 +76,7 @@ func init() {
 	poolConfig.MinConns = 1
 
 	// Cap max connections to 15.
-	// Neon's smallest compute allows ~112 connections. 
+	// Neon's smallest compute allows ~112 connections.
 	// Since we are NOT using the pooler, we must limit this locally.
 	poolConfig.MaxConns = 15
 
@@ -101,7 +101,7 @@ func init() {
 	sideQuestService = services.NewSideQuestService(dbPool, notificationService)
 	photoDumpService = services.NewFuncService(dbPool)
 	gameManager = services.NewDrinnkingGameManager()
-	
+
 	middleware.InitPrometheus()
 }
 
@@ -215,7 +215,7 @@ func main() {
 	protected.HandleFunc("/user/feedback", userHandler.AddUserFeedback).Methods("POST")
 	protected.HandleFunc("/user/stories", userHandler.GetStories).Methods("GET")
 	protected.HandleFunc("/user/stories", userHandler.AddStory).Methods("POST")
-	protected.HandleFunc("/user/stories", userHandler.DeleteStory).Methods("DELETE")
+	protected.HandleFunc("/user/stories/{story_id}", userHandler.DeleteStory).Methods("DELETE")
 	protected.HandleFunc("/user/stories/relate", userHandler.RelateStory).Methods("POST")
 	protected.HandleFunc("/user/stories/seen", userHandler.MarkStoryAsSeen).Methods("POST")
 	protected.HandleFunc("/user/user-stories", userHandler.GetAllUserStories).Methods("GET")
@@ -276,7 +276,7 @@ func main() {
 	}()
 
 	// 4. Background DB Warmer (Parallel)
-	// Even with direct connection, this ensures the DB is awake 
+	// Even with direct connection, this ensures the DB is awake
 	// before the first user request if it has been idle for hours.
 	go func() {
 		ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
