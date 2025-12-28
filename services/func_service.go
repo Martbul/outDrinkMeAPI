@@ -252,10 +252,47 @@ func (s *FuncService) AddImages(ctx context.Context, clerkID string, funcID stri
 	return tx.Commit(ctx)
 }
 
+func (s *FuncService) DeleteImages(ctx context.Context, clerkID string, funcID string, imageUrls []string) error {
+	var userID uuid.UUID
+	err := s.db.QueryRow(ctx, `SELECT id FROM users WHERE clerk_id = $1`, clerkID).Scan(&userID)
+	if err != nil {
+		return fmt.Errorf("user not found: %w", err)
+	}
+
+	tx, err := s.db.Begin(ctx)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback(ctx)
+
+	query := `DELETE FROM funcs_images WHERE image_url = $1 AND user_id = $2`
+	
+	if funcID != "" {
+		query += ` AND func_id = $3`
+	}
+
+	for _, url := range imageUrls {
+		var err error
+
+		if funcID != "" {
+			_, err = tx.Exec(ctx, query, url, userID, funcID)
+		} else {
+			_, err = tx.Exec(ctx, query, url, userID)
+		}
+
+		if err != nil {
+			return fmt.Errorf("failed to delete image %s: %w", url, err)
+		}
+	}
+
+	return tx.Commit(ctx)
+}
+
+
+
 func (s *FuncService) GetUserActiveSession(ctx context.Context, clerkID string) (*FuncDataResponse, error) {
 	var funcID uuid.UUID
-    
-    // Find the most recent active session this user is a member of
+
 	err := s.db.QueryRow(ctx, `
 		SELECT fm.func_id 
 		FROM func_members fm
@@ -287,3 +324,6 @@ func (s *FuncService) LeaveFunction(ctx context.Context, clerkID string, funcID 
 	}
 	return nil
 }
+
+
+

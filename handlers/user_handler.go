@@ -311,8 +311,8 @@ func (h *UserHandler) AddDrinking(w http.ResponseWriter, r *http.Request) {
 	var req struct {
 		DrankToday       bool         `json:"drank_today"`
 		ImageUrl         *string      `json:"image_url"`
-		ImageWidth       *int         `json:"image_width"`  
-        ImageHeight      *int         `json:"image_height"` 
+		ImageWidth       *int         `json:"image_width"`
+		ImageHeight      *int         `json:"image_height"`
 		LocationText     *string      `json:"location_text"`
 		LocationCoords   *Coordinates `json:"location_coords"`
 		Alcohols         *[]string    `json:"alcohols"`
@@ -347,23 +347,23 @@ func (h *UserHandler) AddDrinking(w http.ResponseWriter, r *http.Request) {
 		alcohols = *req.Alcohols
 	}
 
-	  if err := h.userService.AddDrinking(
-        ctx, 
-        clearkID, 
-        req.DrankToday, 
-        req.ImageUrl, 
-        req.ImageWidth,  // New
-        req.ImageHeight, // New
-        req.LocationText, 
-        lat, 
-        long, 
-        alcohols, 
-        clerkIDs, 
-        date,
-    ); err != nil {
-        respondWithError(w, http.StatusInternalServerError, err.Error())
-        return
-    }
+	if err := h.userService.AddDrinking(
+		ctx,
+		clearkID,
+		req.DrankToday,
+		req.ImageUrl,
+		req.ImageWidth,  // New
+		req.ImageHeight, // New
+		req.LocationText,
+		lat,
+		long,
+		alcohols,
+		clerkIDs,
+		date,
+	); err != nil {
+		respondWithError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
 	respondWithJSON(w, http.StatusOK, map[string]string{"message": "Drinking activity added successfully"})
 }
 
@@ -1039,6 +1039,173 @@ func (h *UserHandler) AddDrunkThought(w http.ResponseWriter, r *http.Request) {
 		"message":       "Drinking thought added successfully",
 		"drunk_thought": drunkThought,
 	})
+}
+
+func (h *UserHandler) GetStories(w http.ResponseWriter, r *http.Request) {
+	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
+	defer cancel()
+
+	clerkID, ok := middleware.GetClerkID(ctx)
+	if !ok {
+		respondWithError(w, http.StatusInternalServerError, "Error while adding drinking")
+		return
+	}
+
+	stories, err := h.userService.GetStories(ctx, clerkID)
+	if err != nil {
+		respondWithError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+
+	respondWithJSON(w, http.StatusOK, stories)
+}
+
+func (h *UserHandler) AddStory(w http.ResponseWriter, r *http.Request) {
+	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
+	defer cancel()
+
+	clerkID, ok := middleware.GetClerkID(ctx)
+	if !ok {
+		respondWithError(w, http.StatusUnauthorized, "Unauthorized")
+		return
+	}
+
+	var req struct {
+		VideoUrl      string   `json:"video_url"`
+		VideoWidth    float64       `json:"width"`
+		VideoHeight   float64       `json:"height"`
+		VideoDuration float64       `json:"duration"`
+		TaggedBuddies []string `json:"tagged_buddies"`
+	}
+
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		respondWithError(w, http.StatusBadRequest, "Invalid request payload")
+		return
+	}
+
+	success, err := h.userService.AddStory(
+		ctx,
+		clerkID,
+		req.VideoUrl,
+		req.VideoWidth,
+		req.VideoHeight,
+		req.VideoDuration,
+		req.TaggedBuddies,
+	)
+
+	if err != nil {
+		respondWithError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+
+	respondWithJSON(w, http.StatusCreated, map[string]bool{"success": success})
+}
+
+func (h *UserHandler) DeleteStory(w http.ResponseWriter, r *http.Request) {
+    ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
+    defer cancel()
+
+    clerkID, ok := middleware.GetClerkID(ctx)
+    if !ok {
+        respondWithError(w, http.StatusInternalServerError, "Error retrieving user")
+        return
+    }
+
+    vars := mux.Vars(r)
+    storyID := vars["story_id"]
+
+    if storyID == "" {
+        respondWithError(w, http.StatusBadRequest, "Missing story ID")
+        return
+    }
+
+    success, err := h.userService.DeleteStory(ctx, clerkID, storyID)
+
+    if err != nil {
+        respondWithError(w, http.StatusInternalServerError, err.Error())
+        return
+    }
+
+    respondWithJSON(w, http.StatusOK, success)
+}
+
+func (h *UserHandler) RelateStory(w http.ResponseWriter, r *http.Request) {
+	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
+	defer cancel()
+
+	clerkID, ok := middleware.GetClerkID(ctx)
+	if !ok {
+		respondWithError(w, http.StatusInternalServerError, "Error while adding drinking")
+		return
+	}
+
+	var req struct {
+		StoryId string `json:"story_id"`
+		Action string `json:"action"`
+
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		respondWithError(w, http.StatusBadRequest, "Invalid payload")
+		return
+	}
+
+	success, err := h.userService.RelateStory(ctx, clerkID, req.StoryId, req.Action)
+
+	if err != nil {
+		respondWithError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+
+	respondWithJSON(w, http.StatusOK, success)
+}
+
+func (h *UserHandler) MarkStoryAsSeen(w http.ResponseWriter, r *http.Request) {
+	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
+	defer cancel()
+
+	clerkID, ok := middleware.GetClerkID(ctx)
+	if !ok {
+		respondWithError(w, http.StatusInternalServerError, "Error while adding drinking")
+		return
+	}
+
+	var req struct {
+		StoryId string `json:"story_id"`
+	}
+
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		respondWithError(w, http.StatusBadRequest, "Invalid payload")
+		return
+	}
+
+	success, err := h.userService.MarkStoryAsSeen(ctx, clerkID, req.StoryId)
+
+	if err != nil {
+		respondWithError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+
+	respondWithJSON(w, http.StatusOK, success)
+}
+
+func (h *UserHandler) GetAllUserStories(w http.ResponseWriter, r *http.Request) {
+	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
+	defer cancel()
+
+	clerkID, ok := middleware.GetClerkID(ctx)
+	if !ok {
+		respondWithError(w, http.StatusInternalServerError, "Error while adding drinking")
+		return
+	}
+
+	allUserStories, err := h.userService.GetAllUserStories(ctx, clerkID)
+
+	if err != nil {
+		respondWithError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+
+	respondWithJSON(w, http.StatusOK, allUserStories)
 }
 
 func (h *UserHandler) DeleteAccountPage(w http.ResponseWriter, r *http.Request) {

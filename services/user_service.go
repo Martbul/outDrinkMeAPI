@@ -14,6 +14,7 @@ import (
 	"outDrinkMeAPI/internal/types/mix"
 	"outDrinkMeAPI/internal/types/stats"
 	"outDrinkMeAPI/internal/types/store"
+	"outDrinkMeAPI/internal/types/story"
 	"outDrinkMeAPI/internal/types/user"
 	"outDrinkMeAPI/utils"
 	"strings"
@@ -2042,27 +2043,27 @@ func (s *UserService) executeFeedQuery(ctx context.Context, query string, userID
 	defer rows.Close()
 
 	var posts []mix.DailyDrinkingPost
-	 for rows.Next() {
-        var post mix.DailyDrinkingPost
-        var mentionedBuddyIDs []string
-        var reactionsJSON []byte
+	for rows.Next() {
+		var post mix.DailyDrinkingPost
+		var mentionedBuddyIDs []string
+		var reactionsJSON []byte
 
-        err := rows.Scan(
-            &post.ID,
-            &post.UserID,
-            &post.UserImageURL,
-            &post.Username,
-            &post.Date,
-            &post.DrankToday,
-            &post.LoggedAt,
-            &post.ImageURL,
-            &post.ImageWidth,  
-            &post.ImageHeight,
-            &post.LocationText,
-            &mentionedBuddyIDs,
-            &post.SourceType,
-            &reactionsJSON,
-        )
+		err := rows.Scan(
+			&post.ID,
+			&post.UserID,
+			&post.UserImageURL,
+			&post.Username,
+			&post.Date,
+			&post.DrankToday,
+			&post.LoggedAt,
+			&post.ImageURL,
+			&post.ImageWidth,
+			&post.ImageHeight,
+			&post.LocationText,
+			&mentionedBuddyIDs,
+			&post.SourceType,
+			&reactionsJSON,
+		)
 		if err != nil {
 			return nil, fmt.Errorf("failed to scan post: %w", err)
 		}
@@ -2911,6 +2912,230 @@ func (s *UserService) GetUserInventory(ctx context.Context, clerkID string) (map
 	return inventory, nil
 }
 
+type StorySegment struct {
+	ID            uuid.UUID `json:"id"`
+	VideoUrl      string    `json:"video_url"`
+	VideoWidth    uint      `json:"video_width"`
+	VideoHeight   uint      `json:"video_height"`
+	VideoDuration uint      `json:"video_duration"`
+	RelateCount   int       `json:"relate_count"`
+	HasRelated    bool      `json:"has_related"`
+	IsSeen        bool      `json:"is_seen"`
+	CreatedAt     time.Time `json:"created_at"`
+}
+
+type UserStories struct {
+	UserID       uuid.UUID      `json:"user_id"`
+	Username     string         `json:"username"`
+	UserImageUrl string         `json:"user_image_url"`
+	AllSeen      bool           `json:"all_seen"`
+	Items        []StorySegment `json:"items"`
+}
+
+func (s *UserService) GetStories(ctx context.Context, clerkID string) ([]UserStories, error) {
+	query := `
+		WITH flat_stories AS (
+			SELECT 
+				s.id, 
+				s.user_id, 
+				author.username,
+				author.image_url, 
+				s.video_url, 
+				s.video_width, 
+				s.video_height, 
+				s.video_duration, 
+				s.created_at,
+				(SELECT COUNT(*) FROM relates WHERE story_id = s.id) as relate_count,
+				EXISTS(SELECT 1 FROM relates r WHERE r.story_id = s.id AND r.user_id = viewer.id) as has_related,
+				(viewer.id = ANY(COALESCE(s.seen_by, '{}'))) as is_seen
+			FROM stories s
+			JOIN users author ON author.id = s.user_id 
+			CROSS JOIN users viewer                   
+			WHERE viewer.clerk_id = $1
+			AND s.expires_at > NOW()
+			AND s.visibility = 'friends'
+			AND (
+				s.user_id = viewer.id 
+				OR s.user_id IN (SELECT friend_id FROM friendships WHERE user_id = viewer.id AND status = 'accepted')
+			)
+		)
+		SELECT 
+			user_id,
+			username,
+			image_url,
+			BOOL_AND(is_seen) as all_seen, -- True only if ALL stories are seen
+			json_agg(
+				json_build_object(
+					'id', id,
+					'video_url', video_url,
+					'video_width', video_width,
+					'video_height', video_height,
+					'video_duration', video_duration,
+					'relate_count', relate_count,
+					'has_related', has_related,
+					'is_seen', is_seen,
+					'created_at', created_at
+				) ORDER BY created_at ASC
+			) as items
+		FROM flat_stories
+		GROUP BY user_id, username, image_url
+		ORDER BY MAX(created_at) DESC`
+
+	rows, err := s.db.Query(ctx, query, clerkID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var result []UserStories
+	for rows.Next() {
+		var u UserStories
+		err := rows.Scan(&u.UserID, &u.Username, &u.UserImageUrl, &u.AllSeen, &u.Items)
+		if err != nil {
+			return nil, err
+		}
+		result = append(result, u)
+	}
+	return result, nil
+}
+
+
+func (s *UserService) AddStory(ctx context.Context, clerkID string, videoUrl string, videoWidth float64, videoHeight float64, videoDuration float64, taggedBuddiesIds []string) (bool, error) {
+	userID, err := s.getInternalID(ctx, clerkID)
+	if err != nil {
+		return false, err
+	}
+
+	query := `
+		INSERT INTO stories (user_id, video_url, video_width, video_height, video_duration)
+		VALUES ($1, $2, $3, $4, $5)`
+
+	_, err = s.db.Exec(ctx, query, userID, videoUrl, videoWidth, videoHeight, videoDuration)
+	if err != nil {
+		return false, err
+	}
+	return true, nil
+}
+
+func (s *UserService) RelateStory(ctx context.Context, clerkID, storyID, action string) (bool, error) {
+	userID, err := s.getInternalID(ctx, clerkID)
+	if err != nil {
+		return false, err
+	}
+
+	tx, err := s.db.Begin(ctx)
+	if err != nil {
+		return false, err
+	}
+	defer tx.Rollback(ctx)
+
+	// Attempt to delete the specific reaction type for this user
+	cmd, err := tx.Exec(ctx, `
+		DELETE FROM relates 
+		WHERE story_id = $1 AND user_id = $2 AND relate_type = $3`, 
+		storyID, userID, action,
+	)
+	if err != nil {
+		return false, err
+	}
+
+	// If nothing was deleted, it means the user hasn't reacted with this type yet -> Insert it
+	if cmd.RowsAffected() == 0 {
+		_, err = tx.Exec(ctx, `
+			INSERT INTO relates (story_id, user_id, relate_type) 
+			VALUES ($1, $2, $3)`, 
+			storyID, userID, action,
+		)
+		if err != nil {
+			return false, err
+		}
+	}
+
+	err = tx.Commit(ctx)
+	return true, err
+}
+
+// MarkStoryAsSeen adds the userID to the seen_by array in the stories table
+func (s *UserService) MarkStoryAsSeen(ctx context.Context, clerkID, storyID string) (bool, error) {
+	userID, err := s.getInternalID(ctx, clerkID)
+	if err != nil {
+		return false, err
+	}
+
+	// We use array_append combined with a check to ensure we don't add the same user twice.
+	// The "NOT ($1 = ANY(seen_by))" check prevents duplicates in the array.
+	_, err = s.db.Exec(ctx, `
+		UPDATE stories 
+		SET seen_by = array_append(seen_by, $1) 
+		WHERE id = $2 
+		AND NOT ($1 = ANY(COALESCE(seen_by, '{}')))`, 
+		userID, storyID,
+	)
+	
+	if err != nil {
+		return false, err
+	}
+
+	return true, nil
+}
+
+func (s *UserService) GetAllUserStories(ctx context.Context, clerkID string) ([]story.Story, error) {
+	query := `
+		SELECT 
+			s.id, s.user_id, s.video_url, s.video_width, s.video_height, s.video_duration, s.created_at,
+			(SELECT COUNT(*) FROM relates WHERE story_id = s.id) as relate_count
+		FROM stories s
+		JOIN users u ON u.id = s.user_id
+		WHERE u.clerk_id = $1
+		ORDER BY s.created_at DESC`
+
+	rows, err := s.db.Query(ctx, query, clerkID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var stories []story.Story
+	for rows.Next() {
+		var st story.Story
+		err := rows.Scan(&st.ID, &st.UserID, &st.VideoUrl, &st.VideoWidth, &st.VideoHeight, &st.VideoDuration, &st.CreatedAt, &st.RelateCount)
+		if err != nil {
+			return nil, err
+		}
+		stories = append(stories, st)
+	}
+	return stories, nil
+}
+
+
+
+func (s *UserService) DeleteStory(ctx context.Context, clerkID string, storyID string) (bool, error) {
+	// 1. Get the internal User UUID
+	// Since getInternalID returns a uuid.UUID, this part is safe.
+	userID, err := s.getInternalID(ctx, clerkID)
+	if err != nil {
+		return false, err
+	}
+
+	// 2. FIX: Parse the storyID string into a UUID
+	// This catches the empty string case ("") before it hits the database.
+	storyUUID, err := uuid.Parse(storyID)
+	if err != nil {
+		return false, fmt.Errorf("invalid story ID: %w", err)
+	}
+
+	// 3. Execute Query using both UUIDs
+	query := `DELETE FROM stories WHERE id = $1 AND user_id = $2`
+	
+	// Pass storyUUID (type uuid.UUID) instead of storyID (type string)
+	cmd, err := s.db.Exec(ctx, query, storyUUID, userID)
+	if err != nil {
+		return false, err
+	}
+	
+	return cmd.RowsAffected() > 0, nil
+}
+
 // TODO: Creae theese
 func (s *UserService) EquipItem(ctx context.Context, clerkID string, itemIdForRemoval string) (bool, error) {
 	return true, nil
@@ -2922,4 +3147,17 @@ func getTotalCount(collection collection.AlcoholCollectionByType) int {
 		total += len(items)
 	}
 	return total
+}
+
+
+func (s *UserService) getInternalID(ctx context.Context, clerkID string) (uuid.UUID, error) {
+	var userID uuid.UUID
+	err := s.db.QueryRow(ctx, `SELECT id FROM users WHERE clerk_id = $1`, clerkID).Scan(&userID)
+	if err != nil {
+		if err == pgx.ErrNoRows {
+			return uuid.Nil, fmt.Errorf("user not found")
+		}
+		return uuid.Nil, err
+	}
+	return userID, nil
 }
