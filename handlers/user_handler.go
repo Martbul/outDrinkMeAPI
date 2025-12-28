@@ -1072,9 +1072,9 @@ func (h *UserHandler) AddStory(w http.ResponseWriter, r *http.Request) {
 
 	var req struct {
 		VideoUrl      string   `json:"video_url"`
-		VideoWidth    float64       `json:"width"`
-		VideoHeight   float64       `json:"height"`
-		VideoDuration float64       `json:"duration"`
+		VideoWidth    float64  `json:"width"`
+		VideoHeight   float64  `json:"height"`
+		VideoDuration float64  `json:"duration"`
 		TaggedBuddies []string `json:"tagged_buddies"`
 	}
 
@@ -1102,31 +1102,31 @@ func (h *UserHandler) AddStory(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *UserHandler) DeleteStory(w http.ResponseWriter, r *http.Request) {
-    ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
-    defer cancel()
+	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
+	defer cancel()
 
-    clerkID, ok := middleware.GetClerkID(ctx)
-    if !ok {
-        respondWithError(w, http.StatusInternalServerError, "Error retrieving user")
-        return
-    }
+	clerkID, ok := middleware.GetClerkID(ctx)
+	if !ok {
+		respondWithError(w, http.StatusInternalServerError, "Error retrieving user")
+		return
+	}
 
-    vars := mux.Vars(r)
-    storyID := vars["story_id"]
+	vars := mux.Vars(r)
+	storyID := vars["story_id"]
 
-    if storyID == "" {
-        respondWithError(w, http.StatusBadRequest, "Missing story ID")
-        return
-    }
+	if storyID == "" {
+		respondWithError(w, http.StatusBadRequest, "Missing story ID")
+		return
+	}
 
-    success, err := h.userService.DeleteStory(ctx, clerkID, storyID)
+	success, err := h.userService.DeleteStory(ctx, clerkID, storyID)
 
-    if err != nil {
-        respondWithError(w, http.StatusInternalServerError, err.Error())
-        return
-    }
+	if err != nil {
+		respondWithError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
 
-    respondWithJSON(w, http.StatusOK, success)
+	respondWithJSON(w, http.StatusOK, success)
 }
 
 func (h *UserHandler) RelateStory(w http.ResponseWriter, r *http.Request) {
@@ -1141,8 +1141,7 @@ func (h *UserHandler) RelateStory(w http.ResponseWriter, r *http.Request) {
 
 	var req struct {
 		StoryId string `json:"story_id"`
-		Action string `json:"action"`
-
+		Action  string `json:"action"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		respondWithError(w, http.StatusBadRequest, "Invalid payload")
