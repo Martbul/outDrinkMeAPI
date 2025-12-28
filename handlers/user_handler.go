@@ -1111,8 +1111,6 @@ func (h *UserHandler) DeleteStory(w http.ResponseWriter, r *http.Request) {
         return
     }
 
-    // --- CHANGE START ---
-    // Get ID from URL parameters instead of JSON body
     vars := mux.Vars(r)
     storyID := vars["story_id"]
 
@@ -1120,12 +1118,10 @@ func (h *UserHandler) DeleteStory(w http.ResponseWriter, r *http.Request) {
         respondWithError(w, http.StatusBadRequest, "Missing story ID")
         return
     }
-    // --- CHANGE END ---
 
     success, err := h.userService.DeleteStory(ctx, clerkID, storyID)
 
     if err != nil {
-        // Log the error internally if possible
         respondWithError(w, http.StatusInternalServerError, err.Error())
         return
     }
