@@ -28,21 +28,16 @@ var (
 	userService         *services.UserService
 	docService          *services.DocService
 	storeService        *services.StoreService
-	sideQuestService    *services.SideQuestService
 	notificationService *services.NotificationService
-	fcmService          *notification.FCMService
 	photoDumpService    *services.FuncService
 	gameManager         *services.DrinnkingGameManager
 )
 
-// init() handles Environment, Clerk, and Database Config
 func init() {
-	// 1. Load Env
 	if err := godotenv.Load(); err != nil {
 		log.Println("Note: .env file not found, using system env")
 	}
 
-	// 2. Clerk
 	clerkSecretKey := os.Getenv("CLERK_SECRET_KEY")
 	if clerkSecretKey == "" {
 		log.Fatal("CLERK_SECRET_KEY environment variable is not set")
@@ -50,13 +45,11 @@ func init() {
 	clerk.SetKey(clerkSecretKey)
 	log.Println("Clerk initialized successfully")
 
-	// 3. Database Config
 	dbURL := os.Getenv("DATABASE_URL")
 	if dbURL == "" {
 		log.Fatal("DATABASE_URL environment variable is not set")
 	}
 
-	// Create a short context for config parsing (not for connection)
 	_, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
@@ -94,11 +87,9 @@ func init() {
 
 	log.Println("Database pool configured (Direct connection)")
 
-	// 4. Initialize Services (Except FCM, which loads in main)
 	notificationService = services.NewNotificationService(dbPool)
 	userService = services.NewUserService(dbPool, notificationService)
 	storeService = services.NewStoreService(dbPool)
-	sideQuestService = services.NewSideQuestService(dbPool, notificationService)
 	photoDumpService = services.NewFuncService(dbPool)
 	gameManager = services.NewDrinnkingGameManager()
 
@@ -111,7 +102,6 @@ func main() {
 		dbPool.Close()
 	}()
 
-	// 1. Initialize FCM in Background (Prevents blocking startup)
 	go func() {
 		fcm, err := notification.NewFCMService("./serviceAccountKey.json")
 		if err != nil {
@@ -122,11 +112,9 @@ func main() {
 		log.Println("FCM Push Provider initialized in background")
 	}()
 
-	// 2. Setup Handlers
 	userHandler := handlers.NewUserHandler(userService)
 	docHandler := handlers.NewDocHandler(docService)
 	storeHandler := handlers.NewStoreHandler(storeService)
-	sideQuestHandler := handlers.NewSideQuestHandler(sideQuestService)
 	notificationHandler := handlers.NewNotificationHandler(notificationService)
 	webhookHandler := handlers.NewWebhookHandler(userService)
 	funcHandler := handlers.NewFuncHandler(photoDumpService)
@@ -234,8 +222,6 @@ func main() {
 	protected.HandleFunc("/notifications/register-device", notificationHandler.RegisterDevice).Methods("POST")
 	protected.HandleFunc("/notifications/test", notificationHandler.SendTestNotification).Methods("POST")
 
-	protected.HandleFunc("/sidequest/board", sideQuestHandler.GetSideQuestBoard).Methods("GET")
-	protected.HandleFunc("/sidequest", sideQuestHandler.PostNewSideQuest).Methods("POST")
 	protected.HandleFunc("/func/create", funcHandler.CreateFunction).Methods("GET")
 	protected.HandleFunc("/func/active", funcHandler.GetUserActiveSession).Methods("GET")
 	protected.HandleFunc("/func/join", funcHandler.JoinViaQrCode).Methods("POST")
