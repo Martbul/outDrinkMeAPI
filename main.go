@@ -60,8 +60,6 @@ func main() {
 		log.Fatal("Failed to parse database URL:", err)
 	}
 
-	// --- OPTIMIZED POOL SETTINGS ---
-	// 4 minutes idle time (Neon sleeps at 5 mins)
 	poolConfig.MaxConnIdleTime = 4 * time.Minute
 	// CRITICAL: Set MinConns to 0 so the server starts immediately
 	poolConfig.MinConns = 0
@@ -144,48 +142,38 @@ func main() {
 		w.Write([]byte(`{"status": "healthy", "service": "outDrinkMe-api"}`))
 	}).Methods("GET")
 
-	// Websocket Route (needs to be on root usually or handle upgrades carefully)
 	r.HandleFunc("/api/v1/drinking-games/ws/{sessionID}", drinkingGameHandler.JoinDrinkingGame)
 
-	// Subrouter for standard API traffic (Attaching Middleware here)
 	standardRouter := r.PathPrefix("/").Subrouter()
 	standardRouter.Use(middleware.RateLimitMiddleware)
 	standardRouter.Use(middleware.MonitorMiddleware)
 
-	// Observability Routes
 	standardRouter.Handle("/metrics", middleware.BasicAuthMiddleware(promhttp.Handler()))
 	standardRouter.PathPrefix("/debug/pprof/").Handler(middleware.PprofSecurityMiddleware(http.DefaultServeMux))
 
-	// Static Assets
 	assetsDir := "./assets"
 	fs := http.FileServer(http.Dir(assetsDir))
 	standardRouter.PathPrefix("/assets/").Handler(http.StripPrefix("/assets/", fs))
 	log.Printf("Serving static files from %s at /assets/", assetsDir)
 
-	// Ads / Metadata
 	standardRouter.HandleFunc("/app-ads.txt", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "text/plain")
 		w.Write([]byte("google.com, pub-1167503921437683, DIRECT, f08c47fec0942fa0"))
 	})
 
-	// Webhooks
 	standardRouter.HandleFunc("/webhooks/clerk", webhookHandler.HandleClerkWebhook).Methods("POST")
 
-	// --- API v1 Routes ---
 	api := standardRouter.PathPrefix("/api/v1").Subrouter()
 
-	// Public Routes
 	api.HandleFunc("/drinking-games/public", drinkingGameHandler.GetPublicDrinkingGames).Methods("GET")
 	api.HandleFunc("/privacy-policy", docHandler.ServePrivacyPolicy).Methods("GET")
 	api.HandleFunc("/terms-of-services", docHandler.ServeTermsOfServices).Methods("GET")
 	api.HandleFunc("/delete-account-webpage", userHandler.DeleteAccountPage).Methods("GET")
 	api.HandleFunc("/delete-account-details-webpage", userHandler.UpdateAccountPage).Methods("GET")
 
-	// Protected Routes (Require Clerk Auth)
 	protected := api.PathPrefix("").Subrouter()
 	protected.Use(middleware.ClerkAuthMiddleware)
 
-	// User Routes
 	protected.HandleFunc("/user", userHandler.GetProfile).Methods("GET")
 	protected.HandleFunc("/user/friend-discovery/display-profile", userHandler.FriendDiscoveryDisplayProfile).Methods("GET")
 	protected.HandleFunc("/user/update-profile", userHandler.UpdateProfile).Methods("PUT")
@@ -231,11 +219,9 @@ func main() {
 	protected.HandleFunc("/user/user-stories", userHandler.GetAllUserStories).Methods("GET")
 	protected.HandleFunc("/min-version", docHandler.GetAppMinVersion).Methods("GET")
 
-	// Store Routes
 	protected.HandleFunc("/store", storeHandler.GetStore).Methods("GET")
 	protected.HandleFunc("/store/purchase/item", storeHandler.PurchaseStoreItem).Methods("POST")
 
-	// Notification Routes
 	protected.HandleFunc("/notifications", notificationHandler.GetNotifications).Methods("GET")
 	protected.HandleFunc("/notifications/unread-count", notificationHandler.GetUnreadCount).Methods("GET")
 	protected.HandleFunc("/notifications/{id}/read", notificationHandler.MarkAsRead).Methods("PUT")
@@ -246,7 +232,6 @@ func main() {
 	protected.HandleFunc("/notifications/register-device", notificationHandler.RegisterDevice).Methods("POST")
 	protected.HandleFunc("/notifications/test", notificationHandler.SendTestNotification).Methods("POST")
 
-	// Func (Photo Dump) Routes
 	protected.HandleFunc("/func/create", funcHandler.CreateFunction).Methods("GET")
 	protected.HandleFunc("/func/active", funcHandler.GetUserActiveSession).Methods("GET")
 	protected.HandleFunc("/func/join", funcHandler.JoinViaQrCode).Methods("POST")
@@ -254,11 +239,8 @@ func main() {
 	protected.HandleFunc("/func/upload", funcHandler.AddImages).Methods("POST")
 	protected.HandleFunc("/func/leave", funcHandler.LeaveFunction).Methods("POST")
 	protected.HandleFunc("/func/delete", funcHandler.DeleteImages).Methods("DELETE")
-
-	// Drinking Game Routes
 	protected.HandleFunc("/drinking-games/create", drinkingGameHandler.CreateDrinkingGame).Methods("POST")
 
-	// 7. CORS Configuration
 	corsHandler := gorilllaHandlers.CORS(
 		gorilllaHandlers.AllowedOrigins([]string{"*"}),
 		gorilllaHandlers.AllowedMethods([]string{"GET", "POST", "PUT", "DELETE", "OPTIONS"}),
@@ -277,16 +259,10 @@ func main() {
 		Addr:        port,
 		Handler:     corsHandler(r),
 		ReadTimeout: 10 * time.Second,
-		
-		// --- CRITICAL OPTIMIZATION ---
-		// Increased to 60s. This prevents the "Connection Reset" error 
-		// if the DB takes 30s to wake up.
 		WriteTimeout: 60 * time.Second,
-		
 		IdleTimeout:  120 * time.Second,
 	}
 
-	// 8. Start Server (Non-blocking)
 	go func() {
 		log.Printf("Starting server on port %s", port)
 		if err := server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
@@ -294,7 +270,6 @@ func main() {
 		}
 	}()
 
-	// 9. Graceful Shutdown
 	sigChan := make(chan os.Signal, 1)
 	signal.Notify(sigChan, os.Interrupt)
 
