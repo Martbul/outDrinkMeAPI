@@ -1086,8 +1086,8 @@ func (s *UserService) AddMemoryToWall(ctx context.Context, clerkID string, postI
 	}
 
 	//! send to post owner that someone reacted to his mix post
-	go utils.ReactionToPostMix(s.db, s.notifService, )
-	return
+	// go utils.ReactionToPostMix(s.db, s.notifService, )
+	return err
 }
 func (s *UserService) AddMixVideo(ctx context.Context, clerkID string, videoUrl string, caption *string, duration int) error {
 	var userID uuid.UUID

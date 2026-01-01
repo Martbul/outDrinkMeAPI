@@ -60,12 +60,12 @@ func main() {
 		log.Fatal("Failed to parse database URL:", err)
 	}
 
-	poolConfig.MaxConnIdleTime = 4 * time.Minute
+	poolConfig.MaxConnIdleTime = 2 * time.Minute
 	// CRITICAL: Set MinConns to 0 so the server starts immediately
 	poolConfig.MinConns = 0
 	poolConfig.MaxConns = 15
 	poolConfig.MaxConnLifetime = 30 * time.Minute
-	poolConfig.HealthCheckPeriod = 1 * time.Minute
+	poolConfig.HealthCheckPeriod = 0
 
 	// Create the Pool (This is now instant because MinConns=0)
 	dbPool, err = pgxpool.NewWithConfig(context.Background(), poolConfig)
