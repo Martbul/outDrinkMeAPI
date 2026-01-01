@@ -2,22 +2,20 @@ package utils
 
 import (
 	"context"
-	"fmt"
 	"log"
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"outDrinkMeAPI/internal/types/notification"
-	sidequest "outDrinkMeAPI/internal/types/side_quest"
 )
 
 type NotificationCreator interface {
 	CreateNotification(ctx context.Context, req *notification.CreateNotificationRequest) (*notification.Notification, error)
 }
 
-func FriendPostedImageToMix(db *pgxpool.Pool, notifier NotificationCreator, actorID uuid.UUID, actorName string, imageURL string, postId uuid.UUID) {
-	log.Printf("DEBUG NOTIF: Starting friend_posted_mix for Actor: %s", actorName)
+func FriendPostedStory(db *pgxpool.Pool, notifier NotificationCreator, actorID uuid.UUID, actorName string, storyUrl string, storyId uuid.UUID) {
+	log.Printf("DEBUG NOTIF: Starting friend posted story for Actor: %s", actorName)
 
 	bgCtx := context.Background()
 
@@ -43,13 +41,13 @@ func FriendPostedImageToMix(db *pgxpool.Pool, notifier NotificationCreator, acto
 
 		req := &notification.CreateNotificationRequest{
 			UserID:   friendID,
-			Type:     notification.TypeFriendPostedMix,
+			Type:     notification.TypeFriendPostedStory,
 			Priority: notification.PriorityHigh,
 			ActorID:  &actorID,
 			Data: map[string]any{
 				"username":  actorName,
-				"image_url": imageURL,
-				"post_id":   postId,
+				"story_url": storyUrl,
+				"story_id":  storyId,
 			},
 			ActionURL: nil,
 		}
@@ -61,8 +59,8 @@ func FriendPostedImageToMix(db *pgxpool.Pool, notifier NotificationCreator, acto
 	}
 }
 
-func FriendPostedQuest(db *pgxpool.Pool, notifier NotificationCreator, actorID uuid.UUID, actorName string, newQuest *sidequest.SideQuest) {
-	log.Printf("DEBUG NOTIF: Starting friend_posted_quest for Actor: %s", actorName)
+func FriendPostedImageToMix(db *pgxpool.Pool, notifier NotificationCreator, actorID uuid.UUID, actorName string, storyUrl string, storyId uuid.UUID) {
+	log.Printf("DEBUG: reaction to post: %s", actorName)
 
 	bgCtx := context.Background()
 
@@ -80,33 +78,53 @@ func FriendPostedQuest(db *pgxpool.Pool, notifier NotificationCreator, actorID u
 	}
 	defer rows.Close()
 
-	//! probably should change
-	actionURL := fmt.Sprintf("outdrinkme://quests/%s", newQuest.ID)
-
 	for rows.Next() {
 		var friendID uuid.UUID
 		if err := rows.Scan(&friendID); err != nil {
 			continue
 		}
 
-		// 3. Create the Request
 		req := &notification.CreateNotificationRequest{
 			UserID:   friendID,
-			Type:     notification.TypeFriendPostedQuest, // <--- CHANGED FROM MIX TO QUEST
+			Type:     notification.TypeFriendPostedStory,
 			Priority: notification.PriorityHigh,
 			ActorID:  &actorID,
 			Data: map[string]any{
-				"username":    actorName,
-				"quest_title": newQuest.Title,
-				"reward":      newQuest.RewardAmount, // Passing reward so template can use it
+				"username":  actorName,
+				"story_url": storyUrl,
+				"story_id":  storyId,
 			},
-			ActionURL: &actionURL,
+			ActionURL: nil,
 		}
 
-		// 4. Send
 		_, err := notifier.CreateNotification(bgCtx, req)
 		if err != nil {
 			log.Printf("Failed to create notification for friend %s: %v", friendID, err)
 		}
+	}
+}
+
+
+func ReactionToPostMix(db *pgxpool.Pool, notifier NotificationCreator, reactorId uuid.UUID, reactorUsername string, imageURL string, postId uuid.UUID, owerPostId uuid.UUID) {
+	log.Printf("DEBUG NOTIF: Starting friend_posted_mix for Actor: %s", reactorUsername)
+
+	bgCtx := context.Background()
+
+	req := &notification.CreateNotificationRequest{
+		UserID:   owerPostId,
+		Type:     notification.TypeFriendPostedReaction,
+		Priority: notification.PriorityHigh,
+		ActorID:  &reactorId,
+		Data: map[string]any{
+			"username":  reactorUsername,
+			"image_url": imageURL,
+			"post_id":   postId,
+		},
+		ActionURL: nil,
+	}
+
+	_, err := notifier.CreateNotification(bgCtx, req)
+	if err != nil {
+		log.Printf("Failed to create notification for post owner %s: %v", owerPostId, err)
 	}
 }

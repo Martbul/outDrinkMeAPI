@@ -10,16 +10,12 @@ type NotificationType string
 
 const (
 	TypeStreakMilestone      NotificationType = "streak_milestone"
-	TypeStreakAtRisk         NotificationType = "streak_at_risk"
 	TypeFriendOvertookYou    NotificationType = "friend_overtook_you"
 	TypeMentionedInPost      NotificationType = "mentioned_in_post"
-	TypeVideoChipsMilestone  NotificationType = "video_chips_milestone"
-	TypeChallengeInvite      NotificationType = "challenge_invite"
-	TypeChallengeResult      NotificationType = "challenge_result"
-	TypeWeeklyRecap          NotificationType = "weekly_recap"
 	TypeDrunkThoughtReaction NotificationType = "drunk_thought_reaction"
 	TypeFriendPostedMix      NotificationType = "friend_posted_mix"
-	TypeFriendPostedQuest    NotificationType = "quest_invite"
+	TypeFriendPostedStory    NotificationType = "friend_posted_story"
+	TypeFriendPostedReaction NotificationType = "mix_post_reaction"
 )
 
 type NotificationPriority string
