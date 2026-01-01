@@ -65,7 +65,7 @@ func main() {
 	poolConfig.MinConns = 0
 	poolConfig.MaxConns = 15
 	poolConfig.MaxConnLifetime = 30 * time.Minute
-	poolConfig.HealthCheckPeriod = 0 * time.Minute
+	poolConfig.HealthCheckPeriod = 20 * time.Hour
 
 	// Create the Pool (This is now instant because MinConns=0)
 	dbPool, err = pgxpool.NewWithConfig(context.Background(), poolConfig)
