@@ -1218,15 +1218,12 @@ func (h *UserHandler) GetSubscriptionDetails(w http.ResponseWriter, r *http.Requ
 		return
 	}
 
-	// Call service
 	subscriptionDetails, err := h.userService.GetSubscriptionDetails(ctx, clerkID)
 	if err != nil {
-		// Log the error internally here
 		respondWithError(w, http.StatusInternalServerError, "Could not fetch subscription")
 		return
 	}
 
-	// If nil, it means user has no subscription, send null or empty object
 	if subscriptionDetails == nil {
 		respondWithJSON(w, http.StatusOK, nil)
 		return
@@ -1236,7 +1233,7 @@ func (h *UserHandler) GetSubscriptionDetails(w http.ResponseWriter, r *http.Requ
 }
 
 func (h *UserHandler) Subscribe(w http.ResponseWriter, r *http.Request) {
-	ctx, cancel := context.WithTimeout(r.Context(), 10*time.Second) // Longer timeout for Stripe API
+	ctx, cancel := context.WithTimeout(r.Context(), 10*time.Second) 
 	defer cancel()
 
 	clerkID, ok := middleware.GetClerkID(ctx)

@@ -155,7 +155,6 @@ func main() {
 	})
 
 	standardRouter.HandleFunc("/webhooks/clerk", webhookHandler.HandleClerkWebhook).Methods("POST")
-	standardRouter.HandleFunc("/webhooks/clerk", webhookHandler.HandleClerkWebhook).Methods("POST")
 	standardRouter.HandleFunc("/webhooks/stripe", webhookHandler.HandleStripeWebhook).Methods("POST")
 
 	api := standardRouter.PathPrefix("/api/v1").Subrouter()
