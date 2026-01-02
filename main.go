@@ -60,14 +60,12 @@ func main() {
 		log.Fatal("Failed to parse database URL:", err)
 	}
 
-	poolConfig.MaxConnIdleTime = 2 * time.Minute
-	// CRITICAL: Set MinConns to 0 so the server starts immediately
+	poolConfig.MaxConnIdleTime = 30 * time.Second 
 	poolConfig.MinConns = 0
 	poolConfig.MaxConns = 15
-	poolConfig.MaxConnLifetime = 30 * time.Minute
-	poolConfig.HealthCheckPeriod = 20 * time.Hour
+	poolConfig.MaxConnLifetime = 5 * time.Minute
+	poolConfig.HealthCheckPeriod = 24 * time.Hour
 
-	// Create the Pool (This is now instant because MinConns=0)
 	dbPool, err = pgxpool.NewWithConfig(context.Background(), poolConfig)
 	if err != nil {
 		log.Fatal("Failed to create connection pool:", err)
@@ -109,8 +107,6 @@ func main() {
 
 	go middleware.CleanupVisitors()
 
-	// --- OPTIMIZED DB WARMER ---
-	// Runs in parallel. Tries to wake up Neon 3 times.
 	go func() {
 		for i := 0; i < 3; i++ {
 			// Small delay to let network stack settle
@@ -133,9 +129,6 @@ func main() {
 	// 6. Router Setup
 	r := mux.NewRouter()
 
-	// --- CRITICAL OPTIMIZATION: Health Check ---
-	// Defined on the Root Router 'r' so it BYPASSES middleware.
-	// This ensures UptimeRobot gets a 200 OK instantly, even if the DB is cold.
 	r.HandleFunc("/health", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusOK)
