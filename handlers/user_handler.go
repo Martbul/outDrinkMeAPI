@@ -7,6 +7,7 @@ import (
 	"log"
 	"net/http"
 	"outDrinkMeAPI/internal/types/canvas"
+	"outDrinkMeAPI/internal/types/subscription"
 	"outDrinkMeAPI/internal/types/user"
 	"outDrinkMeAPI/middleware"
 	"outDrinkMeAPI/services"
@@ -1205,6 +1206,65 @@ func (h *UserHandler) GetAllUserStories(w http.ResponseWriter, r *http.Request) 
 	}
 
 	respondWithJSON(w, http.StatusOK, allUserStories)
+}
+
+func (h *UserHandler) GetSubscriptionDetails(w http.ResponseWriter, r *http.Request) {
+	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
+	defer cancel()
+
+	clerkID, ok := middleware.GetClerkID(ctx)
+	if !ok {
+		respondWithError(w, http.StatusUnauthorized, "Unauthorized")
+		return
+	}
+
+	subscriptionDetails, err := h.userService.GetSubscriptionDetails(ctx, clerkID)
+	if err != nil {
+		respondWithError(w, http.StatusInternalServerError, "Could not fetch subscription")
+		return
+	}
+
+	if subscriptionDetails == nil {
+		respondWithJSON(w, http.StatusOK, nil)
+		return
+	}
+
+	respondWithJSON(w, http.StatusOK, subscriptionDetails)
+}
+
+func (h *UserHandler) Subscribe(w http.ResponseWriter, r *http.Request) {
+	ctx, cancel := context.WithTimeout(r.Context(), 10*time.Second) 
+	defer cancel()
+
+	clerkID, ok := middleware.GetClerkID(ctx)
+	if !ok {
+		respondWithError(w, http.StatusUnauthorized, "Unauthorized")
+		return
+	}
+
+	// 1. Decode the request to get the Price ID (Monthly vs Yearly)
+	var req subscription.SubscribeRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		respondWithError(w, http.StatusBadRequest, "Invalid request body")
+		return
+	}
+
+	if req.PriceID == "" {
+		respondWithError(w, http.StatusBadRequest, "Price ID is required")
+		return
+	}
+
+	// 2. Call Service to generate Stripe Checkout URL
+	checkoutURL, err := h.userService.Subscribe(ctx, clerkID, req.PriceID)
+	if err != nil {
+		respondWithError(w, http.StatusInternalServerError, "Failed to create checkout session: "+err.Error())
+		return
+	}
+
+	// 3. Return the URL so frontend can window.location.href = url
+	respondWithJSON(w, http.StatusOK, subscription.SubscribeResponse{
+		CheckoutURL: checkoutURL,
+	})
 }
 
 func (h *UserHandler) DeleteAccountPage(w http.ResponseWriter, r *http.Request) {

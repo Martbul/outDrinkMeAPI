@@ -7,6 +7,7 @@ import (
 	"sync"
 	"time"
 )
+
 type PushNotificationProvider interface {
 	SendPush(ctx context.Context, tokens []notification.DeviceToken, title, body string, data map[string]any) error
 }
@@ -14,7 +15,7 @@ type PushNotificationProvider interface {
 // NotificationDispatcher handles sending notifications through various channels
 type NotificationDispatcher struct {
 	service      *NotificationService
-	pushProvider PushNotificationProvider 
+	pushProvider PushNotificationProvider
 	workers      int
 	jobQueue     chan *DispatchJob
 	stopChan     chan struct{}
@@ -25,9 +26,6 @@ type DispatchJob struct {
 	Notification *notification.Notification
 	Preferences  *notification.NotificationPreferences
 }
-
-
-
 
 func NewNotificationDispatcher(service *NotificationService) *NotificationDispatcher {
 	dispatcher := &NotificationDispatcher{
@@ -84,21 +82,20 @@ func (d *NotificationDispatcher) processJob(job *DispatchJob) {
 	if prefs.PushEnabled && len(prefs.DeviceTokens) > 0 && d.pushProvider != nil {
 		// This calls the code in internal/notification/fcm.go
 		err := d.pushProvider.SendPush(ctx, prefs.DeviceTokens, notif.Title, notif.Body, notif.Data)
-		
+
 		if err != nil {
 			log.Printf("Push failed for user %s: %v", notif.UserID, err)
 			d.markAsFailed(ctx, notif.ID.String(), err)
 			return
 		}
 	} else {
-		log.Printf("Skipping push: Enabled=%v, Tokens=%d, ProviderSet=%v", 
+		log.Printf("Skipping push: Enabled=%v, Tokens=%d, ProviderSet=%v",
 			prefs.PushEnabled, len(prefs.DeviceTokens), d.pushProvider != nil)
 	}
 
 	// 2. Mark as Sent in DB
 	d.markAsSent(ctx, notif.ID.String())
 }
-
 
 // Dispatch a notification (add to queue)
 func (d *NotificationDispatcher) DispatchNotification(ctx context.Context, notif *notification.Notification, prefs *notification.NotificationPreferences) {
@@ -117,7 +114,7 @@ func (d *NotificationDispatcher) DispatchNotification(ctx context.Context, notif
 
 // Process scheduled notifications (runs periodically)
 func (d *NotificationDispatcher) processScheduledNotifications() {
-	ticker := time.NewTicker(1 * time.Minute)
+	ticker := time.NewTicker(1 * time.Hour)
 	defer ticker.Stop()
 
 	for {
@@ -251,6 +248,7 @@ func (d *NotificationDispatcher) markAsSent(ctx context.Context, notificationID 
 		log.Printf("Failed to mark notification %s as sent: %v", notificationID, err)
 	}
 }
+
 // Replace the existing markAsFailed function with this updated version
 func (d *NotificationDispatcher) markAsFailed(ctx context.Context, notificationID string, err error) {
 	// Fix: We now take a single 'error' instead of '[]error'

@@ -60,7 +60,7 @@ func main() {
 		log.Fatal("Failed to parse database URL:", err)
 	}
 
-	poolConfig.MaxConnIdleTime = 30 * time.Second 
+	poolConfig.MaxConnIdleTime = 30 * time.Second
 	poolConfig.MinConns = 0
 	poolConfig.MaxConns = 15
 	poolConfig.MaxConnLifetime = 5 * time.Minute
@@ -113,7 +113,7 @@ func main() {
 			time.Sleep(500 * time.Millisecond)
 			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 			log.Printf("Background: Pinging NeonDB to wake it up (Attempt %d/3)...", i+1)
-			
+
 			if err := dbPool.Ping(ctx); err == nil {
 				log.Println("Success: NeonDB is awake and ready")
 				cancel()
@@ -155,6 +155,7 @@ func main() {
 	})
 
 	standardRouter.HandleFunc("/webhooks/clerk", webhookHandler.HandleClerkWebhook).Methods("POST")
+	standardRouter.HandleFunc("/webhooks/stripe", webhookHandler.HandleStripeWebhook).Methods("POST")
 
 	api := standardRouter.PathPrefix("/api/v1").Subrouter()
 
@@ -210,6 +211,9 @@ func main() {
 	protected.HandleFunc("/user/stories/relate", userHandler.RelateStory).Methods("POST")
 	protected.HandleFunc("/user/stories/seen", userHandler.MarkStoryAsSeen).Methods("POST")
 	protected.HandleFunc("/user/user-stories", userHandler.GetAllUserStories).Methods("GET")
+	protected.HandleFunc("/user/subscription", userHandler.GetSubscriptionDetails).Methods("GET")
+	protected.HandleFunc("/user/subscription", userHandler.Subscribe).Methods("POST")
+
 	protected.HandleFunc("/min-version", docHandler.GetAppMinVersion).Methods("GET")
 
 	protected.HandleFunc("/store", storeHandler.GetStore).Methods("GET")
@@ -249,9 +253,9 @@ func main() {
 	port = ":" + port
 
 	server := http.Server{
-		Addr:        port,
-		Handler:     corsHandler(r),
-		ReadTimeout: 10 * time.Second,
+		Addr:         port,
+		Handler:      corsHandler(r),
+		ReadTimeout:  10 * time.Second,
 		WriteTimeout: 60 * time.Second,
 		IdleTimeout:  120 * time.Second,
 	}
