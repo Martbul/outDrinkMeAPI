@@ -31,6 +31,7 @@ var (
 	notificationService *services.NotificationService
 	photoDumpService    *services.FuncService
 	gameManager         *services.DrinnkingGameManager
+	venueService        *services.VenueService
 )
 
 func main() {
@@ -80,6 +81,7 @@ func main() {
 	photoDumpService = services.NewFuncService(dbPool)
 	gameManager = services.NewDrinnkingGameManager()
 	docService = services.NewDocService(dbPool)
+	venueService = services.NewVenueService(dbPool)
 
 	userHandler := handlers.NewUserHandler(userService)
 	docHandler := handlers.NewDocHandler(docService)
@@ -88,6 +90,7 @@ func main() {
 	webhookHandler := handlers.NewWebhookHandler(userService)
 	funcHandler := handlers.NewFuncHandler(photoDumpService)
 	drinkingGameHandler := handlers.NewDrinkingGamesHandler(gameManager, userService)
+	venueHandler := handlers.NewVenueHandler(venueService)
 
 	go func() {
 		fcm, err := notification.NewFCMService("./serviceAccountKey.json")
@@ -229,6 +232,8 @@ func main() {
 	protected.HandleFunc("/func/leave", funcHandler.LeaveFunction).Methods("POST")
 	protected.HandleFunc("/func/delete", funcHandler.DeleteImages).Methods("DELETE")
 	protected.HandleFunc("/drinking-games/create", drinkingGameHandler.CreateDrinkingGame).Methods("POST")
+
+	protected.HandleFunc("/all-venues", venueHandler.GetAllVenues).Methods("GET")
 
 	corsHandler := gorilllaHandlers.CORS(
 		gorilllaHandlers.AllowedOrigins([]string{"*"}),

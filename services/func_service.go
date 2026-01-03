@@ -22,7 +22,6 @@ func NewFuncService(db *pgxpool.Pool) *FuncService {
 	}
 }
 
-// --- Struct Definitions for JSON Responses ---
 
 type FuncMember struct {
 	Username string `json:"username"`
