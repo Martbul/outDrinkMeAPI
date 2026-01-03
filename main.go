@@ -233,7 +233,7 @@ func main() {
 	protected.HandleFunc("/func/delete", funcHandler.DeleteImages).Methods("DELETE")
 	protected.HandleFunc("/drinking-games/create", drinkingGameHandler.CreateDrinkingGame).Methods("POST")
 
-	protected.HandleFunc("/all-venues", venueHandler.GetAllVenues).Methods("GET")
+	protected.HandleFunc("/venues", venueHandler.GetAllVenues).Methods("GET")
 
 	corsHandler := gorilllaHandlers.CORS(
 		gorilllaHandlers.AllowedOrigins([]string{"*"}),
