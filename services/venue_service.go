@@ -18,8 +18,6 @@ func NewVenueService(db *pgxpool.Pool) *VenueService {
 }
 
 func (s *VenueService) GetAllVenues(ctx context.Context) ([]venue.Venue, error) {
-	// We use subqueries to aggregate Specials (as JSON) and Employees (as Array)
-	// This avoids the N+1 query problem.
 	query := `
 		SELECT
 			v.id,
