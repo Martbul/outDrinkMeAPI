@@ -114,7 +114,7 @@ func (d *NotificationDispatcher) DispatchNotification(ctx context.Context, notif
 
 // Process scheduled notifications (runs periodically)
 func (d *NotificationDispatcher) processScheduledNotifications() {
-	ticker := time.NewTicker(1 * time.Hour)
+	ticker := time.NewTicker(2 * time.Hour)
 	defer ticker.Stop()
 
 	for {
