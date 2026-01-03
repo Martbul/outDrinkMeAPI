@@ -134,15 +134,10 @@ func (s *NotificationService) CreateNotification(ctx context.Context, req *notif
 
 }
 
-// Add this anywhere in services/services.go
 
 func (s *NotificationService) SetPushProvider(provider PushNotificationProvider) {
 	s.dispatcher.SetPushProvider(provider)
 }
-
-// ---------------------------------------------------------
-// GETTERS & SETTERS
-// ---------------------------------------------------------
 
 func (s *NotificationService) GetNotifications(ctx context.Context, clerkID string, page, pageSize int, unreadOnly bool) (*notification.NotificationListResponse, error) {
 	userID, err := s.getUserID(ctx, clerkID)

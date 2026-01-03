@@ -34,7 +34,6 @@ var (
 )
 
 func main() {
-	// 1. Load Environment Variables
 	if err := godotenv.Load(); err != nil {
 		log.Println("Note: .env file not found, using system env")
 	}
@@ -46,10 +45,8 @@ func main() {
 	clerk.SetKey(clerkSecretKey)
 	log.Println("Clerk initialized")
 
-	// Initialize Prometheus (moved from init)
 	middleware.InitPrometheus()
 
-	// 2. Configure Database (Non-blocking)
 	dbURL := os.Getenv("DATABASE_URL")
 	if dbURL == "" {
 		log.Fatal("DATABASE_URL environment variable is not set")
@@ -77,7 +74,6 @@ func main() {
 		dbPool.Close()
 	}()
 
-	// 3. Initialize Services
 	notificationService = services.NewNotificationService(dbPool)
 	userService = services.NewUserService(dbPool, notificationService)
 	storeService = services.NewStoreService(dbPool)
@@ -85,7 +81,6 @@ func main() {
 	gameManager = services.NewDrinnkingGameManager()
 	docService = services.NewDocService(dbPool)
 
-	// 4. Initialize Handlers
 	userHandler := handlers.NewUserHandler(userService)
 	docHandler := handlers.NewDocHandler(docService)
 	storeHandler := handlers.NewStoreHandler(storeService)
@@ -94,7 +89,6 @@ func main() {
 	funcHandler := handlers.NewFuncHandler(photoDumpService)
 	drinkingGameHandler := handlers.NewDrinkingGamesHandler(gameManager, userService)
 
-	// 5. Initialize Background Tasks
 	go func() {
 		fcm, err := notification.NewFCMService("./serviceAccountKey.json")
 		if err != nil {
@@ -109,7 +103,6 @@ func main() {
 
 	go func() {
 		for i := 0; i < 3; i++ {
-			// Small delay to let network stack settle
 			time.Sleep(500 * time.Millisecond)
 			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 			log.Printf("Background: Pinging NeonDB to wake it up (Attempt %d/3)...", i+1)
@@ -126,7 +119,6 @@ func main() {
 		log.Println("Warning: NeonDB warm-up failed after retries. First request might be slow.")
 	}()
 
-	// 6. Router Setup
 	r := mux.NewRouter()
 
 	r.HandleFunc("/health", func(w http.ResponseWriter, r *http.Request) {
