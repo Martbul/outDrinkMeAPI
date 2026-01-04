@@ -148,6 +148,7 @@ func main() {
 		w.Header().Set("Content-Type", "text/plain")
 		w.Write([]byte("google.com, pub-1167503921437683, DIRECT, f08c47fec0942fa0"))
 	})
+	standardRouter.HandleFunc("/", docHandler.ServeHome).Methods("GET")
 
 	standardRouter.HandleFunc("/webhooks/clerk", webhookHandler.HandleClerkWebhook).Methods("POST")
 	standardRouter.HandleFunc("/webhooks/stripe", webhookHandler.HandleStripeWebhook).Methods("POST")

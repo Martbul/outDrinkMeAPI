@@ -16,6 +16,132 @@ func NewDocHandler(s *services.DocService) *DocHandler {
 	return &DocHandler{service: s}
 }
 
+func (h *DocHandler) ServeHome(w http.ResponseWriter, r *http.Request) {
+	const homeHtml = `
+	<!DOCTYPE html>
+	<html lang="en">
+	<head>
+		<meta charset="UTF-8">
+		<meta name="viewport" content="width=device-width, initial-scale=1.0">
+		<title>OutDrinkMe - Premium Nightlife</title>
+		<style>
+			/* Exact styles from your other pages to match the theme */
+			body {
+				font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif;
+				line-height: 1.6;
+				color: #333;
+				max-width: 800px;
+				margin: 0 auto;
+				padding: 20px;
+				background-color: #f9f9f9;
+			}
+			.container {
+				background-color: #fff;
+				padding: 40px;
+				border-radius: 8px;
+				box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+			}
+			h1 { color: #2c3e50; border-bottom: 2px solid #eee; padding-bottom: 10px; text-align: center; }
+			h2 { color: #34495e; margin-top: 30px; border-bottom: 1px solid #eee; padding-bottom: 5px; }
+			h3 { color: #2980b9; margin-top: 25px; }
+			ul { margin-bottom: 20px; }
+			li { margin-bottom: 8px; }
+			p { margin-bottom: 15px; }
+			
+			/* Specific styles for the sales page */
+			.hero { text-align: center; margin-bottom: 40px; }
+			.price-box { 
+				background-color: #f8f9fa; 
+				border: 1px solid #e9ecef; 
+				padding: 20px; 
+				border-radius: 8px; 
+				text-align: center; 
+				margin: 20px 0;
+			}
+			.price { font-size: 24px; font-weight: bold; color: #27ae60; }
+			.period { font-size: 14px; color: #7f8c8d; }
+			.cta-button {
+				display: inline-block;
+				background-color: #3498db;
+				color: white;
+				padding: 12px 30px;
+				text-decoration: none;
+				border-radius: 5px;
+				font-weight: bold;
+				margin-top: 15px;
+			}
+			.cta-button:hover { background-color: #2980b9; }
+			.footer { margin-top: 50px; border-top: 1px solid #eee; padding-top: 20px; text-align: center; font-size: 0.9em; color: #777; }
+			.footer a { color: #777; margin: 0 10px; }
+		</style>
+	</head>
+	<body>
+		<div class="container">
+			<div class="hero">
+				<h1>OutDrinkMe</h1>
+				<p style="font-size: 1.2em; color: #555;">Your Digital Passport to the Best Venues</p>
+			</div>
+
+			<p><strong>OutDrinkMe</strong> is the ultimate nightlife companion app. We partner with the city's top bars, clubs, and lounges to bring you exclusive benefits. By subscribing to OutDrinkMe Premium, you unlock unlimited discounts and VIP perks across our entire network of partner locations.</p>
+
+			<div class="price-box">
+				<h2>OutDrinkMe Premium Subscription</h2>
+				<p>Unlock 5-15% discounts at all partner venues:</p>
+				<div style="margin-bottom: 15px;">
+					<span class="price">39.99 BGN</span> <span class="period">/ month</span>
+				</div>
+				<div style="margin-bottom: 15px;">
+					<span class="price">469.69 BGN</span> <span class="period">/ year</span>
+				</div>
+				<p><em>Subscriptions are managed directly within the OutDrinkMe app.</em></p>
+				<!-- Link to download or deep link to app -->
+				<a href="#" class="cta-button">Download App & Subscribe</a>
+			</div>
+
+			<h2>Why Subscribe?</h2>
+			<p>Your subscription pays for itself after just one or two nights out. Members enjoy:</p>
+			<ul>
+				<li><strong>Unlimited Discounts:</strong> Get 5-15% off your entire bill at all partner venues.</li>
+				<li><strong>VIP Treatment:</strong> Skip the line at select clubs.</li>
+				<li><strong>Multiple Locations:</strong> Use your subscription at any venue listed in the app.</li>
+				<li><strong>Guest Events:</strong> Exclusive invitations to subscriber-only parties.</li>
+				<li><strong>Priority Booking:</strong> Last-minute table reservations for you and your friends.</li>
+			</ul>
+			<p><em>Example: Spend 120 BGN on cocktails and save 12 BGN instantly. Do that 4 times a month, and you've saved more than the cost of the subscription!</em></p>
+
+			<h2>How It Works</h2>
+			<ol>
+				<li><strong>Download:</strong> Get the OutDrinkMe app on Android or iOS.</li>
+				<li><strong>Subscribe:</strong> Choose your monthly or yearly Premium plan.</li>
+				<li><strong>Visit:</strong> Go to any partner venue (highlighted in red in the app).</li>
+				<li><strong>Scan:</strong> Show your personal Premium QR code to the staff before paying.</li>
+				<li><strong>Save:</strong> The discount is applied immediately to your bill.</li>
+			</ol>
+
+			<div class="footer">
+				<p>Questions? Contact us at <strong><a href="mailto:martbul01@gmail.com" style="color: #3498db;">martbul01@gmail.com</a></strong></p>
+				<p>
+					<a href="/api/v1/privacy-policy">Privacy Policy</a> | 
+					<a href="/api/v1/terms-of-services">Terms of Service</a>
+				</p>
+				<p>&copy; 2026 OutDrinkMe. All rights reserved.</p>
+			</div>
+		</div>
+	</body>
+	</html>
+	`
+
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	
+	tmpl, err := template.New("home").Parse(homeHtml)
+	if err != nil {
+		http.Error(w, "Could not load homepage", http.StatusInternalServerError)
+		return
+	}
+
+	tmpl.Execute(w, nil)
+}
+
 func (h *DocHandler) ServePrivacyPolicy(w http.ResponseWriter, r *http.Request) {
 	const privacyHtml = `
 	<!DOCTYPE html>
