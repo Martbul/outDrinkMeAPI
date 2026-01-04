@@ -235,6 +235,11 @@ func main() {
 	protected.HandleFunc("/drinking-games/create", drinkingGameHandler.CreateDrinkingGame).Methods("POST")
 
 	protected.HandleFunc("/venues", venueHandler.GetAllVenues).Methods("GET")
+	protected.HandleFunc("/venues/employee", venueHandler.GetEmployeeDetails).Methods("GET")
+	protected.HandleFunc("/venues/employee", venueHandler.AddEmployeeToVenue).Methods("POST")
+	protected.HandleFunc("/venues/employee", venueHandler.RemoveEmployeeFromVenue).Methods("DELETE")
+	protected.HandleFunc("/venues/scan", venueHandler.AddScanData).Methods("POST")
+
 
 	corsHandler := gorilllaHandlers.CORS(
 		gorilllaHandlers.AllowedOrigins([]string{"*"}),
