@@ -130,17 +130,15 @@ func (h *VenueHandler) AddScanData(w http.ResponseWriter, r *http.Request) {
 	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
 	defer cancel()
 
-	// 1. Get the Customer ID (the user logged in)
 	clerkID, ok := middleware.GetClerkID(ctx)
 	if !ok {
 		respondWithError(w, http.StatusUnauthorized, "User not authenticated")
 		return
 	}
 
-	// 2. Parse the request body
 	var req struct {
 		DiscountPercentage string `json:"discount_percentage"`
-		VenueID            string `json:"venue"` // Assuming this maps to venue_id
+		VenueID            string `json:"venue"` 
 		ScannerUserId      string `json:"scanner_user_id"`
 	}
 
@@ -149,24 +147,20 @@ func (h *VenueHandler) AddScanData(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Basic Validation
 	if req.VenueID == "" || req.ScannerUserId == "" {
 		respondWithError(w, http.StatusBadRequest, "Venue and ScannerUserId are required")
 		return
 	}
 
-	// 3. Create the service request object
 	serviceReq := services.ScanDataReq{
 		VenueID:            req.VenueID,
-		CustomerID:         clerkID,           // From Middleware
-		ScannerUserID:      req.ScannerUserId, // From Body
+		CustomerID:         clerkID,          
+		ScannerUserID:      req.ScannerUserId, 
 		DiscountPercentage: req.DiscountPercentage,
 	}
 
-	// 4. Call the service
 	success, err := h.venueService.AddScanData(ctx, serviceReq)
 	if err != nil {
-		// Log the error internally here usually
 		respondWithError(w, http.StatusInternalServerError, "Server error: "+err.Error())
 		return
 	}
