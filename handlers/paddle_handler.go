@@ -26,52 +26,45 @@ func NewPaddleHandler(paddleService *services.PaddleService) *PaddleHandler {
 	}
 }
 
-// Response struct for sending prices to the client
 type PriceResponse struct {
 	ID          string `json:"id"`
 	ProductID   string `json:"productId"`
 	Description string `json:"description"`
 	Amount      string `json:"amount"`
 	Currency    string `json:"currency"`
-	Interval    string `json:"interval"` // e.g., "month", "year"
+	Interval    string `json:"interval"`
 }
 
 func (h *PaddleHandler) GetPrices(w http.ResponseWriter, r *http.Request) {
 	ctx, cancel := context.WithTimeout(r.Context(), 30*time.Second)
 	defer cancel()
 
-	// FIX 1 & 2: Use paddle.Status and paddle.StatusActive
 	req := &paddle.ListPricesRequest{
 		Status: []string{string(paddle.StatusActive)},
 	}
-	
+
 	priceCollection, err := h.paddleService.PaddleClient.ListPrices(ctx, req)
+
 	if err != nil {
-		http.Error(w, fmt.Sprintf("Failed to fetch prices: %v", err), http.StatusInternalServerError)
+		respondWithError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
 
 	var prices []PriceResponse
 
-	// FIX 3: Iterate using the SDK's Collection iterator
 	for {
-		// Get the next result wrapper
 		result := priceCollection.Next(ctx)
 
-		// If !Ok(), we are done or there was an error
 		if !result.Ok() {
 			if err := result.Err(); err != nil {
-				// Handle error (e.g., network failure fetching next page)
-				http.Error(w, fmt.Sprintf("Error iterating prices: %v", err), http.StatusInternalServerError)
+				respondWithError(w, http.StatusInternalServerError, err.Error())
 				return
 			}
 			break // Successfully finished iterating
 		}
 
-		// Extract the actual price pointer
 		p := result.Value()
 
-		// Logic to extract interval safely
 		interval := ""
 		if p.BillingCycle != nil {
 			interval = string(p.BillingCycle.Interval)
@@ -87,8 +80,8 @@ func (h *PaddleHandler) GetPrices(w http.ResponseWriter, r *http.Request) {
 		})
 	}
 
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(prices)
+	log.Println(prices)
+	respondWithJSON(w, http.StatusOK, prices)
 }
 
 type CreateTransactionRequest struct {
