@@ -26,6 +26,71 @@ func NewPaddleHandler(paddleService *services.PaddleService) *PaddleHandler {
 	}
 }
 
+// Response struct for sending prices to the client
+type PriceResponse struct {
+	ID          string `json:"id"`
+	ProductID   string `json:"productId"`
+	Description string `json:"description"`
+	Amount      string `json:"amount"`
+	Currency    string `json:"currency"`
+	Interval    string `json:"interval"` // e.g., "month", "year"
+}
+
+func (h *PaddleHandler) GetPrices(w http.ResponseWriter, r *http.Request) {
+	ctx, cancel := context.WithTimeout(r.Context(), 30*time.Second)
+	defer cancel()
+
+	// FIX 1 & 2: Use paddle.Status and paddle.StatusActive
+	req := &paddle.ListPricesRequest{
+		Status: []string{string(paddle.StatusActive)},
+	}
+	
+	priceCollection, err := h.paddleService.PaddleClient.ListPrices(ctx, req)
+	if err != nil {
+		http.Error(w, fmt.Sprintf("Failed to fetch prices: %v", err), http.StatusInternalServerError)
+		return
+	}
+
+	var prices []PriceResponse
+
+	// FIX 3: Iterate using the SDK's Collection iterator
+	for {
+		// Get the next result wrapper
+		result := priceCollection.Next(ctx)
+
+		// If !Ok(), we are done or there was an error
+		if !result.Ok() {
+			if err := result.Err(); err != nil {
+				// Handle error (e.g., network failure fetching next page)
+				http.Error(w, fmt.Sprintf("Error iterating prices: %v", err), http.StatusInternalServerError)
+				return
+			}
+			break // Successfully finished iterating
+		}
+
+		// Extract the actual price pointer
+		p := result.Value()
+
+		// Logic to extract interval safely
+		interval := ""
+		if p.BillingCycle != nil {
+			interval = string(p.BillingCycle.Interval)
+		}
+
+		prices = append(prices, PriceResponse{
+			ID:          p.ID,
+			ProductID:   p.ProductID,
+			Description: p.Description,
+			Amount:      p.UnitPrice.Amount,
+			Currency:    string(p.UnitPrice.CurrencyCode),
+			Interval:    interval,
+		})
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(prices)
+}
+
 type CreateTransactionRequest struct {
 	PriceID string `json:"priceId"`
 }
@@ -71,8 +136,7 @@ func (h *PaddleHandler) CreateTransaction(w http.ResponseWriter, r *http.Request
 	})
 }
 
-
-//! unlock and remove premium in the db with service call
+// ! unlock and remove premium in the db with service call
 func (h *PaddleHandler) PaddleWebhookHandler(w http.ResponseWriter, r *http.Request) {
 	secret := os.Getenv("PADDLE_SECRET_KEY")
 	if secret == "" {
@@ -83,8 +147,6 @@ func (h *PaddleHandler) PaddleWebhookHandler(w http.ResponseWriter, r *http.Requ
 
 	verifier := paddle.NewWebhookVerifier(secret)
 
-	// Note: Verify typically reads the body. Ensure your SDK version
-	// restores the body buffer so it can be read again below.
 	valid, err := verifier.Verify(r)
 	if err != nil {
 		http.Error(w, "Verification failed", http.StatusInternalServerError)
@@ -102,10 +164,9 @@ func (h *PaddleHandler) PaddleWebhookHandler(w http.ResponseWriter, r *http.Requ
 	}
 	defer r.Body.Close()
 
-	// FIX 1: Use EventTypeName (string) instead of EventType (struct)
 	type WebhookPartial struct {
 		EventID   string               `json:"event_id"`
-		EventType paddle.EventTypeName `json:"event_type"` 
+		EventType paddle.EventTypeName `json:"event_type"`
 	}
 
 	var webhook WebhookPartial
@@ -116,10 +177,8 @@ func (h *PaddleHandler) PaddleWebhookHandler(w http.ResponseWriter, r *http.Requ
 
 	var entityID string
 
-	// FIX 2: Use the EventTypeName constants
 	switch webhook.EventType {
 
-	// Note: Ensure you use the constants exactly as defined in the SDK (e.g., EventTypeNameTransactionPaid)
 	case paddle.EventTypeNameTransactionPaid, paddle.EventTypeNameSubscriptionCreated:
 		type TransactionEvent struct {
 			Data paddle.Transaction `json:"data"`
@@ -136,7 +195,7 @@ func (h *PaddleHandler) PaddleWebhookHandler(w http.ResponseWriter, r *http.Requ
 		if fullEvent.Data.CustomData != nil {
 			if userID, ok := fullEvent.Data.CustomData["userId"].(string); ok {
 				fmt.Printf("✅ Payment Succeeded for User: %s\n", userID)
-				// h.paddleService.UnlockPremium(userID)
+				h.paddleService.UnlockPremium(userID)
 			}
 		}
 

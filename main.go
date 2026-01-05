@@ -252,6 +252,7 @@ func main() {
 	protected.HandleFunc("/venues/employee", venueHandler.RemoveEmployeeFromVenue).Methods("DELETE")
 	protected.HandleFunc("/venues/scan", venueHandler.AddScanData).Methods("POST")
 
+	protected.HandleFunc("/paddle/price", paddleHandler.GetPrices).Methods("GET")
 	protected.HandleFunc("/paddle/transaction", paddleHandler.CreateTransaction).Methods("POST")
 
 	corsHandler := gorilllaHandlers.CORS(

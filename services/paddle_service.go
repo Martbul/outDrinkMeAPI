@@ -11,3 +11,13 @@ type PaddleService struct {
 func NewPaddleService(PaddleClient *paddle.SDK) *PaddleService {
 	return &PaddleService{PaddleClient: PaddleClient}
 }
+
+
+func (s *PaddleService)UnlockPremium(userID string) {
+
+}
+
+
+func (s *PaddleService)RemovePremium(userID string) {
+	
+}
