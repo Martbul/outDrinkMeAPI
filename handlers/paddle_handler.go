@@ -215,3 +215,33 @@ func (h *PaddleHandler) PaddleWebhookHandler(w http.ResponseWriter, r *http.Requ
 	w.WriteHeader(http.StatusOK)
 	w.Write([]byte(fmt.Sprintf(`{"ID": "%s"}`, entityID)))
 }
+
+
+
+func (h *PaddleHandler) PaymentSuccessPage(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	
+	html := `
+	<!DOCTYPE html>
+	<html>
+	<head>
+		<title>Payment Successful</title>
+		<meta name="viewport" content="width=device-width, initial-scale=1">
+		<style>
+			body { background-color: #121212; color: white; font-family: sans-serif; text-align: center; padding: 50px 20px; }
+			h1 { color: #EA580C; }
+			p { color: #888; }
+			.card { background: #1E1E1E; padding: 30px; border-radius: 15px; max-width: 400px; margin: 0 auto; }
+		</style>
+	</head>
+	<body>
+		<div class="card">
+			<h1>Payment Successful!</h1>
+			<p>Thank you for subscribing to OutDrinkMe Premium.</p>
+			<p>You can now close this window and return to the app.</p>
+		</div>
+	</body>
+	</html>
+	`
+	fmt.Fprint(w, html)
+}
