@@ -123,6 +123,9 @@ func (h *DocHandler) ServeHome(w http.ResponseWriter, r *http.Request) {
 				<p>
 					<a href="/api/v1/privacy-policy">Privacy Policy</a> | 
 					<a href="/api/v1/terms-of-services">Terms of Service</a>
+										<a href="/api/v1/refund-policy">Refund Policy</a>
+
+					
 				</p>
 				<p>&copy; 2026 OutDrinkMe. All rights reserved.</p>
 			</div>
@@ -132,10 +135,101 @@ func (h *DocHandler) ServeHome(w http.ResponseWriter, r *http.Request) {
 	`
 
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	
+
 	tmpl, err := template.New("home").Parse(homeHtml)
 	if err != nil {
 		http.Error(w, "Could not load homepage", http.StatusInternalServerError)
+		return
+	}
+
+	tmpl.Execute(w, nil)
+}
+
+func (h *DocHandler) ServeRefundPolicy(w http.ResponseWriter, r *http.Request) {
+	const refundHtml = `
+	<!DOCTYPE html>
+	<html lang="en">
+	<head>
+		<meta charset="UTF-8">
+		<meta name="viewport" content="width=device-width, initial-scale=1.0">
+		<title>Refund & Cancellation Policy - OutDrinkMe</title>
+		<style>
+			/* Exact styles from your other pages */
+			body {
+				font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif;
+				line-height: 1.6;
+				color: #333;
+				max-width: 800px;
+				margin: 0 auto;
+				padding: 20px;
+				background-color: #f9f9f9;
+			}
+			.container {
+				background-color: #fff;
+				padding: 40px;
+				border-radius: 8px;
+				box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+			}
+			h1 { color: #2c3e50; border-bottom: 2px solid #eee; padding-bottom: 10px; }
+			h2 { color: #34495e; margin-top: 30px; }
+			ul { margin-bottom: 20px; }
+			li { margin-bottom: 8px; }
+			.date { color: #7f8c8d; font-style: italic; margin-bottom: 20px; }
+			.contact { background-color: #e8f4f8; padding: 15px; border-radius: 5px; margin-top: 30px; }
+			a { color: #3498db; }
+		</style>
+	</head>
+	<body>
+		<div class="container">
+			<h1>Refund & Cancellation Policy</h1>
+			<div class="date">Last updated: January 5, 2026</div>
+			
+			<p>Thank you for using OutDrinkMe. We strive to provide the best nightlife experience possible. Please read this policy carefully to understand your rights regarding cancellations and refunds.</p>
+
+			<h2>1. Cancellation Policy</h2>
+			<p>You may cancel your OutDrinkMe Premium subscription at any time via the app settings or your app store subscription management.</p>
+			<ul>
+				<li><strong>Access Continues:</strong> If you cancel, your Premium benefits (discounts and VIP perks) will remain active until the end of your current paid billing period.</li>
+				<li><strong>No Partial Refunds:</strong> We do not offer refunds for the remaining days of a billing period after you cancel.</li>
+			</ul>
+
+			<h2>2. Digital Content & Right of Withdrawal (EU/UK)</h2>
+			<p>OutDrinkMe Premium provides immediate access to digital discounts and content.</p>
+			<p><strong>By purchasing a subscription, you expressly consent to the immediate performance of the contract and acknowledge that you lose your right of withdrawal (the 14-day cooling-off period) once the digital content or benefit is accessed.</strong></p>
+			<p>Therefore, we generally do not offer "no questions asked" refunds once the service has been used or the subscription period has started.</p>
+
+			<h2>3. Exceptions: When We DO Offer Refunds</h2>
+			<p>We stand by the quality of our service. We <strong>WILL</strong> provide a refund in the following specific circumstances:</p>
+			<ul>
+				<li><strong>Technical Errors:</strong> If the OutDrinkMe app crashes, fails to load your QR code, or experiences server errors that prevent you from using your benefits, and our support team cannot fix it.</li>
+				<li><strong>Venue Refusal:</strong> If a partner venue listed in the app refuses to honor the discount or VIP benefit despite you presenting a valid active subscription.</li>
+				<li><strong>Accidental Renewals:</strong> If you intended to cancel but forgot, please contact us within <strong>48 hours</strong> of the renewal charge. We will refund the renewal charge provided you have not used the benefits during the new period.</li>
+			</ul>
+
+			<h2>4. How to Request a Refund</h2>
+			<p>To request a refund for one of the reasons listed above, please email us with:</p>
+			<ul>
+				<li>Your account email address</li>
+				<li>Date of the incident</li>
+				<li>Proof of issue (e.g., screenshot of error or name of the venue that refused service)</li>
+			</ul>
+			<p>Send your request to: <a href="mailto:martbul01@gmail.com">martbul01@gmail.com</a></p>
+
+			<h2>5. Contact Us</h2>
+			<div class="contact">
+				<p>If you have questions about this policy, contact us at:<br>
+				<strong><a href="mailto:martbul01@gmail.com">martbul01@gmail.com</a></strong></p>
+			</div>
+		</div>
+	</body>
+	</html>
+	`
+
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+
+	tmpl, err := template.New("refund").Parse(refundHtml)
+	if err != nil {
+		http.Error(w, "Could not load refund policy", http.StatusInternalServerError)
 		return
 	}
 
@@ -253,7 +347,7 @@ func (h *DocHandler) ServePrivacyPolicy(w http.ResponseWriter, r *http.Request) 
 	`
 
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	
+
 	tmpl, err := template.New("privacy").Parse(privacyHtml)
 	if err != nil {
 		http.Error(w, "Could not load privacy policy", http.StatusInternalServerError)
@@ -353,7 +447,7 @@ func (h *DocHandler) ServeTermsOfServices(w http.ResponseWriter, r *http.Request
 	`
 
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	
+
 	tmpl, err := template.New("terms").Parse(termsHtml)
 	if err != nil {
 		http.Error(w, "Could not load terms of service", http.StatusInternalServerError)
@@ -362,9 +456,6 @@ func (h *DocHandler) ServeTermsOfServices(w http.ResponseWriter, r *http.Request
 
 	tmpl.Execute(w, nil)
 }
-
-
-
 
 func (h *DocHandler) GetAppMinVersion(w http.ResponseWriter, r *http.Request) {
 	appAndroidMinVersion := os.Getenv("ANDROID_MIN_VERSION")
@@ -389,6 +480,5 @@ func (h *DocHandler) GetAppMinVersion(w http.ResponseWriter, r *http.Request) {
 		UpdateMessage:     "An important update is available! Please update to continue using the app. This update includes critical server compatibility changes",
 	}
 
-	
 	respondWithJSON(w, http.StatusOK, minVers)
 }
