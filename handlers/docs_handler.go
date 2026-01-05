@@ -511,7 +511,6 @@ func (h *DocHandler) ServePricing(w http.ResponseWriter, r *http.Request) {
 	tmpl, _ := template.New("pricing").Parse(pricingHtml)
 	tmpl.Execute(w, nil)
 }
-
 func (h *DocHandler) ServeRefundPolicy(w http.ResponseWriter, r *http.Request) {
 	const refundHtml = `
 	<!DOCTYPE html>
@@ -539,8 +538,6 @@ func (h *DocHandler) ServeRefundPolicy(w http.ResponseWriter, r *http.Request) {
 			h1 { color: #2c3e50; border-bottom: 2px solid #eee; padding-bottom: 10px; }
 			h2 { color: #34495e; margin-top: 30px; }
 			p { margin-bottom: 15px; }
-			ul { margin-bottom: 20px; }
-			li { margin-bottom: 8px; }
 			.contact { background-color: #e8f4f8; padding: 15px; border-radius: 5px; margin-top: 30px; }
 			a { color: #3498db; }
 		</style>
@@ -550,34 +547,22 @@ func (h *DocHandler) ServeRefundPolicy(w http.ResponseWriter, r *http.Request) {
 			<h1>Refund Policy</h1>
 			<div style="color: #7f8c8d; font-style: italic; margin-bottom: 20px;">Last updated: January 5, 2026</div>
 			
-			<p>Our goal is to ensure you are completely satisfied with OutDrinkMe. We offer a transparent refund policy in compliance with consumer protection laws.</p>
+			<p>This Refund Policy applies to all purchases made through OutDrinkMe.</p>
 
-			<h2>1. 14-Day Money-Back Guarantee</h2>
-			<p>If you are a consumer based in the EU, UK, or other applicable jurisdictions, <strong>you have the right to cancel your order and request a full refund within 14 days of your initial purchase without giving any reason.</strong></p>
-			<p>The cancellation period expires 14 days after the day of the transaction. If you request a refund within this period, we will reimburse you the full amount.</p>
+			<h2>1. 14-Day Refund Window</h2>
+			<p>We offer a full refund on all subscriptions within <strong>14 days</strong> of your initial purchase.</p>
+			<p>If you are not satisfied with the service for any reason, you may request a refund within this 14-day period. No questions asked.</p>
 
 			<h2>2. How to Request a Refund</h2>
-			<p>To exercise your right to a refund, you must inform us of your decision clearly. You can do this by emailing us at:</p>
+			<p>To request a refund, please contact us via email:</p>
 			<p><strong><a href="mailto:martbul01@gmail.com">martbul01@gmail.com</a></strong></p>
-			<p>We will reimburse you without undue delay and no later than 14 days after the day on which we are informed about your decision to cancel. We will use the same means of payment as you used for the initial transaction.</p>
+			<p>Please include your order number or the email address associated with your account. We will process your refund request within 3 business days.</p>
 
-			<h2>3. Subscriptions and Cancellations</h2>
-			<p>OutDrinkMe Premium is a subscription service.</p>
-			<ul>
-				<li><strong>Cancellation:</strong> You may cancel your subscription at any time via the app settings. Cancellation takes effect at the end of the current billing period. You will continue to have access to Premium benefits until that period ends.</li>
-				<li><strong>Accidental Renewals:</strong> If you intended to cancel but forgot, and you are charged for a renewal, please contact us within <strong>48 hours</strong> of the charge. We will review these requests favorably provided you have not used the service during the new billing period.</li>
-			</ul>
-
-			<h2>4. Technical Issues & Venue Refusals</h2>
-			<p>We stand by our product. Regardless of the 14-day window, we will issue a refund if:</p>
-			<ul>
-				<li>You experience technical issues that prevent you from using the app (e.g., app crashes, QR code failures) which our support team cannot resolve.</li>
-				<li>A partner venue listed in the app refuses to honor a valid discount or Premium benefit.</li>
-			</ul>
+			<h2>3. After 14 Days</h2>
+			<p>After the 14-day refund window has passed, we do not offer refunds. Your subscription will continue until the end of the current billing cycle, and you will not be charged again if you cancel.</p>
 
 			<div class="contact">
-				<p>For any refund requests or questions, please contact us at:<br>
-				<strong><a href="mailto:martbul01@gmail.com">martbul01@gmail.com</a></strong></p>
+				<p>Contact Support: <strong><a href="mailto:martbul01@gmail.com">martbul01@gmail.com</a></strong></p>
 			</div>
 		</div>
 	</body>
