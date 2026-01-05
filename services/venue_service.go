@@ -179,6 +179,7 @@ type ScanDataReq struct {
 	DiscountPercentage string
 }
 
+//TODO! Check if user has active premium
 func (s *VenueService) AddScanData(ctx context.Context, req ScanDataReq) (bool, error) {
 	// Start a transaction
 	tx, err := s.db.Begin(ctx)

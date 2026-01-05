@@ -8,6 +8,7 @@ import (
 	"os/signal"
 	"time"
 
+	"github.com/PaddleHQ/paddle-go-sdk"
 	clerk "github.com/clerk/clerk-sdk-go/v2"
 	gorilllaHandlers "github.com/gorilla/handlers"
 	"github.com/gorilla/mux"
@@ -32,6 +33,7 @@ var (
 	photoDumpService    *services.FuncService
 	gameManager         *services.DrinnkingGameManager
 	venueService        *services.VenueService
+	paddleService       *services.PaddleService
 )
 
 func main() {
@@ -47,6 +49,13 @@ func main() {
 	log.Println("Clerk initialized")
 
 	middleware.InitPrometheus()
+
+	paddleClient, err := paddle.NewSandbox(
+		os.Getenv("PADDLE_API_KEY"),
+	)
+	if err != nil {
+		log.Fatalf("Failed to init Paddle client: %v", err)
+	}
 
 	dbURL := os.Getenv("DATABASE_URL")
 	if dbURL == "" {
@@ -82,6 +91,7 @@ func main() {
 	gameManager = services.NewDrinnkingGameManager()
 	docService = services.NewDocService(dbPool)
 	venueService = services.NewVenueService(dbPool)
+	paddleService = services.NewPaddleService(paddleClient)
 
 	userHandler := handlers.NewUserHandler(userService)
 	docHandler := handlers.NewDocHandler(docService)
@@ -91,6 +101,7 @@ func main() {
 	funcHandler := handlers.NewFuncHandler(photoDumpService)
 	drinkingGameHandler := handlers.NewDrinkingGamesHandler(gameManager, userService)
 	venueHandler := handlers.NewVenueHandler(venueService)
+	paddleHandler := handlers.NewPaddleHandler(paddleService)
 
 	go func() {
 		fcm, err := notification.NewFCMService("./serviceAccountKey.json")
@@ -152,6 +163,7 @@ func main() {
 
 	standardRouter.HandleFunc("/webhooks/clerk", webhookHandler.HandleClerkWebhook).Methods("POST")
 	standardRouter.HandleFunc("/webhooks/stripe", webhookHandler.HandleStripeWebhook).Methods("POST")
+	standardRouter.HandleFunc("/webhooks/paddle", paddleHandler.PaddleWebhookHandler).Methods("POST")
 
 	api := standardRouter.PathPrefix("/api/v1").Subrouter()
 
@@ -240,6 +252,7 @@ func main() {
 	protected.HandleFunc("/venues/employee", venueHandler.RemoveEmployeeFromVenue).Methods("DELETE")
 	protected.HandleFunc("/venues/scan", venueHandler.AddScanData).Methods("POST")
 
+	protected.HandleFunc("/paddle/transaction", paddleHandler.CreateTransaction).Methods("POST")
 
 	corsHandler := gorilllaHandlers.CORS(
 		gorilllaHandlers.AllowedOrigins([]string{"*"}),

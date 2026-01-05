@@ -32,8 +32,6 @@ func NewWebhookHandler(userService *services.UserService) *WebhookHandler {
 	}
 }
 
-
-
 func (h *WebhookHandler) HandleClerkWebhook(w http.ResponseWriter, r *http.Request) {
 	// Verify webhook signature
 	if !h.verifyWebhookSignature(r) {
@@ -252,8 +250,6 @@ func (h *WebhookHandler) verifyWebhookSignature(r *http.Request) bool {
 	return hmac.Equal([]byte(expectedSignature), []byte(providedSignature))
 }
 
-
-
 // HandleStripeWebhook processes events sent by Stripe
 func (h *WebhookHandler) HandleStripeWebhook(w http.ResponseWriter, r *http.Request) {
 	const MaxBodyBytes = int64(65536)
@@ -314,10 +310,10 @@ func (h *WebhookHandler) HandleStripeWebhook(w http.ResponseWriter, r *http.Requ
 			w.WriteHeader(http.StatusInternalServerError)
 			return
 		}
-	
+
 	case "invoice.payment_succeeded":
-		// Recurring payment succeeded - we usually use this or subscription.updated 
-        // to extend the access date. We will fetch the sub and update it.
+		// Recurring payment succeeded - we usually use this or subscription.updated
+		// to extend the access date. We will fetch the sub and update it.
 		var invoice stripe.Invoice
 		err := json.Unmarshal(event.Data.Raw, &invoice)
 		if err != nil {
@@ -326,19 +322,18 @@ func (h *WebhookHandler) HandleStripeWebhook(w http.ResponseWriter, r *http.Requ
 			return
 		}
 		if invoice.Subscription != nil {
-             // We need to fetch the latest subscription data to get the new CurrentPeriodEnd
-             // Alternatively, we could extract it from invoice lines, but fetching is safer.
-             if err := h.handleInvoicePaymentSucceeded(ctx, invoice.Subscription.ID); err != nil {
-                 log.Printf("Error handling invoice payment: %v", err)
-                 w.WriteHeader(http.StatusInternalServerError)
-                 return
-             }
-        }
+			// We need to fetch the latest subscription data to get the new CurrentPeriodEnd
+			// Alternatively, we could extract it from invoice lines, but fetching is safer.
+			if err := h.handleInvoicePaymentSucceeded(ctx, invoice.Subscription.ID); err != nil {
+				log.Printf("Error handling invoice payment: %v", err)
+				w.WriteHeader(http.StatusInternalServerError)
+				return
+			}
+		}
 	}
 
 	w.WriteHeader(http.StatusOK)
 }
-
 
 func (h *WebhookHandler) handleCheckoutSessionCompleted(ctx context.Context, session *stripe.CheckoutSession) error {
 	userID := session.Metadata["user_id"]
@@ -365,8 +360,8 @@ func (h *WebhookHandler) handleCheckoutSessionCompleted(ctx context.Context, ses
 
 func (h *WebhookHandler) handleSubscriptionUpdated(ctx context.Context, sub *stripe.Subscription) error {
 	// We need to find the user_id from our DB based on the stripe_subscription_id
-    // or we can rely on the fact that Upsert will match on stripe_subscription_id.
-    
+	// or we can rely on the fact that Upsert will match on stripe_subscription_id.
+
 	dbSub := &subscription.Subscription{
 		StripeSubscriptionID: sub.ID,
 		StripeCustomerID:     sub.Customer.ID,
@@ -379,20 +374,20 @@ func (h *WebhookHandler) handleSubscriptionUpdated(ctx context.Context, sub *str
 }
 
 func (h *WebhookHandler) handleInvoicePaymentSucceeded(ctx context.Context, subscriptionID string) error {
-    // Fetch latest data from Stripe
-    sub, err := h.userService.FetchStripeSubscription(subscriptionID)
-    if err != nil {
-        return err
-    }
-    
-    // Update local DB
-    dbSub := &subscription.Subscription{
+	// Fetch latest data from Stripe
+	sub, err := h.userService.FetchStripeSubscription(subscriptionID)
+	if err != nil {
+		return err
+	}
+
+	// Update local DB
+	dbSub := &subscription.Subscription{
 		StripeSubscriptionID: sub.ID,
-        StripeCustomerID:     sub.Customer.ID,
+		StripeCustomerID:     sub.Customer.ID,
 		StripePriceID:        sub.Items.Data[0].Price.ID,
 		Status:               string(sub.Status),
 		CurrentPeriodEnd:     time.Unix(sub.CurrentPeriodEnd, 0),
 	}
-    
-    return h.userService.UpdateSubscriptionStatus(ctx, dbSub)
+
+	return h.userService.UpdateSubscriptionStatus(ctx, dbSub)
 }
