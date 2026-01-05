@@ -124,6 +124,7 @@ func (h *DocHandler) ServeHome(w http.ResponseWriter, r *http.Request) {
 					<a href="/api/v1/privacy-policy">Privacy Policy</a> | 
 					<a href="/api/v1/terms-of-services">Terms of Service</a>
 										<a href="/api/v1/refund-policy">Refund Policy</a>
+										 <a href="/api/v1/pricing">Pricing</a> 
 
 					
 				</p>
@@ -145,96 +146,6 @@ func (h *DocHandler) ServeHome(w http.ResponseWriter, r *http.Request) {
 	tmpl.Execute(w, nil)
 }
 
-func (h *DocHandler) ServeRefundPolicy(w http.ResponseWriter, r *http.Request) {
-	const refundHtml = `
-	<!DOCTYPE html>
-	<html lang="en">
-	<head>
-		<meta charset="UTF-8">
-		<meta name="viewport" content="width=device-width, initial-scale=1.0">
-		<title>Refund & Cancellation Policy - OutDrinkMe</title>
-		<style>
-			/* Exact styles from your other pages */
-			body {
-				font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif;
-				line-height: 1.6;
-				color: #333;
-				max-width: 800px;
-				margin: 0 auto;
-				padding: 20px;
-				background-color: #f9f9f9;
-			}
-			.container {
-				background-color: #fff;
-				padding: 40px;
-				border-radius: 8px;
-				box-shadow: 0 2px 4px rgba(0,0,0,0.1);
-			}
-			h1 { color: #2c3e50; border-bottom: 2px solid #eee; padding-bottom: 10px; }
-			h2 { color: #34495e; margin-top: 30px; }
-			ul { margin-bottom: 20px; }
-			li { margin-bottom: 8px; }
-			.date { color: #7f8c8d; font-style: italic; margin-bottom: 20px; }
-			.contact { background-color: #e8f4f8; padding: 15px; border-radius: 5px; margin-top: 30px; }
-			a { color: #3498db; }
-		</style>
-	</head>
-	<body>
-		<div class="container">
-			<h1>Refund & Cancellation Policy</h1>
-			<div class="date">Last updated: January 5, 2026</div>
-			
-			<p>Thank you for using OutDrinkMe. We strive to provide the best nightlife experience possible. Please read this policy carefully to understand your rights regarding cancellations and refunds.</p>
-
-			<h2>1. Cancellation Policy</h2>
-			<p>You may cancel your OutDrinkMe Premium subscription at any time via the app settings or your app store subscription management.</p>
-			<ul>
-				<li><strong>Access Continues:</strong> If you cancel, your Premium benefits (discounts and VIP perks) will remain active until the end of your current paid billing period.</li>
-				<li><strong>No Partial Refunds:</strong> We do not offer refunds for the remaining days of a billing period after you cancel.</li>
-			</ul>
-
-			<h2>2. Digital Content & Right of Withdrawal (EU/UK)</h2>
-			<p>OutDrinkMe Premium provides immediate access to digital discounts and content.</p>
-			<p><strong>By purchasing a subscription, you expressly consent to the immediate performance of the contract and acknowledge that you lose your right of withdrawal (the 14-day cooling-off period) once the digital content or benefit is accessed.</strong></p>
-			<p>Therefore, we generally do not offer "no questions asked" refunds once the service has been used or the subscription period has started.</p>
-
-			<h2>3. Exceptions: When We DO Offer Refunds</h2>
-			<p>We stand by the quality of our service. We <strong>WILL</strong> provide a refund in the following specific circumstances:</p>
-			<ul>
-				<li><strong>Technical Errors:</strong> If the OutDrinkMe app crashes, fails to load your QR code, or experiences server errors that prevent you from using your benefits, and our support team cannot fix it.</li>
-				<li><strong>Venue Refusal:</strong> If a partner venue listed in the app refuses to honor the discount or VIP benefit despite you presenting a valid active subscription.</li>
-				<li><strong>Accidental Renewals:</strong> If you intended to cancel but forgot, please contact us within <strong>48 hours</strong> of the renewal charge. We will refund the renewal charge provided you have not used the benefits during the new period.</li>
-			</ul>
-
-			<h2>4. How to Request a Refund</h2>
-			<p>To request a refund for one of the reasons listed above, please email us with:</p>
-			<ul>
-				<li>Your account email address</li>
-				<li>Date of the incident</li>
-				<li>Proof of issue (e.g., screenshot of error or name of the venue that refused service)</li>
-			</ul>
-			<p>Send your request to: <a href="mailto:martbul01@gmail.com">martbul01@gmail.com</a></p>
-
-			<h2>5. Contact Us</h2>
-			<div class="contact">
-				<p>If you have questions about this policy, contact us at:<br>
-				<strong><a href="mailto:martbul01@gmail.com">martbul01@gmail.com</a></strong></p>
-			</div>
-		</div>
-	</body>
-	</html>
-	`
-
-	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-
-	tmpl, err := template.New("refund").Parse(refundHtml)
-	if err != nil {
-		http.Error(w, "Could not load refund policy", http.StatusInternalServerError)
-		return
-	}
-
-	tmpl.Execute(w, nil)
-}
 
 func (h *DocHandler) ServePrivacyPolicy(w http.ResponseWriter, r *http.Request) {
 	const privacyHtml = `
@@ -481,4 +392,205 @@ func (h *DocHandler) GetAppMinVersion(w http.ResponseWriter, r *http.Request) {
 	}
 
 	respondWithJSON(w, http.StatusOK, minVers)
+}
+
+// Add this new function for the Pricing Page
+func (h *DocHandler) ServePricing(w http.ResponseWriter, r *http.Request) {
+	const pricingHtml = `
+	<!DOCTYPE html>
+	<html lang="en">
+	<head>
+		<meta charset="UTF-8">
+		<meta name="viewport" content="width=device-width, initial-scale=1.0">
+		<title>Pricing - OutDrinkMe</title>
+		<style>
+			body {
+				font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif;
+				line-height: 1.6;
+				color: #333;
+				max-width: 800px;
+				margin: 0 auto;
+				padding: 20px;
+				background-color: #f9f9f9;
+			}
+			.container {
+				background-color: #fff;
+				padding: 40px;
+				border-radius: 8px;
+				box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+				text-align: center;
+			}
+			h1 { color: #2c3e50; margin-bottom: 10px; }
+			p { margin-bottom: 30px; }
+			
+			.pricing-grid {
+				display: flex;
+				justify-content: center;
+				gap: 20px;
+				flex-wrap: wrap;
+				margin-bottom: 40px;
+			}
+			.plan {
+				border: 1px solid #e1e4e8;
+				border-radius: 8px;
+				padding: 30px;
+				width: 300px;
+				background: #fff;
+			}
+			.plan.highlight {
+				border: 2px solid #3498db;
+				background: #f1f9fe;
+			}
+			.plan-name { font-size: 1.2em; font-weight: bold; color: #555; }
+			.plan-price { font-size: 2em; font-weight: bold; color: #2c3e50; margin: 15px 0; }
+			.plan-period { font-size: 0.9em; color: #7f8c8d; }
+			
+			.features { text-align: left; margin: 20px 0; padding-left: 20px; }
+			.features li { margin-bottom: 10px; list-style-type: disc; }
+			
+			.cta-button {
+				display: inline-block;
+				background-color: #3498db;
+				color: white;
+				padding: 12px 30px;
+				text-decoration: none;
+				border-radius: 5px;
+				font-weight: bold;
+			}
+			.footer { margin-top: 50px; border-top: 1px solid #eee; padding-top: 20px; font-size: 0.9em; color: #777; }
+			.footer a { color: #777; margin: 0 10px; }
+		</style>
+	</head>
+	<body>
+		<div class="container">
+			<h1>Simple, Transparent Pricing</h1>
+			<p>Unlock exclusive nightlife discounts with OutDrinkMe Premium.</p>
+
+			<div class="pricing-grid">
+				<!-- Monthly Plan -->
+				<div class="plan">
+					<div class="plan-name">Monthly</div>
+					<div class="plan-price">39.99 BGN</div>
+					<div class="plan-period">per month</div>
+					<ul class="features">
+						<li>Unlimited Discounts</li>
+						<li>All Partner Venues</li>
+						<li>Cancel Anytime</li>
+					</ul>
+				</div>
+
+				<!-- Yearly Plan -->
+				<div class="plan highlight">
+					<div class="plan-name">Yearly</div>
+					<div class="plan-price">469.69 BGN</div>
+					<div class="plan-period">per year</div>
+					<ul class="features">
+						<li><strong>Best Value</strong></li>
+						<li>Unlimited Discounts</li>
+						<li>VIP Event Access</li>
+					</ul>
+				</div>
+			</div>
+
+			<p>Subscription management and payments are handled securely inside the OutDrinkMe App.</p>
+			
+			<div class="footer">
+				<p>
+					<a href="/">Home</a> | 
+					<a href="/privacy-policy">Privacy Policy</a> | 
+					<a href="/terms-of-service">Terms of Service</a> |
+					<a href="/refund-policy">Refund Policy</a>
+				</p>
+				<p>&copy; 2026 OutDrinkMe. All rights reserved.</p>
+			</div>
+		</div>
+	</body>
+	</html>
+	`
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	tmpl, _ := template.New("pricing").Parse(pricingHtml)
+	tmpl.Execute(w, nil)
+}
+
+func (h *DocHandler) ServeRefundPolicy(w http.ResponseWriter, r *http.Request) {
+	const refundHtml = `
+	<!DOCTYPE html>
+	<html lang="en">
+	<head>
+		<meta charset="UTF-8">
+		<meta name="viewport" content="width=device-width, initial-scale=1.0">
+		<title>Refund Policy - OutDrinkMe</title>
+		<style>
+			body {
+				font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif;
+				line-height: 1.6;
+				color: #333;
+				max-width: 800px;
+				margin: 0 auto;
+				padding: 20px;
+				background-color: #f9f9f9;
+			}
+			.container {
+				background-color: #fff;
+				padding: 40px;
+				border-radius: 8px;
+				box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+			}
+			h1 { color: #2c3e50; border-bottom: 2px solid #eee; padding-bottom: 10px; }
+			h2 { color: #34495e; margin-top: 30px; }
+			p { margin-bottom: 15px; }
+			ul { margin-bottom: 20px; }
+			li { margin-bottom: 8px; }
+			.contact { background-color: #e8f4f8; padding: 15px; border-radius: 5px; margin-top: 30px; }
+			a { color: #3498db; }
+		</style>
+	</head>
+	<body>
+		<div class="container">
+			<h1>Refund Policy</h1>
+			<div style="color: #7f8c8d; font-style: italic; margin-bottom: 20px;">Last updated: January 5, 2026</div>
+			
+			<p>Our goal is to ensure you are completely satisfied with OutDrinkMe. We offer a transparent refund policy in compliance with consumer protection laws.</p>
+
+			<h2>1. 14-Day Money-Back Guarantee</h2>
+			<p>If you are a consumer based in the EU, UK, or other applicable jurisdictions, <strong>you have the right to cancel your order and request a full refund within 14 days of your initial purchase without giving any reason.</strong></p>
+			<p>The cancellation period expires 14 days after the day of the transaction. If you request a refund within this period, we will reimburse you the full amount.</p>
+
+			<h2>2. How to Request a Refund</h2>
+			<p>To exercise your right to a refund, you must inform us of your decision clearly. You can do this by emailing us at:</p>
+			<p><strong><a href="mailto:martbul01@gmail.com">martbul01@gmail.com</a></strong></p>
+			<p>We will reimburse you without undue delay and no later than 14 days after the day on which we are informed about your decision to cancel. We will use the same means of payment as you used for the initial transaction.</p>
+
+			<h2>3. Subscriptions and Cancellations</h2>
+			<p>OutDrinkMe Premium is a subscription service.</p>
+			<ul>
+				<li><strong>Cancellation:</strong> You may cancel your subscription at any time via the app settings. Cancellation takes effect at the end of the current billing period. You will continue to have access to Premium benefits until that period ends.</li>
+				<li><strong>Accidental Renewals:</strong> If you intended to cancel but forgot, and you are charged for a renewal, please contact us within <strong>48 hours</strong> of the charge. We will review these requests favorably provided you have not used the service during the new billing period.</li>
+			</ul>
+
+			<h2>4. Technical Issues & Venue Refusals</h2>
+			<p>We stand by our product. Regardless of the 14-day window, we will issue a refund if:</p>
+			<ul>
+				<li>You experience technical issues that prevent you from using the app (e.g., app crashes, QR code failures) which our support team cannot resolve.</li>
+				<li>A partner venue listed in the app refuses to honor a valid discount or Premium benefit.</li>
+			</ul>
+
+			<div class="contact">
+				<p>For any refund requests or questions, please contact us at:<br>
+				<strong><a href="mailto:martbul01@gmail.com">martbul01@gmail.com</a></strong></p>
+			</div>
+		</div>
+	</body>
+	</html>
+	`
+
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	
+	tmpl, err := template.New("refund").Parse(refundHtml)
+	if err != nil {
+		http.Error(w, "Could not load refund policy", http.StatusInternalServerError)
+		return
+	}
+
+	tmpl.Execute(w, nil)
 }

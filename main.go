@@ -156,6 +156,7 @@ func main() {
 	api.HandleFunc("/privacy-policy", docHandler.ServePrivacyPolicy).Methods("GET")
 	api.HandleFunc("/terms-of-services", docHandler.ServeTermsOfServices).Methods("GET")
 	api.HandleFunc("/refund-policy", docHandler.ServeRefundPolicy).Methods("GET")
+	api.HandleFunc("/pricing", docHandler.ServePricing).Methods("GET")
 
 	api.HandleFunc("/delete-account-webpage", userHandler.DeleteAccountPage).Methods("GET")
 	api.HandleFunc("/delete-account-details-webpage", userHandler.UpdateAccountPage).Methods("GET")
