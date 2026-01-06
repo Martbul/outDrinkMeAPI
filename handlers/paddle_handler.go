@@ -91,18 +91,21 @@ func (h *PaddleHandler) CreateTransaction(w http.ResponseWriter, r *http.Request
 	ctx, cancel := context.WithTimeout(r.Context(), 120*time.Second)
 	defer cancel()
 
+	// 1. Get Clerk ID
 	clerkID, ok := middleware.GetClerkID(ctx)
 	if !ok {
 		respondWithError(w, http.StatusUnauthorized, "Unauthorized")
 		return
 	}
 
+	// 2. Decode Request
 	var reqBody CreateTransactionRequest
 	if err := json.NewDecoder(r.Body).Decode(&reqBody); err != nil {
 		http.Error(w, "Invalid request body", http.StatusBadRequest)
 		return
 	}
 
+	// 3. Build Transaction
 	createReq := &paddle.CreateTransactionRequest{
 		Items: []paddle.CreateTransactionItems{
 			*paddle.NewCreateTransactionItemsCatalogItem(&paddle.CatalogItem{
@@ -121,20 +124,25 @@ func (h *PaddleHandler) CreateTransaction(w http.ResponseWriter, r *http.Request
 		http.Error(w, fmt.Sprintf("Failed to create transaction: %v", err), http.StatusInternalServerError)
 		return
 	}
-	paddleEnv := "sandbox-checkout" // Use "checkout" for production
+
+	// 4. MANUALLY CONSTRUCT THE HOSTED CHECKOUT URL
+	// We use the Hosted Checkout ID you provided in Step 1
+	hostedCheckoutID := "hsc_01ke920ky3j35wpbw0pqf6cj0t_3ayb30a530yz69681rcc42j3ej6bey5h"
 	
-    // The Format: https://sandbox-checkout.paddle.com/buy?price=PRI_ID&transaction_id=TXN_ID
+	// Format: https://sandbox-pay.paddle.io/checkout/{ID}?transaction_id={TXN_ID}
 	checkoutURL := fmt.Sprintf(
-		"https://%s.paddle.com/v3/checkout/custom?_ptxn=%s",
-		paddleEnv,
+		"https://sandbox-pay.paddle.io/checkout/%s?transaction_id=%s",
+		hostedCheckoutID,
 		tx.ID,
 	)
 
-fmt.Println("--- PADDLE V3 DEBUG ---")
-	fmt.Printf("Transaction ID: %s\n", tx.ID)
-	fmt.Printf("Status: %s\n", tx.Status)
-	fmt.Printf("Target Checkout URL: %s\n", checkoutURL)
+	// LOGS: Verify these in your Render/Server logs
+	fmt.Printf("--- PADDLE SUCCESS ---\n")
+	fmt.Printf("Transaction: %s\n", tx.ID)
+	fmt.Printf("Final Checkout Link: %s\n", checkoutURL)
+	fmt.Printf("----------------------\n")
 
+	// 5. Send to React Native
 	respondWithJSON(w, http.StatusOK, map[string]string{
 		"transactionId": tx.ID,
 		"checkoutUrl":   checkoutURL,
