@@ -80,7 +80,6 @@ func (h *PaddleHandler) GetPrices(w http.ResponseWriter, r *http.Request) {
 		})
 	}
 
-	log.Println(prices)
 	respondWithJSON(w, http.StatusOK, prices)
 }
 
@@ -97,6 +96,7 @@ func (h *PaddleHandler) CreateTransaction(w http.ResponseWriter, r *http.Request
 		respondWithError(w, http.StatusUnauthorized, "Unauthorized")
 		return
 	}
+    
 	var reqBody CreateTransactionRequest
 	if err := json.NewDecoder(r.Body).Decode(&reqBody); err != nil {
 		http.Error(w, "Invalid request body", http.StatusBadRequest)
@@ -122,11 +122,25 @@ func (h *PaddleHandler) CreateTransaction(w http.ResponseWriter, r *http.Request
 		return
 	}
 
-	// 4. Return the Transaction ID to the client
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(map[string]string{
+	// 1. Get the Checkout URL from the transaction object
+	// Most Paddle Go SDKs include the Checkout object in the response
+	var checkoutURL string
+	if tx.Checkout != nil && *tx.Checkout.URL != "" {
+		checkoutURL = *tx.Checkout.URL
+	} else {
+		// 2. Fallback: Manual construction if the SDK field is empty
+		// Use "sandbox-checkout.paddle.com" for testing, "checkout.paddle.com" for live
+		paddleEnv := "sandbox-checkout" // Switch to "checkout" for production
+		checkoutURL = fmt.Sprintf("https://%s.paddle.com/checkout/custom?_ptxn=%s", paddleEnv, tx.ID)
+	}
+
+	// 3. Include the URL in the response
+	response := map[string]string{
 		"transactionId": tx.ID,
-	})
+		"checkoutUrl":   checkoutURL,
+	}
+
+	respondWithJSON(w, http.StatusOK, response)
 }
 
 // ! unlock and remove premium in the db with service call
@@ -216,11 +230,9 @@ func (h *PaddleHandler) PaddleWebhookHandler(w http.ResponseWriter, r *http.Requ
 	w.Write([]byte(fmt.Sprintf(`{"ID": "%s"}`, entityID)))
 }
 
-
-
 func (h *PaddleHandler) PaymentSuccessPage(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	
+
 	html := `
 	<!DOCTYPE html>
 	<html>
