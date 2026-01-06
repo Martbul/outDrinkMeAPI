@@ -164,7 +164,7 @@ func main() {
 	standardRouter.HandleFunc("/webhooks/clerk", webhookHandler.HandleClerkWebhook).Methods("POST")
 	standardRouter.HandleFunc("/webhooks/stripe", webhookHandler.HandleStripeWebhook).Methods("POST")
 	standardRouter.HandleFunc("/webhooks/paddle", paddleHandler.PaddleWebhookHandler).Methods("POST")
-	standardRouter.HandleFunc("/payment/success", paddleHandler.PaymentSuccessPage).Methods("GET")
+	standardRouter.HandleFunc("/payment/success", paddleHandler.HandlePaymentSuccess).Methods("GET")
 
 	api := standardRouter.PathPrefix("/api/v1").Subrouter()
 

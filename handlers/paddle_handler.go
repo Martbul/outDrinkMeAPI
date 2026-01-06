@@ -127,15 +127,19 @@ func (h *PaddleHandler) CreateTransaction(w http.ResponseWriter, r *http.Request
 		return
 	}
 
-	// 5. Extract the REAL Hosted Checkout URL
+	fmt.Println("--- PADDLE TRANSACTION DEBUG ---")
+	fmt.Printf("ID: %s\n", tx.ID)
+	fmt.Printf("Status: %s\n", tx.Status)
+	fmt.Printf("Total Amount: %s %s\n", tx.Details.Totals.Total, tx.CurrencyCode)
+	fmt.Println("--------------------")
+
 	var checkoutURL string
-	
-	// Safely check if Checkout and URL pointers are not nil
+
 	if tx.Checkout != nil && tx.Checkout.URL != nil {
 		// DEREFERENCE: This gets the "https://sandbox-pay.paddle.io/..." string
-		checkoutURL = *tx.Checkout.URL 
+		checkoutURL = *tx.Checkout.URL
 	} else {
-		// If this happens, it means CollectionMode wasn't Automatic 
+		// If this happens, it means CollectionMode wasn't Automatic
 		// or the PriceID is invalid/free.
 		http.Error(w, "Paddle did not return a hosted checkout URL", http.StatusInternalServerError)
 		return
@@ -150,8 +154,6 @@ func (h *PaddleHandler) CreateTransaction(w http.ResponseWriter, r *http.Request
 		"checkoutUrl":   checkoutURL,
 	})
 }
-
-
 
 // ! unlock and remove premium in the db with service call
 func (h *PaddleHandler) PaddleWebhookHandler(w http.ResponseWriter, r *http.Request) {
@@ -240,30 +242,35 @@ func (h *PaddleHandler) PaddleWebhookHandler(w http.ResponseWriter, r *http.Requ
 	w.Write([]byte(fmt.Sprintf(`{"ID": "%s"}`, entityID)))
 }
 
-func (h *PaddleHandler) PaymentSuccessPage(w http.ResponseWriter, r *http.Request) {
-	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-
+func (h *PaddleHandler) HandlePaymentSuccess(w http.ResponseWriter, r *http.Request) {
 	html := `
-	<!DOCTYPE html>
-	<html>
-	<head>
-		<title>Payment Successful</title>
-		<meta name="viewport" content="width=device-width, initial-scale=1">
-		<style>
-			body { background-color: #121212; color: white; font-family: sans-serif; text-align: center; padding: 50px 20px; }
-			h1 { color: #EA580C; }
-			p { color: #888; }
-			.card { background: #1E1E1E; padding: 30px; border-radius: 15px; max-width: 400px; margin: 0 auto; }
-		</style>
-	</head>
-	<body>
-		<div class="card">
-			<h1>Payment Successful!</h1>
-			<p>Thank you for subscribing to OutDrinkMe Premium.</p>
-			<p>You can now close this window and return to the app.</p>
-		</div>
-	</body>
-	</html>
-	`
-	fmt.Fprint(w, html)
+    <!DOCTYPE html>
+    <html>
+    <head>
+        <title>Payment Successful</title>
+        <meta name="viewport" content="width=device-width, initial-scale=1">
+        <style>
+            body { background: #000; color: #fff; font-family: sans-serif; display: flex; 
+                   flex-direction: column; align-items: center; justify-content: center; height: 100vh; margin: 0; }
+            .loader { border: 4px solid #333; border-top: 4px solid #EA580C; border-radius: 50%; 
+                      width: 40px; height: 40px; animation: spin 1s linear infinite; margin-bottom: 20px; }
+            @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+        </style>
+    </head>
+    <body>
+        <div class="loader"></div>
+        <h2 style="color: #EA580C">Payment Verified</h2>
+        <p>Returning you to OutDrinkMe...</p>
+
+        <script>
+            // This is the magic: It forces the mobile device to open your app
+            setTimeout(function() {
+                window.location.href = "outdrinkme://payment-success";
+            }, 1500);
+        </script>
+    </body>
+    </html>
+    `
+	w.Header().Set("Content-Type", "text/html")
+	w.Write([]byte(html))
 }
