@@ -145,9 +145,9 @@ func (h *PaddleHandler) PaddleWebhookHandler(w http.ResponseWriter, r *http.Requ
 	ctx, cancel := context.WithTimeout(r.Context(), 60*time.Second)
 	defer cancel()
 
-	secret := os.Getenv("PADDLE_SECRET_KEY")
+	secret := os.Getenv("PADDLE_API_KEY")
 	if secret == "" {
-		log.Println("PADDLE_SECRET_KEY missing")
+		log.Println("PADDLE_API_KEY missing")
 		http.Error(w, "Configuration Error", http.StatusInternalServerError)
 		return
 	}
