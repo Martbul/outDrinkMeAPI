@@ -91,21 +91,18 @@ func (h *PaddleHandler) CreateTransaction(w http.ResponseWriter, r *http.Request
 	ctx, cancel := context.WithTimeout(r.Context(), 120*time.Second)
 	defer cancel()
 
-	// 1. Get Clerk ID
 	clerkID, ok := middleware.GetClerkID(ctx)
 	if !ok {
 		respondWithError(w, http.StatusUnauthorized, "Unauthorized")
 		return
 	}
 
-	// 2. Decode Request
 	var reqBody CreateTransactionRequest
 	if err := json.NewDecoder(r.Body).Decode(&reqBody); err != nil {
 		http.Error(w, "Invalid request body", http.StatusBadRequest)
 		return
 	}
 
-	// 3. Build Request
 	createReq := &paddle.CreateTransactionRequest{
 		Items: []paddle.CreateTransactionItems{
 			*paddle.NewCreateTransactionItemsCatalogItem(&paddle.CatalogItem{
@@ -116,39 +113,33 @@ func (h *PaddleHandler) CreateTransaction(w http.ResponseWriter, r *http.Request
 		CustomData: paddle.CustomData{
 			"userId": clerkID,
 		},
-		// MANDATORY: This must be automatic to generate the Hosted Checkout URL
 		CollectionMode: paddle.PtrTo(paddle.CollectionModeAutomatic),
 	}
 
-	// 4. Create Transaction
 	tx, err := h.paddleService.PaddleClient.CreateTransaction(ctx, createReq)
 	if err != nil {
 		http.Error(w, fmt.Sprintf("Failed to create transaction: %v", err), http.StatusInternalServerError)
 		return
 	}
 
-	fmt.Println("--- PADDLE TRANSACTION DEBUG ---")
-	fmt.Printf("ID: %s\n", tx.ID)
-	fmt.Printf("Status: %s\n", tx.Status)
-	fmt.Printf("Total Amount: %s %s\n", tx.Details.Totals.Total, tx.CurrencyCode)
-	fmt.Println("--------------------")
+	// --- MANUAL URL CONSTRUCTION ---
+	// We use the /buy endpoint. 
+    // Passing both price and transaction_id ensures Paddle maps the checkout correctly.
+	
+	paddleEnv := "sandbox-checkout" // Use "checkout" for production
+	
+    // The Format: https://sandbox-checkout.paddle.com/buy?price=PRI_ID&transaction_id=TXN_ID
+	checkoutURL := fmt.Sprintf(
+		"https://%s.paddle.com/buy?price=%s&transaction_id=%s",
+		paddleEnv,
+		reqBody.PriceID,
+		tx.ID,
+	)
 
-	var checkoutURL string
+	fmt.Println("--- PADDLE DEBUG ---")
+	fmt.Printf("Transaction ID: %s | Total: %s\n", tx.ID, tx.Details.Totals.Total)
+	fmt.Printf("Redirecting to: %s\n", checkoutURL)
 
-	if tx.Checkout != nil && tx.Checkout.URL != nil {
-		// DEREFERENCE: This gets the "https://sandbox-pay.paddle.io/..." string
-		checkoutURL = *tx.Checkout.URL
-	} else {
-		// If this happens, it means CollectionMode wasn't Automatic
-		// or the PriceID is invalid/free.
-		http.Error(w, "Paddle did not return a hosted checkout URL", http.StatusInternalServerError)
-		return
-	}
-
-	// LOG THIS: You should see the "sandbox-pay.paddle.io" link here
-	fmt.Printf("Successfully created transaction. URL: %s\n", checkoutURL)
-
-	// 6. Response
 	respondWithJSON(w, http.StatusOK, map[string]string{
 		"transactionId": tx.ID,
 		"checkoutUrl":   checkoutURL,
