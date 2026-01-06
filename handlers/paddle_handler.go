@@ -103,8 +103,6 @@ func (h *PaddleHandler) CreateTransaction(w http.ResponseWriter, r *http.Request
 		return
 	}
 
-	var checkoutUrl string = "outdrinkme://payment-success"
-
 	// Build the request
 	createReq := &paddle.CreateTransactionRequest{
 		Items: []paddle.CreateTransactionItems{
@@ -116,14 +114,8 @@ func (h *PaddleHandler) CreateTransaction(w http.ResponseWriter, r *http.Request
 		CustomData: paddle.CustomData{
 			"userId": clerkID,
 		},
-		// IMPORTANT: Set this to Automatic to ensure Paddle handles the billing
 		CollectionMode: paddle.PtrTo(paddle.CollectionModeAutomatic),
 		
-
-
-		Checkout: &paddle.TransactionCheckout{
-			URL: &checkoutUrl,
-		},
 	}
 
 	tx, err := h.paddleService.PaddleClient.CreateTransaction(ctx, createReq)
@@ -132,14 +124,8 @@ func (h *PaddleHandler) CreateTransaction(w http.ResponseWriter, r *http.Request
 		return
 	}
 
-	// DEBUG: Log the transaction ID to your terminal
-	fmt.Printf("Created Transaction: %s Status: %s\n", tx.ID, tx.Status)
-
-	// If the transaction is ALREADY "billed", it will skip payment.
-	// It should be "ready". If it's "billed", check your Price settings in Paddle.
-
-	paddleEnv := "sandbox-checkout" // Switch to "checkout" for production
-	// We use the 'custom' checkout endpoint which is designed for Transaction IDs
+	// Construct the URL manually
+	paddleEnv := "sandbox-checkout" 
 	checkoutURL := fmt.Sprintf("https://%s.paddle.com/checkout/custom?_ptxn=%s", paddleEnv, tx.ID)
 
 	response := map[string]string{
@@ -149,7 +135,6 @@ func (h *PaddleHandler) CreateTransaction(w http.ResponseWriter, r *http.Request
 
 	respondWithJSON(w, http.StatusOK, response)
 }
-
 // ! unlock and remove premium in the db with service call
 func (h *PaddleHandler) PaddleWebhookHandler(w http.ResponseWriter, r *http.Request) {
 	secret := os.Getenv("PADDLE_SECRET_KEY")
