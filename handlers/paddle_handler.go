@@ -86,6 +86,7 @@ func (h *PaddleHandler) GetPrices(w http.ResponseWriter, r *http.Request) {
 type CreateTransactionRequest struct {
 	PriceID string `json:"priceId"`
 }
+
 func (h *PaddleHandler) CreateTransaction(w http.ResponseWriter, r *http.Request) {
 	ctx, cancel := context.WithTimeout(r.Context(), 120*time.Second)
 	defer cancel()
@@ -122,7 +123,7 @@ func (h *PaddleHandler) CreateTransaction(w http.ResponseWriter, r *http.Request
 	}
 
 	hostedID := "hsc_01ke920ky3j35wpbw0pqf6cj0t_3ayb30a530yz69681rcc42j3ej6bey5h"
-	
+
 	// Final URL Format: https://sandbox-pay.paddle.io/{ID}?transaction_id={TXN_ID}
 	checkoutURL := fmt.Sprintf(
 		"https://sandbox-pay.paddle.io/%s?transaction_id=%s",
@@ -140,8 +141,10 @@ func (h *PaddleHandler) CreateTransaction(w http.ResponseWriter, r *http.Request
 	})
 }
 
-// ! unlock and remove premium in the db with service call
 func (h *PaddleHandler) PaddleWebhookHandler(w http.ResponseWriter, r *http.Request) {
+	ctx, cancel := context.WithTimeout(r.Context(), 60*time.Second)
+	defer cancel()
+
 	secret := os.Getenv("PADDLE_SECRET_KEY")
 	if secret == "" {
 		log.Println("PADDLE_SECRET_KEY missing")
@@ -198,8 +201,14 @@ func (h *PaddleHandler) PaddleWebhookHandler(w http.ResponseWriter, r *http.Requ
 
 		if fullEvent.Data.CustomData != nil {
 			if userID, ok := fullEvent.Data.CustomData["userId"].(string); ok {
-				fmt.Printf("✅ Payment Succeeded for User: %s\n", userID)
-				h.paddleService.UnlockPremium(userID)
+
+				monthsToAdd := 1
+
+				validUntil := time.Now().AddDate(0, monthsToAdd, 0)
+
+				fmt.Printf("✅ Payment Succeeded for User: %s. Valid until: %s\n", userID, validUntil.Format(time.RFC3339))
+
+				h.paddleService.UnlockPremium(ctx, userID, validUntil)
 			}
 		}
 

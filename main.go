@@ -91,7 +91,7 @@ func main() {
 	gameManager = services.NewDrinnkingGameManager()
 	docService = services.NewDocService(dbPool)
 	venueService = services.NewVenueService(dbPool)
-	paddleService = services.NewPaddleService(paddleClient)
+	paddleService = services.NewPaddleService(paddleClient,dbPool)
 
 	userHandler := handlers.NewUserHandler(userService)
 	docHandler := handlers.NewDocHandler(docService)
@@ -162,7 +162,6 @@ func main() {
 	standardRouter.HandleFunc("/", docHandler.ServeHome).Methods("GET")
 
 	standardRouter.HandleFunc("/webhooks/clerk", webhookHandler.HandleClerkWebhook).Methods("POST")
-	standardRouter.HandleFunc("/webhooks/stripe", webhookHandler.HandleStripeWebhook).Methods("POST")
 	standardRouter.HandleFunc("/webhooks/paddle", paddleHandler.PaddleWebhookHandler).Methods("POST")
 	standardRouter.HandleFunc("/payment/success", paddleHandler.HandlePaymentSuccess).Methods("GET")
 
@@ -223,8 +222,6 @@ func main() {
 	protected.HandleFunc("/user/stories/relate", userHandler.RelateStory).Methods("POST")
 	protected.HandleFunc("/user/stories/seen", userHandler.MarkStoryAsSeen).Methods("POST")
 	protected.HandleFunc("/user/user-stories", userHandler.GetAllUserStories).Methods("GET")
-	protected.HandleFunc("/user/subscription", userHandler.GetSubscriptionDetails).Methods("GET")
-	protected.HandleFunc("/user/subscription", userHandler.Subscribe).Methods("POST")
 
 	protected.HandleFunc("/min-version", docHandler.GetAppMinVersion).Methods("GET")
 

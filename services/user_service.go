@@ -25,7 +25,6 @@ import (
 
 	"github.com/stripe/stripe-go/v76"
 	"github.com/stripe/stripe-go/v76/checkout/session"
-	stripeClient "github.com/stripe/stripe-go/v76/subscription"
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
@@ -3025,65 +3024,7 @@ func (s *UserService) DeleteStory(ctx context.Context, clerkID string, storyID s
 func (s *UserService) EquipItem(ctx context.Context, clerkID string, itemIdForRemoval string) (bool, error) {
 	return true, nil
 }
-func (s *UserService) FetchStripeSubscription(subID string) (*stripe.Subscription, error) {
-	return stripeClient.Get(subID, nil)
-}
 
-func (s *UserService) UpsertSubscription(ctx context.Context, sub *subscription.Subscription) error {
-	query := `
-		INSERT INTO subscriptions (
-			user_id, 
-			stripe_customer_id, 
-			stripe_subscription_id, 
-			stripe_price_id, 
-			status, 
-			current_period_end,
-			updated_at
-		) VALUES ($1, $2, $3, $4, $5, $6, NOW())
-		ON CONFLICT (stripe_subscription_id) 
-		DO UPDATE SET 
-			status = EXCLUDED.status,
-			current_period_end = EXCLUDED.current_period_end,
-			stripe_price_id = EXCLUDED.stripe_price_id,
-			updated_at = NOW();
-	`
-	_, err := s.db.Exec(ctx, query,
-		sub.UserID,
-		sub.StripeCustomerID,
-		sub.StripeSubscriptionID,
-		sub.StripePriceID,
-		sub.Status,
-		sub.CurrentPeriodEnd,
-	)
-	return err
-}
-
-func (s *UserService) UpdateSubscriptionStatus(ctx context.Context, sub *subscription.Subscription) error {
-	query := `
-        UPDATE subscriptions 
-        SET 
-            status = $1, 
-            current_period_end = $2, 
-            stripe_price_id = $3,
-            updated_at = NOW()
-        WHERE stripe_subscription_id = $4
-    `
-	result, err := s.db.Exec(ctx, query,
-		sub.Status,
-		sub.CurrentPeriodEnd,
-		sub.StripePriceID,
-		sub.StripeSubscriptionID,
-	)
-	if err != nil {
-		return err
-	}
-
-	rows := result.RowsAffected()
-	if rows == 0 {
-		return fmt.Errorf("subscription %s not found locally", sub.StripeSubscriptionID)
-	}
-	return nil
-}
 
 func getTotalCount(collection collection.AlcoholCollectionByType) int {
 	total := 0
