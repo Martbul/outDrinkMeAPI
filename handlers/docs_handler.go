@@ -104,8 +104,6 @@ func (h *DocHandler) ServeHome(w http.ResponseWriter, r *http.Request) {
 				<li><strong>Unlimited Discounts:</strong> Get 5-15% off your entire bill at all partner venues.</li>
 				<li><strong>VIP Treatment:</strong> Skip the line at select clubs.</li>
 				<li><strong>Multiple Locations:</strong> Use your subscription at any venue listed in the app.</li>
-				<li><strong>Guest Events:</strong> Exclusive invitations to subscriber-only parties.</li>
-				<li><strong>Priority Booking:</strong> Last-minute table reservations for you and your friends.</li>
 			</ul>
 			<p><em>Example: Spend 120 BGN on cocktails and save 12 BGN instantly. Do that 4 times a month, and you've saved more than the cost of the subscription!</em></p>
 
@@ -113,7 +111,7 @@ func (h *DocHandler) ServeHome(w http.ResponseWriter, r *http.Request) {
 			<ol>
 				<li><strong>Download:</strong> Get the OutDrinkMe app on Android or iOS.</li>
 				<li><strong>Subscribe:</strong> Choose your monthly or yearly Premium plan.</li>
-				<li><strong>Visit:</strong> Go to any partner venue (highlighted in red in the app).</li>
+				<li><strong>Visit:</strong> Go to any partner venue (all vanues in the OutDrinkMe app).</li>
 				<li><strong>Scan:</strong> Show your personal Premium QR code to the staff before paying.</li>
 				<li><strong>Save:</strong> The discount is applied immediately to your bill.</li>
 			</ol>
@@ -123,6 +121,10 @@ func (h *DocHandler) ServeHome(w http.ResponseWriter, r *http.Request) {
 				<p>
 					<a href="/api/v1/privacy-policy">Privacy Policy</a> | 
 					<a href="/api/v1/terms-of-services">Terms of Service</a>
+										<a href="/api/v1/refund-policy">Refund Policy</a>
+										 <a href="/api/v1/pricing">Pricing</a> 
+
+					
 				</p>
 				<p>&copy; 2026 OutDrinkMe. All rights reserved.</p>
 			</div>
@@ -132,7 +134,7 @@ func (h *DocHandler) ServeHome(w http.ResponseWriter, r *http.Request) {
 	`
 
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	
+
 	tmpl, err := template.New("home").Parse(homeHtml)
 	if err != nil {
 		http.Error(w, "Could not load homepage", http.StatusInternalServerError)
@@ -141,6 +143,7 @@ func (h *DocHandler) ServeHome(w http.ResponseWriter, r *http.Request) {
 
 	tmpl.Execute(w, nil)
 }
+
 
 func (h *DocHandler) ServePrivacyPolicy(w http.ResponseWriter, r *http.Request) {
 	const privacyHtml = `
@@ -253,7 +256,7 @@ func (h *DocHandler) ServePrivacyPolicy(w http.ResponseWriter, r *http.Request) 
 	`
 
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	
+
 	tmpl, err := template.New("privacy").Parse(privacyHtml)
 	if err != nil {
 		http.Error(w, "Could not load privacy policy", http.StatusInternalServerError)
@@ -353,7 +356,7 @@ func (h *DocHandler) ServeTermsOfServices(w http.ResponseWriter, r *http.Request
 	`
 
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	
+
 	tmpl, err := template.New("terms").Parse(termsHtml)
 	if err != nil {
 		http.Error(w, "Could not load terms of service", http.StatusInternalServerError)
@@ -362,9 +365,6 @@ func (h *DocHandler) ServeTermsOfServices(w http.ResponseWriter, r *http.Request
 
 	tmpl.Execute(w, nil)
 }
-
-
-
 
 func (h *DocHandler) GetAppMinVersion(w http.ResponseWriter, r *http.Request) {
 	appAndroidMinVersion := os.Getenv("ANDROID_MIN_VERSION")
@@ -389,6 +389,191 @@ func (h *DocHandler) GetAppMinVersion(w http.ResponseWriter, r *http.Request) {
 		UpdateMessage:     "An important update is available! Please update to continue using the app. This update includes critical server compatibility changes",
 	}
 
-	
 	respondWithJSON(w, http.StatusOK, minVers)
+}
+
+// Add this new function for the Pricing Page
+func (h *DocHandler) ServePricing(w http.ResponseWriter, r *http.Request) {
+	const pricingHtml = `
+	<!DOCTYPE html>
+	<html lang="en">
+	<head>
+		<meta charset="UTF-8">
+		<meta name="viewport" content="width=device-width, initial-scale=1.0">
+		<title>Pricing - OutDrinkMe</title>
+		<style>
+			body {
+				font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif;
+				line-height: 1.6;
+				color: #333;
+				max-width: 800px;
+				margin: 0 auto;
+				padding: 20px;
+				background-color: #f9f9f9;
+			}
+			.container {
+				background-color: #fff;
+				padding: 40px;
+				border-radius: 8px;
+				box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+				text-align: center;
+			}
+			h1 { color: #2c3e50; margin-bottom: 10px; }
+			p { margin-bottom: 30px; }
+			
+			.pricing-grid {
+				display: flex;
+				justify-content: center;
+				gap: 20px;
+				flex-wrap: wrap;
+				margin-bottom: 40px;
+			}
+			.plan {
+				border: 1px solid #e1e4e8;
+				border-radius: 8px;
+				padding: 30px;
+				width: 300px;
+				background: #fff;
+			}
+			.plan.highlight {
+				border: 2px solid #3498db;
+				background: #f1f9fe;
+			}
+			.plan-name { font-size: 1.2em; font-weight: bold; color: #555; }
+			.plan-price { font-size: 2em; font-weight: bold; color: #2c3e50; margin: 15px 0; }
+			.plan-period { font-size: 0.9em; color: #7f8c8d; }
+			
+			.features { text-align: left; margin: 20px 0; padding-left: 20px; }
+			.features li { margin-bottom: 10px; list-style-type: disc; }
+			
+			.cta-button {
+				display: inline-block;
+				background-color: #3498db;
+				color: white;
+				padding: 12px 30px;
+				text-decoration: none;
+				border-radius: 5px;
+				font-weight: bold;
+			}
+			.footer { margin-top: 50px; border-top: 1px solid #eee; padding-top: 20px; font-size: 0.9em; color: #777; }
+			.footer a { color: #777; margin: 0 10px; }
+		</style>
+	</head>
+	<body>
+		<div class="container">
+			<h1>Simple, Transparent Pricing</h1>
+			<p>Unlock exclusive nightlife discounts with OutDrinkMe Premium.</p>
+
+			<div class="pricing-grid">
+				<!-- Monthly Plan -->
+				<div class="plan">
+					<div class="plan-name">Monthly</div>
+					<div class="plan-price">39.99 BGN</div>
+					<div class="plan-period">per month</div>
+					<ul class="features">
+						<li>Unlimited Discounts</li>
+						<li>All Partner Venues</li>
+						<li>Cancel Anytime</li>
+					</ul>
+				</div>
+
+				<!-- Yearly Plan -->
+				<div class="plan highlight">
+					<div class="plan-name">Yearly</div>
+					<div class="plan-price">469.69 BGN</div>
+					<div class="plan-period">per year</div>
+					<ul class="features">
+						<li><strong>Best Value</strong></li>
+						<li>Unlimited Discounts</li>
+						<li>VIP Event Access</li>
+					</ul>
+				</div>
+			</div>
+
+			<p>Subscription management and payments are handled securely inside the OutDrinkMe App.</p>
+			
+			<div class="footer">
+				<p>
+					<a href="/">Home</a> | 
+					<a href="/privacy-policy">Privacy Policy</a> | 
+					<a href="/terms-of-service">Terms of Service</a> |
+					<a href="/refund-policy">Refund Policy</a>
+				</p>
+				<p>&copy; 2026 OutDrinkMe. All rights reserved.</p>
+			</div>
+		</div>
+	</body>
+	</html>
+	`
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	tmpl, _ := template.New("pricing").Parse(pricingHtml)
+	tmpl.Execute(w, nil)
+}
+func (h *DocHandler) ServeRefundPolicy(w http.ResponseWriter, r *http.Request) {
+	const refundHtml = `
+	<!DOCTYPE html>
+	<html lang="en">
+	<head>
+		<meta charset="UTF-8">
+		<meta name="viewport" content="width=device-width, initial-scale=1.0">
+		<title>Refund Policy - OutDrinkMe</title>
+		<style>
+			body {
+				font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif;
+				line-height: 1.6;
+				color: #333;
+				max-width: 800px;
+				margin: 0 auto;
+				padding: 20px;
+				background-color: #f9f9f9;
+			}
+			.container {
+				background-color: #fff;
+				padding: 40px;
+				border-radius: 8px;
+				box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+			}
+			h1 { color: #2c3e50; border-bottom: 2px solid #eee; padding-bottom: 10px; }
+			h2 { color: #34495e; margin-top: 30px; }
+			p { margin-bottom: 15px; }
+			.contact { background-color: #e8f4f8; padding: 15px; border-radius: 5px; margin-top: 30px; }
+			a { color: #3498db; }
+		</style>
+	</head>
+	<body>
+		<div class="container">
+			<h1>Refund Policy</h1>
+			<div style="color: #7f8c8d; font-style: italic; margin-bottom: 20px;">Last updated: January 5, 2026</div>
+			
+			<p>This Refund Policy applies to all purchases made through OutDrinkMe.</p>
+
+			<h2>1. 14-Day Refund Window</h2>
+			<p>We offer a full refund on all subscriptions within <strong>14 days</strong> of your initial purchase.</p>
+			<p>If you are not satisfied with the service for any reason, you may request a refund within this 14-day period. No questions asked.</p>
+
+			<h2>2. How to Request a Refund</h2>
+			<p>To request a refund, please contact us via email:</p>
+			<p><strong><a href="mailto:martbul01@gmail.com">martbul01@gmail.com</a></strong></p>
+			<p>Please include your order number or the email address associated with your account. We will process your refund request within 3 business days.</p>
+
+			<h2>3. After 14 Days</h2>
+			<p>After the 14-day refund window has passed, we do not offer refunds. Your subscription will continue until the end of the current billing cycle, and you will not be charged again if you cancel.</p>
+
+			<div class="contact">
+				<p>Contact Support: <strong><a href="mailto:martbul01@gmail.com">martbul01@gmail.com</a></strong></p>
+			</div>
+		</div>
+	</body>
+	</html>
+	`
+
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	
+	tmpl, err := template.New("refund").Parse(refundHtml)
+	if err != nil {
+		http.Error(w, "Could not load refund policy", http.StatusInternalServerError)
+		return
+	}
+
+	tmpl.Execute(w, nil)
 }
