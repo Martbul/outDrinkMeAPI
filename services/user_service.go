@@ -2,12 +2,10 @@ package services
 
 import (
 	"context"
-	"database/sql"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"log"
-	"os"
 	"outDrinkMeAPI/internal/types/achievement"
 	"outDrinkMeAPI/internal/types/calendar"
 	"outDrinkMeAPI/internal/types/canvas"
@@ -17,14 +15,11 @@ import (
 	"outDrinkMeAPI/internal/types/stats"
 	"outDrinkMeAPI/internal/types/store"
 	"outDrinkMeAPI/internal/types/story"
-	"outDrinkMeAPI/internal/types/subscription"
 	"outDrinkMeAPI/internal/types/user"
 	"outDrinkMeAPI/utils"
 	"strings"
 	"time"
 
-	"github.com/stripe/stripe-go/v76"
-	"github.com/stripe/stripe-go/v76/checkout/session"
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
@@ -2915,83 +2910,83 @@ func (s *UserService) GetAllUserStories(ctx context.Context, clerkID string) ([]
 	return stories, nil
 }
 
-func (s *UserService) GetSubscriptionDetails(ctx context.Context, clerkID string) (*subscription.Subscription, error) {
-	query := `
-		SELECT 
-			s.id, s.user_id, s.stripe_customer_id, s.stripe_subscription_id, 
-			s.stripe_price_id, s.status, s.current_period_end, s.created_at, s.updated_at
-		FROM subscriptions s
-		JOIN users u ON u.id = s.user_id
-		WHERE u.clerk_id = $1
-		-- Optional: Only fetch active ones? 
-		-- usually you want the latest one regardless of status to show "Cancelled" logic
-		ORDER BY s.created_at DESC 
-		LIMIT 1`
+// func (s *UserService) GetSubscriptionDetails(ctx context.Context, clerkID string) (*subscription.Subscription, error) {
+// 	query := `
+// 		SELECT 
+// 			s.id, s.user_id, s.stripe_customer_id, s.stripe_subscription_id, 
+// 			s.stripe_price_id, s.status, s.current_period_end, s.created_at, s.updated_at
+// 		FROM subscriptions s
+// 		JOIN users u ON u.id = s.user_id
+// 		WHERE u.clerk_id = $1
+// 		-- Optional: Only fetch active ones? 
+// 		-- usually you want the latest one regardless of status to show "Cancelled" logic
+// 		ORDER BY s.created_at DESC 
+// 		LIMIT 1`
 
-	row := s.db.QueryRow(ctx, query, clerkID)
+// 	row := s.db.QueryRow(ctx, query, clerkID)
 
-	var sub subscription.Subscription
-	err := row.Scan(
-		&sub.ID, &sub.UserID, &sub.StripeCustomerID, &sub.StripeSubscriptionID,
-		&sub.StripePriceID, &sub.Status, &sub.CurrentPeriodEnd, &sub.CreatedAt, &sub.UpdatedAt,
-	)
+// 	var sub subscription.Subscription
+// 	err := row.Scan(
+// 		&sub.ID, &sub.UserID, &sub.StripeCustomerID, &sub.StripeSubscriptionID,
+// 		&sub.StripePriceID, &sub.Status, &sub.CurrentPeriodEnd, &sub.CreatedAt, &sub.UpdatedAt,
+// 	)
 
-	if err != nil {
-		if errors.Is(err, sql.ErrNoRows) {
-			// User has no subscription record. Return nil, no error.
-			return nil, nil
-		}
-		return nil, err
-	}
+// 	if err != nil {
+// 		if errors.Is(err, sql.ErrNoRows) {
+// 			// User has no subscription record. Return nil, no error.
+// 			return nil, nil
+// 		}
+// 		return nil, err
+// 	}
 
-	return &sub, nil
-}
+// 	return &sub, nil
+// }
 
-// Subscribe generates a Stripe Checkout Session URL
-func (s *UserService) Subscribe(ctx context.Context, clerkID string, priceID string) (string, error) {
-	// 1. Get the user's email and internal ID from DB
-	var email string
-	var userID string
-	err := s.db.QueryRow(ctx, "SELECT id, email FROM users WHERE clerk_id = $1", clerkID).Scan(&userID, &email)
-	if err != nil {
-		return "", errors.New("user not found")
-	}
+// // Subscribe generates a Stripe Checkout Session URL
+// func (s *UserService) Subscribe(ctx context.Context, clerkID string, priceID string) (string, error) {
+// 	// 1. Get the user's email and internal ID from DB
+// 	var email string
+// 	var userID string
+// 	err := s.db.QueryRow(ctx, "SELECT id, email FROM users WHERE clerk_id = $1", clerkID).Scan(&userID, &email)
+// 	if err != nil {
+// 		return "", errors.New("user not found")
+// 	}
 
-	// 2. Initialize Stripe Key (Make sure STRIPE_SECRET_KEY is in your .env)
-	stripe.Key = os.Getenv("STRIPE_SECRET_KEY")
+// 	// 2. Initialize Stripe Key (Make sure STRIPE_SECRET_KEY is in your .env)
+// 	stripe.Key = os.Getenv("STRIPE_SECRET_KEY")
 
-	// 3. Create Checkout Session Params
-	params := &stripe.CheckoutSessionParams{
-		CustomerEmail: stripe.String(email), // Pre-fill user email
-		PaymentMethodTypes: stripe.StringSlice([]string{
-			"card",
-		}),
-		// "subscription" mode is required for recurring payments
-		Mode: stripe.String(string(stripe.CheckoutSessionModeSubscription)),
-		LineItems: []*stripe.CheckoutSessionLineItemParams{
-			{
-				Price:    stripe.String(priceID), // The ID from frontend (monthly or yearly)
-				Quantity: stripe.Int64(1),
-			},
-		},
-		// Metadata helps us identify the user in the Webhook later
-		Metadata: map[string]string{
-			"user_id":  userID,
-			"clerk_id": clerkID,
-		},
-		SuccessURL: stripe.String("http://localhost:3000/settings?payment=success"), // Update with your frontend URL
-		CancelURL:  stripe.String("http://localhost:3000/settings?payment=canceled"),
-	}
+// 	// 3. Create Checkout Session Params
+// 	params := &stripe.CheckoutSessionParams{
+// 		CustomerEmail: stripe.String(email), // Pre-fill user email
+// 		PaymentMethodTypes: stripe.StringSlice([]string{
+// 			"card",
+// 		}),
+// 		// "subscription" mode is required for recurring payments
+// 		Mode: stripe.String(string(stripe.CheckoutSessionModeSubscription)),
+// 		LineItems: []*stripe.CheckoutSessionLineItemParams{
+// 			{
+// 				Price:    stripe.String(priceID), // The ID from frontend (monthly or yearly)
+// 				Quantity: stripe.Int64(1),
+// 			},
+// 		},
+// 		// Metadata helps us identify the user in the Webhook later
+// 		Metadata: map[string]string{
+// 			"user_id":  userID,
+// 			"clerk_id": clerkID,
+// 		},
+// 		SuccessURL: stripe.String("http://localhost:3000/settings?payment=success"), // Update with your frontend URL
+// 		CancelURL:  stripe.String("http://localhost:3000/settings?payment=canceled"),
+// 	}
 
-	// 4. Call Stripe API
-	sess, err := session.New(params)
-	if err != nil {
-		return "", err
-	}
+// 	// 4. Call Stripe API
+// 	sess, err := session.New(params)
+// 	if err != nil {
+// 		return "", err
+// 	}
 
-	// 5. Return the URL
-	return sess.URL, nil
-}
+// 	// 5. Return the URL
+// 	return sess.URL, nil
+// }
 
 func (s *UserService) DeleteStory(ctx context.Context, clerkID string, storyID string) (bool, error) {
 	// 1. Get the internal User UUID

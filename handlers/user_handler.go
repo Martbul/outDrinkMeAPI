@@ -1207,6 +1207,31 @@ func (h *UserHandler) GetAllUserStories(w http.ResponseWriter, r *http.Request) 
 	respondWithJSON(w, http.StatusOK, allUserStories)
 }
 
+// func (h *UserHandler) GetPremiumDetails(w http.ResponseWriter, r *http.Request) {
+// 	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
+// 	defer cancel()
+
+// 	clerkID, ok := middleware.GetClerkID(ctx)
+// 	if !ok {
+// 		respondWithError(w, http.StatusUnauthorized, "Unauthorized")
+// 		return
+// 	}
+
+// 	premiumDetails, err := h.userService.GetPremiumDetails(ctx, clerkID)
+// 	if err != nil {
+// 		respondWithError(w, http.StatusInternalServerError, "Could not fetch subscription")
+// 		return
+// 	}
+
+// 	if premiumDetails == nil {
+// 		respondWithJSON(w, http.StatusOK, nil)
+// 		return
+// 	}
+
+// 	respondWithJSON(w, http.StatusOK, premiumDetails)
+// }
+
+
 
 func (h *UserHandler) DeleteAccountPage(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")

@@ -8,6 +8,7 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"strings"
 	"time"
 
 	"outDrinkMeAPI/middleware"
@@ -186,11 +187,10 @@ func (h *PaddleHandler) PaddleWebhookHandler(w http.ResponseWriter, r *http.Requ
 
 	switch webhook.EventType {
 
-	case paddle.EventTypeNameTransactionPaid, paddle.EventTypeNameSubscriptionCreated:
+	case paddle.EventTypeNameTransactionPaid:
 		type TransactionEvent struct {
 			Data paddle.Transaction `json:"data"`
 		}
-
 		var fullEvent TransactionEvent
 		if err := json.Unmarshal(bodyBytes, &fullEvent); err != nil {
 			log.Printf("Error parsing transaction: %v", err)
@@ -199,16 +199,49 @@ func (h *PaddleHandler) PaddleWebhookHandler(w http.ResponseWriter, r *http.Requ
 
 		entityID = fullEvent.Data.ID
 
+		// Extract User ID
+		var userID string
 		if fullEvent.Data.CustomData != nil {
-			if userID, ok := fullEvent.Data.CustomData["userId"].(string); ok {
+			if uid, ok := fullEvent.Data.CustomData["userId"].(string); ok {
+				userID = uid
+			}
+		}
 
-				monthsToAdd := 1
+		if userID != "" {
+			// 1. Calculate Validity
+			monthsToAdd := 1
 
-				validUntil := time.Now().AddDate(0, monthsToAdd, 0)
+			// FIX 1: Removed 'Price != nil' check
+			// We only check if Items has elements. Price is a struct, so safe to access.
+			if len(fullEvent.Data.Items) > 0 {
+				desc := strings.ToLower(fullEvent.Data.Items[0].Price.Description)
+				if strings.Contains(desc, "year") || strings.Contains(desc, "annual") {
+					monthsToAdd = 12
+				}
+			}
+			validUntil := time.Now().AddDate(0, monthsToAdd, 0)
 
-				fmt.Printf("✅ Payment Succeeded for User: %s. Valid until: %s\n", userID, validUntil.Format(time.RFC3339))
+			// 2. Extract Additional Info
+			transactionID := fullEvent.Data.ID
+			customerID := ""
+			if fullEvent.Data.CustomerID != nil {
+				customerID = *fullEvent.Data.CustomerID
+			}
 
-				h.paddleService.UnlockPremium(ctx, userID, validUntil)
+			// FIX 2: Removed 'Details != nil' and 'Totals != nil' checks
+			// These are structs, so we access fields directly.
+			// GrandTotal is a string field inside the nested structs.
+			amount := fullEvent.Data.Details.Totals.GrandTotal
+			currency := string(fullEvent.Data.CurrencyCode)
+
+			fmt.Printf("✅ Payment: %s | User: %s | Amount: %s %s\n", transactionID, userID, amount, currency)
+
+			// 3. Call Service
+			err := h.paddleService.UnlockPremium(ctx, userID, validUntil, transactionID, customerID, amount, currency)
+			if err != nil {
+				log.Printf("❌ Failed to unlock premium: %v", err)
+				http.Error(w, "DB Error", http.StatusInternalServerError)
+				return
 			}
 		}
 
