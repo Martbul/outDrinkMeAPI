@@ -234,24 +234,12 @@ func (h *PaddleHandler) HandlePaymentSuccess(w http.ResponseWriter, r *http.Requ
     <head>
         <title>Payment Successful</title>
         <meta name="viewport" content="width=device-width, initial-scale=1">
-        <style>
-            body { background: #000; color: #fff; font-family: sans-serif; display: flex; 
-                   flex-direction: column; align-items: center; justify-content: center; height: 100vh; margin: 0; }
-            .loader { border: 4px solid #333; border-top: 4px solid #EA580C; border-radius: 50%; 
-                      width: 40px; height: 40px; animation: spin 1s linear infinite; margin-bottom: 20px; }
-            @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
-        </style>
     </head>
     <body>
-        <div class="loader"></div>
-        <h2 style="color: #EA580C">Payment Verified</h2>
-        <p>Returning you to OutDrinkMe...</p>
-
         <script>
-            // This is the magic: It forces the mobile device to open your app
             setTimeout(function() {
                 window.location.href = "outdrinkme://payment-success";
-            }, 1500);
+            }, 1);
         </script>
     </body>
     </html>
