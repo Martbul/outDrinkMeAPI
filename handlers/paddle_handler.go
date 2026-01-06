@@ -121,24 +121,19 @@ func (h *PaddleHandler) CreateTransaction(w http.ResponseWriter, r *http.Request
 		http.Error(w, fmt.Sprintf("Failed to create transaction: %v", err), http.StatusInternalServerError)
 		return
 	}
-
-	// --- MANUAL URL CONSTRUCTION ---
-	// We use the /buy endpoint. 
-    // Passing both price and transaction_id ensures Paddle maps the checkout correctly.
-	
 	paddleEnv := "sandbox-checkout" // Use "checkout" for production
 	
     // The Format: https://sandbox-checkout.paddle.com/buy?price=PRI_ID&transaction_id=TXN_ID
 	checkoutURL := fmt.Sprintf(
-		"https://%s.paddle.com/buy?price=%s&transaction_id=%s",
+		"https://%s.paddle.com/v3/checkout/custom?_ptxn=%s",
 		paddleEnv,
-		reqBody.PriceID,
 		tx.ID,
 	)
 
-	fmt.Println("--- PADDLE DEBUG ---")
-	fmt.Printf("Transaction ID: %s | Total: %s\n", tx.ID, tx.Details.Totals.Total)
-	fmt.Printf("Redirecting to: %s\n", checkoutURL)
+fmt.Println("--- PADDLE V3 DEBUG ---")
+	fmt.Printf("Transaction ID: %s\n", tx.ID)
+	fmt.Printf("Status: %s\n", tx.Status)
+	fmt.Printf("Target Checkout URL: %s\n", checkoutURL)
 
 	respondWithJSON(w, http.StatusOK, map[string]string{
 		"transactionId": tx.ID,
