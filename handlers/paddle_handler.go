@@ -96,13 +96,16 @@ func (h *PaddleHandler) CreateTransaction(w http.ResponseWriter, r *http.Request
 		respondWithError(w, http.StatusUnauthorized, "Unauthorized")
 		return
 	}
-    
+
 	var reqBody CreateTransactionRequest
 	if err := json.NewDecoder(r.Body).Decode(&reqBody); err != nil {
 		http.Error(w, "Invalid request body", http.StatusBadRequest)
 		return
 	}
 
+	var checkoutUrl string = "outdrinkme://payment-success"
+
+	// Build the request
 	createReq := &paddle.CreateTransactionRequest{
 		Items: []paddle.CreateTransactionItems{
 			*paddle.NewCreateTransactionItemsCatalogItem(&paddle.CatalogItem{
@@ -113,7 +116,14 @@ func (h *PaddleHandler) CreateTransaction(w http.ResponseWriter, r *http.Request
 		CustomData: paddle.CustomData{
 			"userId": clerkID,
 		},
+		// IMPORTANT: Set this to Automatic to ensure Paddle handles the billing
 		CollectionMode: paddle.PtrTo(paddle.CollectionModeAutomatic),
+		
+
+
+		Checkout: &paddle.TransactionCheckout{
+			URL: &checkoutUrl,
+		},
 	}
 
 	tx, err := h.paddleService.PaddleClient.CreateTransaction(ctx, createReq)
@@ -122,19 +132,16 @@ func (h *PaddleHandler) CreateTransaction(w http.ResponseWriter, r *http.Request
 		return
 	}
 
-	// 1. Get the Checkout URL from the transaction object
-	// Most Paddle Go SDKs include the Checkout object in the response
-	var checkoutURL string
-	if tx.Checkout != nil && *tx.Checkout.URL != "" {
-		checkoutURL = *tx.Checkout.URL
-	} else {
-		// 2. Fallback: Manual construction if the SDK field is empty
-		// Use "sandbox-checkout.paddle.com" for testing, "checkout.paddle.com" for live
-		paddleEnv := "sandbox-checkout" // Switch to "checkout" for production
-		checkoutURL = fmt.Sprintf("https://%s.paddle.com/checkout/custom?_ptxn=%s", paddleEnv, tx.ID)
-	}
+	// DEBUG: Log the transaction ID to your terminal
+	fmt.Printf("Created Transaction: %s Status: %s\n", tx.ID, tx.Status)
 
-	// 3. Include the URL in the response
+	// If the transaction is ALREADY "billed", it will skip payment.
+	// It should be "ready". If it's "billed", check your Price settings in Paddle.
+
+	paddleEnv := "sandbox-checkout" // Switch to "checkout" for production
+	// We use the 'custom' checkout endpoint which is designed for Transaction IDs
+	checkoutURL := fmt.Sprintf("https://%s.paddle.com/checkout/custom?_ptxn=%s", paddleEnv, tx.ID)
+
 	response := map[string]string{
 		"transactionId": tx.ID,
 		"checkoutUrl":   checkoutURL,
