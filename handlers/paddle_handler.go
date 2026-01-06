@@ -90,19 +90,18 @@ func (h *PaddleHandler) CreateTransaction(w http.ResponseWriter, r *http.Request
 	ctx, cancel := context.WithTimeout(r.Context(), 120*time.Second)
 	defer cancel()
 
-	// 1. Auth & Body Parsing
 	clerkID, ok := middleware.GetClerkID(ctx)
 	if !ok {
 		respondWithError(w, http.StatusUnauthorized, "Unauthorized")
 		return
 	}
+
 	var reqBody CreateTransactionRequest
 	if err := json.NewDecoder(r.Body).Decode(&reqBody); err != nil {
 		http.Error(w, "Invalid request body", http.StatusBadRequest)
 		return
 	}
 
-	// 2. Create Transaction
 	createReq := &paddle.CreateTransactionRequest{
 		Items: []paddle.CreateTransactionItems{
 			*paddle.NewCreateTransactionItemsCatalogItem(&paddle.CatalogItem{
@@ -122,24 +121,18 @@ func (h *PaddleHandler) CreateTransaction(w http.ResponseWriter, r *http.Request
 		return
 	}
 
-	// 3. THE DOCUMENTED URL CONSTRUCTION
-	// Base Domain: https://pay.paddle.io
-	// Path: /checkout/{HOSTED_CHECKOUT_ID}
-	// Query: transaction_id={TXN_ID}
+	hostedID := "hsc_01ke920ky3j35wpbw0pqf6cj0t_3ayb30a530yz69681rcc42j3ej6bey5h"
 	
-	hostedCheckoutID := "hsc_01ke920ky3j35wpbw0pqf6cj0t_3ayb30a530yz69681rcc42j3ej6bey5h"
-	
+	// Final URL Format: https://sandbox-pay.paddle.io/{ID}?transaction_id={TXN_ID}
 	checkoutURL := fmt.Sprintf(
-		"https://pay.paddle.io/checkout/%s?transaction_id=%s",
-		hostedCheckoutID,
+		"https://sandbox-pay.paddle.io/%s?transaction_id=%s",
+		hostedID,
 		tx.ID,
 	)
 
-	// LOGS: Check these in your server console
-	fmt.Printf("--- PADDLE VERIFIED FLOW ---\n")
-	fmt.Printf("Transaction ID: %s\n", tx.ID)
-	fmt.Printf("Documented URL: %s\n", checkoutURL)
-	fmt.Printf("----------------------------\n")
+	fmt.Printf("--- PADDLE DEBUG ---\n")
+	fmt.Printf("Transaction Created: %s\n", tx.ID)
+	fmt.Printf("Opening URL: %s\n", checkoutURL)
 
 	respondWithJSON(w, http.StatusOK, map[string]string{
 		"transactionId": tx.ID,
