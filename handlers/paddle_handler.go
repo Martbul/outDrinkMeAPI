@@ -91,19 +91,21 @@ func (h *PaddleHandler) CreateTransaction(w http.ResponseWriter, r *http.Request
 	ctx, cancel := context.WithTimeout(r.Context(), 120*time.Second)
 	defer cancel()
 
+	// 1. Get Clerk ID
 	clerkID, ok := middleware.GetClerkID(ctx)
 	if !ok {
 		respondWithError(w, http.StatusUnauthorized, "Unauthorized")
 		return
 	}
 
+	// 2. Decode Request
 	var reqBody CreateTransactionRequest
 	if err := json.NewDecoder(r.Body).Decode(&reqBody); err != nil {
 		http.Error(w, "Invalid request body", http.StatusBadRequest)
 		return
 	}
 
-	// Build the request
+	// 3. Build Request
 	createReq := &paddle.CreateTransactionRequest{
 		Items: []paddle.CreateTransactionItems{
 			*paddle.NewCreateTransactionItemsCatalogItem(&paddle.CatalogItem{
@@ -114,27 +116,43 @@ func (h *PaddleHandler) CreateTransaction(w http.ResponseWriter, r *http.Request
 		CustomData: paddle.CustomData{
 			"userId": clerkID,
 		},
+		// MANDATORY: This must be automatic to generate the Hosted Checkout URL
 		CollectionMode: paddle.PtrTo(paddle.CollectionModeAutomatic),
-		
 	}
 
+	// 4. Create Transaction
 	tx, err := h.paddleService.PaddleClient.CreateTransaction(ctx, createReq)
 	if err != nil {
 		http.Error(w, fmt.Sprintf("Failed to create transaction: %v", err), http.StatusInternalServerError)
 		return
 	}
 
-	// Construct the URL manually
-	paddleEnv := "sandbox-checkout" 
-	checkoutURL := fmt.Sprintf("https://%s.paddle.com/checkout/custom?_ptxn=%s", paddleEnv, tx.ID)
-
-	response := map[string]string{
-		"transactionId": tx.ID,
-		"checkoutUrl":   checkoutURL,
+	// 5. Extract the REAL Hosted Checkout URL
+	var checkoutURL string
+	
+	// Safely check if Checkout and URL pointers are not nil
+	if tx.Checkout != nil && tx.Checkout.URL != nil {
+		// DEREFERENCE: This gets the "https://sandbox-pay.paddle.io/..." string
+		checkoutURL = *tx.Checkout.URL 
+	} else {
+		// If this happens, it means CollectionMode wasn't Automatic 
+		// or the PriceID is invalid/free.
+		http.Error(w, "Paddle did not return a hosted checkout URL", http.StatusInternalServerError)
+		return
 	}
 
-	respondWithJSON(w, http.StatusOK, response)
+	// LOG THIS: You should see the "sandbox-pay.paddle.io" link here
+	fmt.Printf("Successfully created transaction. URL: %s\n", checkoutURL)
+
+	// 6. Response
+	respondWithJSON(w, http.StatusOK, map[string]string{
+		"transactionId": tx.ID,
+		"checkoutUrl":   checkoutURL,
+	})
 }
+
+
+
 // ! unlock and remove premium in the db with service call
 func (h *PaddleHandler) PaddleWebhookHandler(w http.ResponseWriter, r *http.Request) {
 	secret := os.Getenv("PADDLE_SECRET_KEY")
