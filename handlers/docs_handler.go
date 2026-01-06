@@ -104,8 +104,6 @@ func (h *DocHandler) ServeHome(w http.ResponseWriter, r *http.Request) {
 				<li><strong>Unlimited Discounts:</strong> Get 5-15% off your entire bill at all partner venues.</li>
 				<li><strong>VIP Treatment:</strong> Skip the line at select clubs.</li>
 				<li><strong>Multiple Locations:</strong> Use your subscription at any venue listed in the app.</li>
-				<li><strong>Guest Events:</strong> Exclusive invitations to subscriber-only parties.</li>
-				<li><strong>Priority Booking:</strong> Last-minute table reservations for you and your friends.</li>
 			</ul>
 			<p><em>Example: Spend 120 BGN on cocktails and save 12 BGN instantly. Do that 4 times a month, and you've saved more than the cost of the subscription!</em></p>
 
@@ -113,7 +111,7 @@ func (h *DocHandler) ServeHome(w http.ResponseWriter, r *http.Request) {
 			<ol>
 				<li><strong>Download:</strong> Get the OutDrinkMe app on Android or iOS.</li>
 				<li><strong>Subscribe:</strong> Choose your monthly or yearly Premium plan.</li>
-				<li><strong>Visit:</strong> Go to any partner venue (highlighted in red in the app).</li>
+				<li><strong>Visit:</strong> Go to any partner venue (all vanues in the OutDrinkMe app).</li>
 				<li><strong>Scan:</strong> Show your personal Premium QR code to the staff before paying.</li>
 				<li><strong>Save:</strong> The discount is applied immediately to your bill.</li>
 			</ol>
