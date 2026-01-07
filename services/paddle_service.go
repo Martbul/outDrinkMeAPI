@@ -28,11 +28,9 @@ func (s *PaddleService) UnlockPremium(ctx context.Context, userID string, validU
 		return fmt.Errorf("failed to find user %s: %w", userID, err)
 	}
 
-	qrData := fmt.Sprintf("ODM-PREM-%s-%d", userID, time.Now().Unix())
-
 	query := `
 		INSERT INTO premium (
-			user_id, username, user_image_url, qr_code_data, valid_until, is_active, 
+			user_id, username, user_image_url, valid_until, is_active, 
 			transaction_id, customer_id, amount, currency, updated_at
 		)
 		VALUES ($1, $2, $3, $4, $5, true, $6, $7, $8, $9, NOW())
@@ -46,7 +44,7 @@ func (s *PaddleService) UnlockPremium(ctx context.Context, userID string, validU
 			updated_at     = NOW();
 	`
 
-	_, err = s.db.Exec(ctx, query, userID, username, imageURL, qrData, validUntil, transactionID, customerID, amount, currency)
+	_, err = s.db.Exec(ctx, query, userID, username, imageURL, validUntil, transactionID, customerID, amount, currency)
 	if err != nil {
 		return fmt.Errorf("failed to unlock premium: %w", err)
 	}
