@@ -20,7 +20,6 @@ func NewPaddleService(client *paddle.SDK, db *pgxpool.Pool) *PaddleService {
 		db:           db,
 	}
 }
-
 func (s *PaddleService) UnlockPremium(ctx context.Context, userID string, validUntil time.Time, transactionID, customerID, amount, currency string) error {
 	var username, imageURL string
 	err := s.db.QueryRow(ctx, "SELECT username, image_url FROM users WHERE clerk_id = $1", userID).Scan(&username, &imageURL)
@@ -33,7 +32,7 @@ func (s *PaddleService) UnlockPremium(ctx context.Context, userID string, validU
 			user_id, username, user_image_url, valid_until, is_active, 
 			transaction_id, customer_id, amount, currency, updated_at
 		)
-		VALUES ($1, $2, $3, $4, $5, true, $6, $7, $8, $9, NOW())
+		VALUES ($1, $2, $3, $4, true, $5, $6, $7, $8, NOW())
 		ON CONFLICT (user_id) DO UPDATE SET
 			valid_until    = EXCLUDED.valid_until,
 			is_active      = true,
