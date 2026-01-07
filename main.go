@@ -222,6 +222,7 @@ func main() {
 	protected.HandleFunc("/user/stories/relate", userHandler.RelateStory).Methods("POST")
 	protected.HandleFunc("/user/stories/seen", userHandler.MarkStoryAsSeen).Methods("POST")
 	protected.HandleFunc("/user/user-stories", userHandler.GetAllUserStories).Methods("GET")
+	protected.HandleFunc("/user/premium", userHandler.GetPremiumDetails).Methods("GET")
 
 	protected.HandleFunc("/min-version", docHandler.GetAppMinVersion).Methods("GET")
 

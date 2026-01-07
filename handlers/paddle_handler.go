@@ -234,12 +234,12 @@ func (h *PaddleHandler) PaddleWebhookHandler(w http.ResponseWriter, r *http.Requ
 			amount := fullEvent.Data.Details.Totals.GrandTotal
 			currency := string(fullEvent.Data.CurrencyCode)
 
-			fmt.Printf("✅ Payment: %s | User: %s | Amount: %s %s\n", transactionID, userID, amount, currency)
+			fmt.Printf(" Payment: %s | User: %s | Amount: %s %s\n", transactionID, userID, amount, currency)
 
 			// 3. Call Service
 			err := h.paddleService.UnlockPremium(ctx, userID, validUntil, transactionID, customerID, amount, currency)
 			if err != nil {
-				log.Printf("❌ Failed to unlock premium: %v", err)
+				log.Printf(" Failed to unlock premium: %v", err)
 				http.Error(w, "DB Error", http.StatusInternalServerError)
 				return
 			}
