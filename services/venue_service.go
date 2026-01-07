@@ -43,11 +43,11 @@ func (s *VenueService) GetAllVenues(ctx context.Context) ([]venue.Venue, error) 
 			COALESCE((
 				SELECT json_agg(json_build_object(
 					'id', vs.id,
-					'venueId', vs.venue_id,
+					'venue_id', vs.venue_id,
 					'name', vs.name,
 					'price', vs.price,
 					'description', vs.description,
-					'imageUrl', vs.image_url
+					'image_url', vs.image_url
 				))
 				FROM venue_specials vs
 				WHERE vs.venue_id = v.id
@@ -73,7 +73,7 @@ func (s *VenueService) GetAllVenues(ctx context.Context) ([]venue.Venue, error) 
 
 	for rows.Next() {
 		var v venue.Venue
-		var specialsJSON []byte // Temp holder for the raw JSON
+		var specialsJSON []byte 
 
 		err := rows.Scan(
 			&v.ID,
@@ -92,16 +92,15 @@ func (s *VenueService) GetAllVenues(ctx context.Context) ([]venue.Venue, error) 
 			&v.Description,
 			&v.Latitude,
 			&v.Longitude,
-			&v.Tags,               // pgx handles text[] -> []string automatically
+			&v.Tags,               
 			&v.DiscountPercentage,
-			&specialsJSON,         // Scan the JSON blob
-			&v.Employees,          // pgx handles text[] -> []string automatically
+			&specialsJSON,        
+			&v.Employees,        
 		)
 		if err != nil {
 			return nil, fmt.Errorf("failed to scan venue row: %w", err)
 		}
 
-		// Unmarshal the Specials JSON into the struct slice
 		if len(specialsJSON) > 0 {
 			if err := json.Unmarshal(specialsJSON, &v.Specials); err != nil {
 				return nil, fmt.Errorf("failed to unmarshal specials: %w", err)

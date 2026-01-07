@@ -11,7 +11,6 @@ import (
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
-	// stripe "github.com/stripe/stripe-go/v74"
 )
 
 type StoreService struct {
@@ -192,7 +191,6 @@ func (s *StoreService) PurchaseStoreItem(ctx context.Context, clerkID string, it
 			return nil, fmt.Errorf("failed to create purchase: %w", err)
 		}
 
-		// Add item to user's inventory
 		inventoryItem := store.InventoryItem{
 			ID:         uuid.New(),
 			UserID:     userIDUUID,
@@ -225,7 +223,6 @@ func (s *StoreService) PurchaseStoreItem(ctx context.Context, clerkID string, it
 			return nil, fmt.Errorf("failed to add item to inventory: %w", err)
 		}
 	} else {
-		// User already has this item, increment quantity
 		purchase.PurchaseType = "store_item_quantity_increment"
 
 		newQuantity := existingInventoryItem.Quantity + 1
@@ -262,48 +259,9 @@ func (s *StoreService) PurchaseStoreItem(ctx context.Context, clerkID string, it
 		}
 	}
 
-	// Commit transaction
 	if err = tx.Commit(ctx); err != nil {
 		return nil, fmt.Errorf("failed to commit transaction: %w", err)
 	}
 
 	return &purchase, nil
 }
-
-//TODO:
-// func (s *StoreService) BuyGems(ctx context.Context) (map[string][]*store.Item, error) {}
-// func (s *StoreService) PurchaseGems(ctx context.Context ,clerkID string, gemsCount int) (bool, error) {
-// 	var userID uuid.UUID
-// 	userQuery := `SELECT id FROM users WHERE clerk_id = $1`
-// 	err := s.db.QueryRow(ctx, userQuery, clerkID).Scan(&userID)
-// 	if err != nil {
-// 		if err == pgx.ErrNoRows {
-// 			return false, fmt.Errorf("user not found")
-// 		}
-// 		return false, fmt.Errorf("failed to get user: %w", err)
-// 	}
-
-// params := &stripe.CheckoutSessionParams{
-// 		Mode: stripe.String(string(stripe.CheckoutSessionModePayment)),
-// 		LineItems: []*stripe.CheckoutSessionLineItemParams{
-// 			{
-// 				PriceData: &stripe.CheckoutSessionLineItemPriceDataParams{
-// 					Currency: stripe.String("usd"),
-// 					ProductData: &stripe.CheckoutSessionLineItemPriceDataProductDataParams{
-// 						Name: stripe.String("Service"),
-// 					},
-// 					UnitAmount: stripe.Int64(3000),
-// 				},
-// 				Quantity: stripe.Int64(1),
-// 			},
-// 		},
-// 		SuccessURL: stripe.String("http://localhost:3000/success"),
-// 		CancelURL:  stripe.String("http://localhost:3000/cancel"),
-// 	}
-
-// 	s, err := session.New(params)
-// 	if err != nil {
-// 		log.Printf("session.New: %v", err)
-// 	}
-// 	http.Redirect(w, r, s.URL, http.StatusSeeOther)
-// }
