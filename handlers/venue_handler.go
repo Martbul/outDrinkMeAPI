@@ -125,21 +125,22 @@ func (h *VenueHandler) RemoveEmployeeFromVenue(w http.ResponseWriter, r *http.Re
 
 	respondWithJSON(w, http.StatusOK, success)
 }
-
 func (h *VenueHandler) AddScanData(w http.ResponseWriter, r *http.Request) {
 	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
 	defer cancel()
 
-	clerkID, ok := middleware.GetClerkID(ctx)
+	// 1. The "Scanner" is the logged-in user (The Bouncer/Bartender)
+	scannerID, ok := middleware.GetClerkID(ctx)
 	if !ok {
 		respondWithError(w, http.StatusUnauthorized, "User not authenticated")
 		return
 	}
 
+	// 2. Expect the QR Token string, not just a raw user ID
 	var req struct {
-		DiscountPercentage string `json:"discount_percentage"`
-		VenueID            string `json:"venue"` 
-		ScannerUserId      string `json:"scanner_user_id"`
+		VenueID            string `json:"venueId"`
+		Token              string `json:"token"` // The signed QR string from the customer
+		DiscountPercentage string `json:"discountPercentage"`
 	}
 
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
@@ -147,23 +148,30 @@ func (h *VenueHandler) AddScanData(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if req.VenueID == "" || req.ScannerUserId == "" {
-		respondWithError(w, http.StatusBadRequest, "Venue and ScannerUserId are required")
+	if req.VenueID == "" || req.Token == "" {
+		respondWithError(w, http.StatusBadRequest, "Venue ID and QR Token are required")
 		return
 	}
 
+	// 3. Call Service
 	serviceReq := services.ScanDataReq{
 		VenueID:            req.VenueID,
-		CustomerID:         clerkID,          
-		ScannerUserID:      req.ScannerUserId, 
+		ScannerUserID:      scannerID,
+		Token:              req.Token,
 		DiscountPercentage: req.DiscountPercentage,
 	}
 
-	success, err := h.venueService.AddScanData(ctx, serviceReq)
+	// The service now returns the customer info if successful, or an error
+	customerInfo, err := h.venueService.ProcessScan(ctx, serviceReq)
 	if err != nil {
-		respondWithError(w, http.StatusInternalServerError, "Server error: "+err.Error())
+		// Differentiate between "Invalid Token" (403) and "Server Error" (500)
+		if err.Error() == "invalid token signature" || err.Error() == "token expired" || err.Error() == "premium not active" {
+			respondWithError(w, http.StatusForbidden, err.Error())
+		} else {
+			respondWithError(w, http.StatusInternalServerError, "Scan failed: "+err.Error())
+		}
 		return
 	}
 
-	respondWithJSON(w, http.StatusOK, success)
+	respondWithJSON(w, http.StatusOK, customerInfo)
 }

@@ -2910,7 +2910,7 @@ func (s *UserService) GetAllUserStories(ctx context.Context, clerkID string) ([]
 func (s *UserService) GetPremiumDetails(ctx context.Context, clerkID string) (*premium.Premium, error) {
 	query := `
 		SELECT 
-			id, user_id, username, user_image_url, qr_code_data, 
+			id, user_id, username, user_image_url, 
 			venues_visited, valid_until, is_active, 
 			transaction_id, customer_id, amount, currency,
 			created_at, updated_at
@@ -2925,7 +2925,6 @@ func (s *UserService) GetPremiumDetails(ctx context.Context, clerkID string) (*p
 		&p.UserID, 
 		&p.Username, 
 		&p.UserImageURL, 
-		&p.QRCodeData, 
 		&p.VenuesVisited, 
 		&p.ValidUntil, 
 		&p.IsActive, 
@@ -2938,15 +2937,12 @@ func (s *UserService) GetPremiumDetails(ctx context.Context, clerkID string) (*p
 	)
 
 	if err != nil {
-		// Use pgx.ErrNoRows, not sql.ErrNoRows
 		if errors.Is(err, pgx.ErrNoRows) {
 			return nil, nil
 		}
 		return nil, err
 	}
 
-	// 4. Logic Check: Ensure subscription hasn't expired
-	// Even if 'is_active' is true in DB, we double-check the date
 	if time.Now().After(p.ValidUntil) {
 		p.IsActive = false
 	}

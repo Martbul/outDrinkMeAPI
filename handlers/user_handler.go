@@ -2,10 +2,14 @@ package handlers
 
 import (
 	"context"
+	"crypto/hmac"
+	"crypto/sha256"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"log"
 	"net/http"
+	"os"
 	"outDrinkMeAPI/internal/types/canvas"
 	"outDrinkMeAPI/internal/types/user"
 	"outDrinkMeAPI/middleware"
@@ -1231,7 +1235,58 @@ func (h *UserHandler) GetPremiumDetails(w http.ResponseWriter, r *http.Request) 
 	respondWithJSON(w, http.StatusOK, premiumDetails)
 }
 
+type QRTokenPayload struct {
+	UserID    string `json:"uid"`
+	ExpiresAt int64  `json:"exp"`
+}
 
+func (h *UserHandler) GenerateDynamicQR(w http.ResponseWriter, r *http.Request) {
+	ctx, cancel := context.WithTimeout(r.Context(), 10*time.Second)
+	defer cancel()
+
+	clerkID, ok := middleware.GetClerkID(ctx)
+	if !ok {
+		respondWithError(w, http.StatusUnauthorized, "Unauthorized")
+		return
+	}
+
+	// 1. Check if user is actually Premium and Active
+	premiumStatus, err := h.userService.GetPremiumDetails(ctx, clerkID)
+	if err != nil {
+		http.Error(w, "Error checking status", http.StatusInternalServerError)
+		return
+	}
+	if premiumStatus == nil || !premiumStatus.IsActive {
+		http.Error(w, "User is not premium", http.StatusForbidden)
+		return
+	}
+
+	expiration := time.Now().Add(2 * time.Minute).Unix()
+	payload := QRTokenPayload{
+		UserID:    clerkID,
+		ExpiresAt: expiration,
+	}
+
+	secretKey := os.Getenv("QR_SIGNING_SECRET")
+	if secretKey == "" {
+		secretKey = "fallback-secret-change-me"
+	}
+
+	payloadBytes, _ := json.Marshal(payload)
+	payloadStr := base64.RawURLEncoding.EncodeToString(payloadBytes)
+
+	hMac := hmac.New(sha256.New, []byte(secretKey))
+	hMac.Write([]byte(payloadStr))
+	signature := base64.RawURLEncoding.EncodeToString(hMac.Sum(nil))
+
+	token := fmt.Sprintf("%s.%s", payloadStr, signature)
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]string{
+		"token":     token,
+		"expiresAt": fmt.Sprintf("%d", expiration),
+	})
+}
 
 func (h *UserHandler) DeleteAccountPage(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")

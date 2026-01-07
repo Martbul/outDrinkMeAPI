@@ -2,10 +2,17 @@ package services
 
 import (
 	"context"
+	"crypto/hmac"
+	"crypto/sha256"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
+	"os"
 	"outDrinkMeAPI/internal/types/venue"
+	"strings"
+	"time"
 
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
@@ -168,57 +175,139 @@ func (s *VenueService) RemoveEmployeeFromVenue(ctx context.Context, venueID stri
 
 	return tag.RowsAffected() > 0, nil
 }
-
-
-// ScanDataReq holds the data needed to record a scan
 type ScanDataReq struct {
-	VenueID           string
-	CustomerID        string
-	ScannerUserID     string
+	VenueID            string
+	ScannerUserID      string
+	Token              string // The QR Code String
 	DiscountPercentage string
 }
 
-//TODO! Check if user has active premium
-func (s *VenueService) AddScanData(ctx context.Context, req ScanDataReq) (bool, error) {
-	// Start a transaction
+type ScanSuccessResponse struct {
+	CustomerUsername string `json:"username"`
+	CustomerImage    string `json:"image"`
+	Message          string `json:"message"`
+}
+
+// QR Payload structure (Must match what generates the QR)
+type QRTokenPayload struct {
+	UserID    string `json:"uid"`
+	ExpiresAt int64  `json:"exp"`
+}
+
+func (s *VenueService) ProcessScan(ctx context.Context, req ScanDataReq) (*ScanSuccessResponse, error) {
+	parts := strings.Split(req.Token, ".")
+	if len(parts) != 2 {
+		return nil, fmt.Errorf("invalid token format")
+	}
+	payloadStr, signature := parts[0], parts[1]
+
+	// B. Verify Signature
+	secretKey := os.Getenv("QR_SIGNING_SECRET")
+	hMac := hmac.New(sha256.New, []byte(secretKey))
+	hMac.Write([]byte(payloadStr))
+	expectedSig := base64.RawURLEncoding.EncodeToString(hMac.Sum(nil))
+
+	if !hmac.Equal([]byte(signature), []byte(expectedSig)) {
+		return nil, fmt.Errorf("invalid token signature")
+	}
+
+	// C. Decode Payload
+	payloadBytes, _ := base64.RawURLEncoding.DecodeString(payloadStr)
+	var payload QRTokenPayload
+	if err := json.Unmarshal(payloadBytes, &payload); err != nil {
+		return nil, fmt.Errorf("malformed token payload")
+	}
+
+	// D. Check Expiration (Prevents Screenshots)
+	if time.Now().Unix() > payload.ExpiresAt {
+		return nil, fmt.Errorf("token expired")
+	}
+
+	customerID := payload.UserID
+
+	// --- STEP 2: CHECK PREMIUM STATUS IN DB ---
+
+	var isActive bool
+	var validUntil time.Time
+	var username, userImage string
+
+	// We check premium table AND join users to get the name/image for the UI
+	// pgxpool.QueryRow works just like database/sql
+	checkQuery := `
+		SELECT p.is_active, p.valid_until, p.username, p.user_image_url
+		FROM premium p
+		WHERE p.user_id = $1
+	`
+	err := s.db.QueryRow(ctx, checkQuery, customerID).Scan(&isActive, &validUntil, &username, &userImage)
+
+	if err != nil {
+		if err == pgx.ErrNoRows {
+			return nil, fmt.Errorf("user has no premium record")
+		}
+		return nil, fmt.Errorf("db error: %w", err)
+	}
+
+	// Logic Check
+	if !isActive {
+		return nil, fmt.Errorf("premium not active")
+	}
+	if time.Now().After(validUntil) {
+		return nil, fmt.Errorf("premium expired on %s", validUntil.Format("2006-01-02"))
+	}
+
+	// --- STEP 3: PERFORM SCAN TRANSACTION ---
+
+	// pgxpool.Begin returns a pgx.Tx
 	tx, err := s.db.Begin(ctx)
 	if err != nil {
-		return false, fmt.Errorf("failed to begin transaction: %w", err)
+		return nil, fmt.Errorf("failed to begin transaction: %w", err)
 	}
-	// Defer rollback in case of error (if Commit is called, Rollback is a no-op)
 	defer tx.Rollback(ctx)
 
-	// 1. Insert into venue_scans history table
+	// A. Insert into History
 	insertQuery := `
-		INSERT INTO venue_scans (venue_id, customer_user_id, scanner_user_id, discount_percentage)
-		VALUES ($1, $2, $3, $4)
+		INSERT INTO venue_scans (venue_id, customer_user_id, scanner_user_id, discount_percentage, scanned_at)
+		VALUES ($1, $2, $3, $4, NOW())
 	`
-	_, err = tx.Exec(ctx, insertQuery, req.VenueID, req.CustomerID, req.ScannerUserID, req.DiscountPercentage)
+	_, err = tx.Exec(ctx, insertQuery, req.VenueID, customerID, req.ScannerUserID, req.DiscountPercentage)
 	if err != nil {
-		return false, fmt.Errorf("failed to insert scan record: %w", err)
+		return nil, fmt.Errorf("failed to insert scan record: %w", err)
 	}
 
-	// 2. Increment the scan count for the employee in venue_employees
-	// We use COALESCE to handle cases where 'scans' might be NULL initially
-	updateQuery := `
+	// B. Increment Employee Scan Count
+	updateEmployeeQuery := `
 		UPDATE venue_employees 
 		SET scans = COALESCE(scans, 0) + 1 
 		WHERE venue_id = $1 AND user_id = $2
 	`
-	tag, err := tx.Exec(ctx, updateQuery, req.VenueID, req.ScannerUserID)
+	tag, err := tx.Exec(ctx, updateEmployeeQuery, req.VenueID, req.ScannerUserID)
 	if err != nil {
-		return false, fmt.Errorf("failed to update employee scan count: %w", err)
+		return nil, fmt.Errorf("failed to update employee stats: %w", err)
 	}
-
-	// Optional: Check if the employee actually existed in that venue
+	// Strict check: Is the scanner actually an employee?
 	if tag.RowsAffected() == 0 {
-		return false, fmt.Errorf("scanner user is not an employee of this venue")
+		return nil, fmt.Errorf("scanner is not authorized at this venue")
 	}
 
-	// Commit the transaction
+	// C. Update User's Premium Stats (Venues Visited)
+	updateUserQuery := `
+		UPDATE premium
+		SET venues_visited = venues_visited + 1
+		WHERE user_id = $1
+	`
+	_, err = tx.Exec(ctx, updateUserQuery, customerID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to update user stats: %w", err)
+	}
+
+	// Commit
 	if err := tx.Commit(ctx); err != nil {
-		return false, fmt.Errorf("failed to commit transaction: %w", err)
+		return nil, fmt.Errorf("transaction commit failed: %w", err)
 	}
 
-	return true, nil
+	return &ScanSuccessResponse{
+		CustomerUsername: username,
+		CustomerImage:    userImage,
+		Message:          "Scan Valid",
+	}, nil
 }
