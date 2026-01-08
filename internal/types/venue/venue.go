@@ -48,6 +48,12 @@ type Venue struct {
 	Longitude          float64       `db:"longitude"           json:"longitude"`
 	
 	Tags               []string      `db:"tags"                json:"tags"` 
+
+	Gallery            []string      `db:"gallery"             json:"gallery"`  
+	Features           []string      `db:"features"            json:"features"` 
+	Phone              string        `db:"phone"               json:"phone"`
+	Website            string        `db:"website"             json:"website"`
+	Directions         string        `db:"directions"          json:"directions"`
 	
 	DiscountPercentage int           `db:"discount_percentage" json:"discount_percentage"` 
 

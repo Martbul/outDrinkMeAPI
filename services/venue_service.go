@@ -23,7 +23,6 @@ type VenueService struct {
 func NewVenueService(db *pgxpool.Pool) *VenueService {
 	return &VenueService{db: db}
 }
-
 func (s *VenueService) GetAllVenues(ctx context.Context) ([]venue.Venue, error) {
 	query := `
 		SELECT
@@ -46,6 +45,13 @@ func (s *VenueService) GetAllVenues(ctx context.Context) ([]venue.Venue, error) 
 			v.tags,
 			v.discount_percentage,
 			
+			-- New Columns with safety Coalesce
+			COALESCE(v.gallery, '{}') AS gallery,
+			COALESCE(v.features, '{}') AS features,
+			COALESCE(v.phone, '') AS phone,
+			COALESCE(v.website, '') AS website,
+			COALESCE(v.directions, '') AS directions,
+
 			-- Subquery to get Specials as a JSON Array
 			COALESCE((
 				SELECT json_agg(json_build_object(
@@ -101,6 +107,13 @@ func (s *VenueService) GetAllVenues(ctx context.Context) ([]venue.Venue, error) 
 			&v.Longitude,
 			&v.Tags,               
 			&v.DiscountPercentage,
+			// New Fields
+			&v.Gallery,
+			&v.Features,
+			&v.Phone,
+			&v.Website,
+			&v.Directions,
+			// Subqueries
 			&specialsJSON,        
 			&v.Employees,        
 		)
@@ -123,7 +136,6 @@ func (s *VenueService) GetAllVenues(ctx context.Context) ([]venue.Venue, error) 
 
 	return venues, nil
 }
-
 type EmployeeDetails struct {
 	Role  string `json:"role"`
 	Scans int    `json:"scans"`
