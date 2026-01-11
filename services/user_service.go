@@ -17,6 +17,7 @@ import (
 	"outDrinkMeAPI/internal/types/store"
 	"outDrinkMeAPI/internal/types/story"
 	"outDrinkMeAPI/internal/types/user"
+	"outDrinkMeAPI/internal/types/wish"
 	"outDrinkMeAPI/utils"
 	"strings"
 	"time"
@@ -2970,6 +2971,102 @@ func (s *UserService) DeleteStory(ctx context.Context, clerkID string, storyID s
 
 	return cmd.RowsAffected() > 0, nil
 }
+
+func (s *UserService) GetWishList(ctx context.Context, clerkID string) ([]wish.WishItem, error) {
+	userID, _, err := s.getInternalID(ctx, clerkID)
+	if err != nil {
+		return nil, err
+	}
+
+    // Only fetch items from the CURRENT MONTH
+	query := `
+        SELECT id, text, completed 
+        FROM wish_list 
+        WHERE user_id = $1 
+        AND created_at >= date_trunc('month', CURRENT_DATE)
+        ORDER BY created_at ASC
+    `
+
+	rows, err := s.db.Query(ctx, query, userID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var items []wish.WishItem
+	for rows.Next() {
+		var i wish.WishItem
+		if err := rows.Scan(&i.ID, &i.Text, &i.Completed); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+    
+    // Return empty array instead of nil for JSON
+    if items == nil {
+        items = []wish.WishItem{}
+    }
+
+	return items, nil
+}
+
+func (s *UserService) AddWishItem(ctx context.Context, clerkID string, text string) (*wish.WishItem, error) {
+	userID, _, err := s.getInternalID(ctx, clerkID)
+	if err != nil {
+		return nil, err
+	}
+
+    // 1. Check Limit (Max 10 per month)
+    var count int
+    checkQuery := `
+        SELECT COUNT(*) FROM wish_list 
+        WHERE user_id = $1 AND created_at >= date_trunc('month', CURRENT_DATE)
+    `
+    err = s.db.QueryRow(ctx, checkQuery, userID).Scan(&count)
+    if err != nil {
+        return nil, err
+    }
+    if count >= 10 {
+        return nil, fmt.Errorf("limit reached")
+    }
+
+    // 2. Insert
+	query := `
+        INSERT INTO wish_list (user_id, text) 
+        VALUES ($1, $2) 
+        RETURNING id, text, completed
+    `
+
+    var i wish.WishItem
+	err = s.db.QueryRow(ctx, query, userID, text).Scan(&i.ID, &i.Text, &i.Completed)
+	if err != nil {
+		return nil, err
+	}
+
+	return &i, nil
+}
+
+func (s *UserService) ToggleWishItem(ctx context.Context, clerkID string, itemID string) (bool, error) {
+    userID, _, err := s.getInternalID(ctx, clerkID)
+	if err != nil {
+		return false, err
+	}
+    
+    // Toggle the completed status
+    query := `
+        UPDATE wish_list 
+        SET completed = NOT completed 
+        WHERE id = $1 AND user_id = $2
+    `
+    
+    cmd, err := s.db.Exec(ctx, query, itemID, userID)
+    if err != nil {
+        return false, err
+    }
+    
+    return cmd.RowsAffected() > 0, nil
+}
+
 
 // TODO: Creae theese
 func (s *UserService) EquipItem(ctx context.Context, clerkID string, itemIdForRemoval string) (bool, error) {
