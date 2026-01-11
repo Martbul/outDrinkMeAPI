@@ -225,8 +225,8 @@ func main() {
 	protected.HandleFunc("/user/premium", userHandler.GetPremiumDetails).Methods("GET")
 	protected.HandleFunc("/user/qr", userHandler.GenerateDynamicQR).Methods("GET")
 	protected.HandleFunc("/user/wish-list", userHandler.GetWishList).Methods("GET")
-	protected.HandleFunc("/user/wish-list", userHandler.AddWishItem).Methods("GET")
-	protected.HandleFunc("/user/wish-list/{id}/toggle", userHandler.ToggleWishItem).Methods("PATCH") // New endpoint to check/uncheck
+	protected.HandleFunc("/user/wish-list", userHandler.AddWishItem).Methods("POST")
+	protected.HandleFunc("/user/wish-list/{id}/toggle", userHandler.ToggleWishItem).Methods("PATCH") 
 
 	protected.HandleFunc("/min-version", docHandler.GetAppMinVersion).Methods("GET")
 
