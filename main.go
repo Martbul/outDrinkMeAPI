@@ -8,6 +8,7 @@ import (
 	"os/signal"
 	"time"
 
+	"github.com/PaddleHQ/paddle-go-sdk"
 	clerk "github.com/clerk/clerk-sdk-go/v2"
 	gorilllaHandlers "github.com/gorilla/handlers"
 	"github.com/gorilla/mux"
@@ -31,6 +32,8 @@ var (
 	notificationService *services.NotificationService
 	photoDumpService    *services.FuncService
 	gameManager         *services.DrinnkingGameManager
+	venueService        *services.VenueService
+	paddleService       *services.PaddleService
 )
 
 func main() {
@@ -46,6 +49,13 @@ func main() {
 	log.Println("Clerk initialized")
 
 	middleware.InitPrometheus()
+
+	paddleClient, err := paddle.NewSandbox(
+		os.Getenv("PADDLE_API_KEY"),
+	)
+	if err != nil {
+		log.Fatalf("Failed to init Paddle client: %v", err)
+	}
 
 	dbURL := os.Getenv("DATABASE_URL")
 	if dbURL == "" {
@@ -80,6 +90,8 @@ func main() {
 	photoDumpService = services.NewFuncService(dbPool)
 	gameManager = services.NewDrinnkingGameManager()
 	docService = services.NewDocService(dbPool)
+	venueService = services.NewVenueService(dbPool)
+	paddleService = services.NewPaddleService(paddleClient,dbPool)
 
 	userHandler := handlers.NewUserHandler(userService)
 	docHandler := handlers.NewDocHandler(docService)
@@ -88,6 +100,8 @@ func main() {
 	webhookHandler := handlers.NewWebhookHandler(userService)
 	funcHandler := handlers.NewFuncHandler(photoDumpService)
 	drinkingGameHandler := handlers.NewDrinkingGamesHandler(gameManager, userService)
+	venueHandler := handlers.NewVenueHandler(venueService)
+	paddleHandler := handlers.NewPaddleHandler(paddleService)
 
 	go func() {
 		fcm, err := notification.NewFCMService("./serviceAccountKey.json")
@@ -148,7 +162,8 @@ func main() {
 	standardRouter.HandleFunc("/", docHandler.ServeHome).Methods("GET")
 
 	standardRouter.HandleFunc("/webhooks/clerk", webhookHandler.HandleClerkWebhook).Methods("POST")
-	standardRouter.HandleFunc("/webhooks/stripe", webhookHandler.HandleStripeWebhook).Methods("POST")
+	standardRouter.HandleFunc("/webhooks/paddle", paddleHandler.PaddleWebhookHandler).Methods("POST")
+	standardRouter.HandleFunc("/payment/success", paddleHandler.HandlePaymentSuccess).Methods("GET")
 
 	api := standardRouter.PathPrefix("/api/v1").Subrouter()
 
@@ -207,8 +222,8 @@ func main() {
 	protected.HandleFunc("/user/stories/relate", userHandler.RelateStory).Methods("POST")
 	protected.HandleFunc("/user/stories/seen", userHandler.MarkStoryAsSeen).Methods("POST")
 	protected.HandleFunc("/user/user-stories", userHandler.GetAllUserStories).Methods("GET")
-	protected.HandleFunc("/user/subscription", userHandler.GetSubscriptionDetails).Methods("GET")
-	protected.HandleFunc("/user/subscription", userHandler.Subscribe).Methods("POST")
+	protected.HandleFunc("/user/premium", userHandler.GetPremiumDetails).Methods("GET")
+	protected.HandleFunc("/user/qr", userHandler.GenerateDynamicQR).Methods("GET")
 
 	protected.HandleFunc("/min-version", docHandler.GetAppMinVersion).Methods("GET")
 
@@ -233,6 +248,15 @@ func main() {
 	protected.HandleFunc("/func/leave", funcHandler.LeaveFunction).Methods("POST")
 	protected.HandleFunc("/func/delete", funcHandler.DeleteImages).Methods("DELETE")
 	protected.HandleFunc("/drinking-games/create", drinkingGameHandler.CreateDrinkingGame).Methods("POST")
+
+	protected.HandleFunc("/venues", venueHandler.GetAllVenues).Methods("GET")
+	protected.HandleFunc("/venues/employee", venueHandler.GetEmployeeDetails).Methods("GET")
+	protected.HandleFunc("/venues/employee", venueHandler.AddEmployeeToVenue).Methods("POST")
+	protected.HandleFunc("/venues/employee", venueHandler.RemoveEmployeeFromVenue).Methods("DELETE")
+	protected.HandleFunc("/venues/scan", venueHandler.AddScanData).Methods("POST")
+
+	protected.HandleFunc("/paddle/price", paddleHandler.GetPrices).Methods("GET")
+	protected.HandleFunc("/paddle/transaction", paddleHandler.CreateTransaction).Methods("POST")
 
 	corsHandler := gorilllaHandlers.CORS(
 		gorilllaHandlers.AllowedOrigins([]string{"*"}),

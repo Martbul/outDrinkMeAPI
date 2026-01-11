@@ -2,12 +2,15 @@ package handlers
 
 import (
 	"context"
+	"crypto/hmac"
+	"crypto/sha256"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"log"
 	"net/http"
+	"os"
 	"outDrinkMeAPI/internal/types/canvas"
-	"outDrinkMeAPI/internal/types/subscription"
 	"outDrinkMeAPI/internal/types/user"
 	"outDrinkMeAPI/middleware"
 	"outDrinkMeAPI/services"
@@ -1208,7 +1211,7 @@ func (h *UserHandler) GetAllUserStories(w http.ResponseWriter, r *http.Request) 
 	respondWithJSON(w, http.StatusOK, allUserStories)
 }
 
-func (h *UserHandler) GetSubscriptionDetails(w http.ResponseWriter, r *http.Request) {
+func (h *UserHandler) GetPremiumDetails(w http.ResponseWriter, r *http.Request) {
 	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
 	defer cancel()
 
@@ -1218,22 +1221,27 @@ func (h *UserHandler) GetSubscriptionDetails(w http.ResponseWriter, r *http.Requ
 		return
 	}
 
-	subscriptionDetails, err := h.userService.GetSubscriptionDetails(ctx, clerkID)
+	premiumDetails, err := h.userService.GetPremiumDetails(ctx, clerkID)
 	if err != nil {
 		respondWithError(w, http.StatusInternalServerError, "Could not fetch subscription")
 		return
 	}
 
-	if subscriptionDetails == nil {
+	if premiumDetails == nil {
 		respondWithJSON(w, http.StatusOK, nil)
 		return
 	}
 
-	respondWithJSON(w, http.StatusOK, subscriptionDetails)
+	respondWithJSON(w, http.StatusOK, premiumDetails)
 }
 
-func (h *UserHandler) Subscribe(w http.ResponseWriter, r *http.Request) {
-	ctx, cancel := context.WithTimeout(r.Context(), 10*time.Second) 
+type QRTokenPayload struct {
+	UserID    string `json:"uid"`
+	ExpiresAt int64  `json:"exp"`
+}
+
+func (h *UserHandler) GenerateDynamicQR(w http.ResponseWriter, r *http.Request) {
+	ctx, cancel := context.WithTimeout(r.Context(), 10*time.Second)
 	defer cancel()
 
 	clerkID, ok := middleware.GetClerkID(ctx)
@@ -1242,28 +1250,41 @@ func (h *UserHandler) Subscribe(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// 1. Decode the request to get the Price ID (Monthly vs Yearly)
-	var req subscription.SubscribeRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		respondWithError(w, http.StatusBadRequest, "Invalid request body")
-		return
-	}
-
-	if req.PriceID == "" {
-		respondWithError(w, http.StatusBadRequest, "Price ID is required")
-		return
-	}
-
-	// 2. Call Service to generate Stripe Checkout URL
-	checkoutURL, err := h.userService.Subscribe(ctx, clerkID, req.PriceID)
+	// 1. Check if user is actually Premium and Active
+	premiumStatus, err := h.userService.GetPremiumDetails(ctx, clerkID)
 	if err != nil {
-		respondWithError(w, http.StatusInternalServerError, "Failed to create checkout session: "+err.Error())
+		http.Error(w, "Error checking status", http.StatusInternalServerError)
+		return
+	}
+	if premiumStatus == nil || !premiumStatus.IsActive {
+		http.Error(w, "User is not premium", http.StatusForbidden)
 		return
 	}
 
-	// 3. Return the URL so frontend can window.location.href = url
-	respondWithJSON(w, http.StatusOK, subscription.SubscribeResponse{
-		CheckoutURL: checkoutURL,
+	expiration := time.Now().Add(2 * time.Minute).Unix()
+	payload := QRTokenPayload{
+		UserID:    clerkID,
+		ExpiresAt: expiration,
+	}
+
+	secretKey := os.Getenv("QR_SIGNING_SECRET")
+	if secretKey == "" {
+		secretKey = "fallback-secret-change-me"
+	}
+
+	payloadBytes, _ := json.Marshal(payload)
+	payloadStr := base64.RawURLEncoding.EncodeToString(payloadBytes)
+
+	hMac := hmac.New(sha256.New, []byte(secretKey))
+	hMac.Write([]byte(payloadStr))
+	signature := base64.RawURLEncoding.EncodeToString(hMac.Sum(nil))
+
+	token := fmt.Sprintf("%s.%s", payloadStr, signature)
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]string{
+		"token":     token,
+		"expiresAt": fmt.Sprintf("%d", expiration),
 	})
 }
 

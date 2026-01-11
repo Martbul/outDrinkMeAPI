@@ -2,30 +2,24 @@ package services
 
 import (
 	"context"
-	"database/sql"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"log"
-	"os"
 	"outDrinkMeAPI/internal/types/achievement"
 	"outDrinkMeAPI/internal/types/calendar"
 	"outDrinkMeAPI/internal/types/canvas"
 	"outDrinkMeAPI/internal/types/collection"
 	"outDrinkMeAPI/internal/types/leaderboard"
 	"outDrinkMeAPI/internal/types/mix"
+	"outDrinkMeAPI/internal/types/premium"
 	"outDrinkMeAPI/internal/types/stats"
 	"outDrinkMeAPI/internal/types/store"
 	"outDrinkMeAPI/internal/types/story"
-	"outDrinkMeAPI/internal/types/subscription"
 	"outDrinkMeAPI/internal/types/user"
 	"outDrinkMeAPI/utils"
 	"strings"
 	"time"
-
-	"github.com/stripe/stripe-go/v76"
-	"github.com/stripe/stripe-go/v76/checkout/session"
-	stripeClient "github.com/stripe/stripe-go/v76/subscription"
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
@@ -2848,7 +2842,6 @@ func (s *UserService) RelateStory(ctx context.Context, clerkID, storyID, action 
 		return false, err
 	}
 
-	// If nothing was deleted, it means the user hasn't reacted with this type yet -> Insert it
 	if cmd.RowsAffected() == 0 {
 		_, err = tx.Exec(ctx, `
 			INSERT INTO relates (story_id, user_id, relate_type) 
@@ -2864,15 +2857,12 @@ func (s *UserService) RelateStory(ctx context.Context, clerkID, storyID, action 
 	return true, err
 }
 
-// MarkStoryAsSeen adds the userID to the seen_by array in the stories table
 func (s *UserService) MarkStoryAsSeen(ctx context.Context, clerkID, storyID string) (bool, error) {
 	userID, _, err := s.getInternalID(ctx, clerkID)
 	if err != nil {
 		return false, err
 	}
 
-	// We use array_append combined with a check to ensure we don't add the same user twice.
-	// The "NOT ($1 = ANY(seen_by))" check prevents duplicates in the array.
 	_, err = s.db.Exec(ctx, `
 		UPDATE stories 
 		SET seen_by = array_append(seen_by, $1) 
@@ -2916,103 +2906,63 @@ func (s *UserService) GetAllUserStories(ctx context.Context, clerkID string) ([]
 	return stories, nil
 }
 
-func (s *UserService) GetSubscriptionDetails(ctx context.Context, clerkID string) (*subscription.Subscription, error) {
+
+func (s *UserService) GetPremiumDetails(ctx context.Context, clerkID string) (*premium.Premium, error) {
 	query := `
 		SELECT 
-			s.id, s.user_id, s.stripe_customer_id, s.stripe_subscription_id, 
-			s.stripe_price_id, s.status, s.current_period_end, s.created_at, s.updated_at
-		FROM subscriptions s
-		JOIN users u ON u.id = s.user_id
-		WHERE u.clerk_id = $1
-		-- Optional: Only fetch active ones? 
-		-- usually you want the latest one regardless of status to show "Cancelled" logic
-		ORDER BY s.created_at DESC 
-		LIMIT 1`
+			id, user_id, username, user_image_url, 
+			venues_visited, valid_until, is_active, 
+			transaction_id, customer_id, amount, currency,
+			created_at, updated_at
+		FROM premium
+		WHERE user_id = $1
+	`
 
-	row := s.db.QueryRow(ctx, query, clerkID)
+	var p premium.Premium
 
-	var sub subscription.Subscription
-	err := row.Scan(
-		&sub.ID, &sub.UserID, &sub.StripeCustomerID, &sub.StripeSubscriptionID,
-		&sub.StripePriceID, &sub.Status, &sub.CurrentPeriodEnd, &sub.CreatedAt, &sub.UpdatedAt,
+	err := s.db.QueryRow(ctx, query, clerkID).Scan(
+		&p.ID, 
+		&p.UserID, 
+		&p.Username, 
+		&p.UserImageURL, 
+		&p.VenuesVisited, 
+		&p.ValidUntil, 
+		&p.IsActive, 
+		&p.TransactionID, 
+		&p.CustomerID, 
+		&p.Amount, 
+		&p.Currency, 
+		&p.CreatedAt, 
+		&p.UpdatedAt,
 	)
 
 	if err != nil {
-		if errors.Is(err, sql.ErrNoRows) {
-			// User has no subscription record. Return nil, no error.
+		if errors.Is(err, pgx.ErrNoRows) {
 			return nil, nil
 		}
 		return nil, err
 	}
 
-	return &sub, nil
-}
-
-// Subscribe generates a Stripe Checkout Session URL
-func (s *UserService) Subscribe(ctx context.Context, clerkID string, priceID string) (string, error) {
-	// 1. Get the user's email and internal ID from DB
-	var email string
-	var userID string
-	err := s.db.QueryRow(ctx, "SELECT id, email FROM users WHERE clerk_id = $1", clerkID).Scan(&userID, &email)
-	if err != nil {
-		return "", errors.New("user not found")
+	if time.Now().After(p.ValidUntil) {
+		p.IsActive = false
 	}
 
-	// 2. Initialize Stripe Key (Make sure STRIPE_SECRET_KEY is in your .env)
-	stripe.Key = os.Getenv("STRIPE_SECRET_KEY")
-
-	// 3. Create Checkout Session Params
-	params := &stripe.CheckoutSessionParams{
-		CustomerEmail: stripe.String(email), // Pre-fill user email
-		PaymentMethodTypes: stripe.StringSlice([]string{
-			"card",
-		}),
-		// "subscription" mode is required for recurring payments
-		Mode: stripe.String(string(stripe.CheckoutSessionModeSubscription)),
-		LineItems: []*stripe.CheckoutSessionLineItemParams{
-			{
-				Price:    stripe.String(priceID), // The ID from frontend (monthly or yearly)
-				Quantity: stripe.Int64(1),
-			},
-		},
-		// Metadata helps us identify the user in the Webhook later
-		Metadata: map[string]string{
-			"user_id":  userID,
-			"clerk_id": clerkID,
-		},
-		SuccessURL: stripe.String("http://localhost:3000/settings?payment=success"), // Update with your frontend URL
-		CancelURL:  stripe.String("http://localhost:3000/settings?payment=canceled"),
-	}
-
-	// 4. Call Stripe API
-	sess, err := session.New(params)
-	if err != nil {
-		return "", err
-	}
-
-	// 5. Return the URL
-	return sess.URL, nil
+	return &p, nil
 }
 
 func (s *UserService) DeleteStory(ctx context.Context, clerkID string, storyID string) (bool, error) {
-	// 1. Get the internal User UUID
-	// Since getInternalID returns a uuid.UUID, this part is safe.
 	userID, _, err := s.getInternalID(ctx, clerkID)
 	if err != nil {
 		return false, err
 	}
 
-	// 2. FIX: Parse the storyID string into a UUID
-	// This catches the empty string case ("") before it hits the database.
 	storyUUID, err := uuid.Parse(storyID)
 	if err != nil {
 		return false, fmt.Errorf("invalid story ID: %w", err)
 	}
 
-	// 3. Execute Query using both UUIDs
 	query := `DELETE FROM stories WHERE id = $1 AND user_id = $2`
 
-	// Pass storyUUID (type uuid.UUID) instead of storyID (type string)
 	cmd, err := s.db.Exec(ctx, query, storyUUID, userID)
 	if err != nil {
 		return false, err
@@ -3025,65 +2975,7 @@ func (s *UserService) DeleteStory(ctx context.Context, clerkID string, storyID s
 func (s *UserService) EquipItem(ctx context.Context, clerkID string, itemIdForRemoval string) (bool, error) {
 	return true, nil
 }
-func (s *UserService) FetchStripeSubscription(subID string) (*stripe.Subscription, error) {
-	return stripeClient.Get(subID, nil)
-}
 
-func (s *UserService) UpsertSubscription(ctx context.Context, sub *subscription.Subscription) error {
-	query := `
-		INSERT INTO subscriptions (
-			user_id, 
-			stripe_customer_id, 
-			stripe_subscription_id, 
-			stripe_price_id, 
-			status, 
-			current_period_end,
-			updated_at
-		) VALUES ($1, $2, $3, $4, $5, $6, NOW())
-		ON CONFLICT (stripe_subscription_id) 
-		DO UPDATE SET 
-			status = EXCLUDED.status,
-			current_period_end = EXCLUDED.current_period_end,
-			stripe_price_id = EXCLUDED.stripe_price_id,
-			updated_at = NOW();
-	`
-	_, err := s.db.Exec(ctx, query,
-		sub.UserID,
-		sub.StripeCustomerID,
-		sub.StripeSubscriptionID,
-		sub.StripePriceID,
-		sub.Status,
-		sub.CurrentPeriodEnd,
-	)
-	return err
-}
-
-func (s *UserService) UpdateSubscriptionStatus(ctx context.Context, sub *subscription.Subscription) error {
-	query := `
-        UPDATE subscriptions 
-        SET 
-            status = $1, 
-            current_period_end = $2, 
-            stripe_price_id = $3,
-            updated_at = NOW()
-        WHERE stripe_subscription_id = $4
-    `
-	result, err := s.db.Exec(ctx, query,
-		sub.Status,
-		sub.CurrentPeriodEnd,
-		sub.StripePriceID,
-		sub.StripeSubscriptionID,
-	)
-	if err != nil {
-		return err
-	}
-
-	rows := result.RowsAffected()
-	if rows == 0 {
-		return fmt.Errorf("subscription %s not found locally", sub.StripeSubscriptionID)
-	}
-	return nil
-}
 
 func getTotalCount(collection collection.AlcoholCollectionByType) int {
 	total := 0
