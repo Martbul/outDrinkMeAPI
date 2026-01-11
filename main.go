@@ -91,7 +91,7 @@ func main() {
 	gameManager = services.NewDrinnkingGameManager()
 	docService = services.NewDocService(dbPool)
 	venueService = services.NewVenueService(dbPool)
-	paddleService = services.NewPaddleService(paddleClient,dbPool)
+	paddleService = services.NewPaddleService(paddleClient, dbPool)
 
 	userHandler := handlers.NewUserHandler(userService)
 	docHandler := handlers.NewDocHandler(docService)
@@ -224,6 +224,9 @@ func main() {
 	protected.HandleFunc("/user/user-stories", userHandler.GetAllUserStories).Methods("GET")
 	protected.HandleFunc("/user/premium", userHandler.GetPremiumDetails).Methods("GET")
 	protected.HandleFunc("/user/qr", userHandler.GenerateDynamicQR).Methods("GET")
+	protected.HandleFunc("/user/wish-list", userHandler.GetWishList).Methods("GET")
+	protected.HandleFunc("/user/wish-list", userHandler.AddWishItem).Methods("POST")
+	protected.HandleFunc("/user/wish-list/{id}/toggle", userHandler.ToggleWishItem).Methods("PATCH") 
 
 	protected.HandleFunc("/min-version", docHandler.GetAppMinVersion).Methods("GET")
 

@@ -12,6 +12,7 @@ import (
 	"os"
 	"outDrinkMeAPI/internal/types/canvas"
 	"outDrinkMeAPI/internal/types/user"
+	"outDrinkMeAPI/internal/types/wish"
 	"outDrinkMeAPI/middleware"
 	"outDrinkMeAPI/services"
 	"strconv"
@@ -1288,6 +1289,76 @@ func (h *UserHandler) GenerateDynamicQR(w http.ResponseWriter, r *http.Request) 
 	})
 }
 
+func (h *UserHandler) GetWishList(w http.ResponseWriter, r *http.Request) {
+	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
+	defer cancel()
+
+	clerkID, ok := middleware.GetClerkID(ctx)
+	if !ok {
+		respondWithError(w, http.StatusUnauthorized, "Unauthorized")
+		return
+	}
+
+	wishList, err := h.userService.GetWishList(ctx, clerkID)
+	if err != nil {
+		respondWithError(w, http.StatusInternalServerError, "Could not fetch wish list")
+		return
+	}
+
+	respondWithJSON(w, http.StatusOK, wishList)
+}
+
+func (h *UserHandler) AddWishItem(w http.ResponseWriter, r *http.Request) {
+	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
+	defer cancel()
+
+	clerkID, ok := middleware.GetClerkID(ctx)
+	if !ok {
+		respondWithError(w, http.StatusUnauthorized, "Unauthorized")
+		return
+	}
+
+    var req wish.CreateWishRequest
+    if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+        respondWithError(w, http.StatusBadRequest, "Invalid request body")
+        return
+    }
+
+	newItem, err := h.userService.AddWishItem(ctx, clerkID, req.Text)
+	if err != nil {
+        // Check if error is "limit reached"
+        if err.Error() == "limit reached" {
+            respondWithError(w, http.StatusForbidden, "Monthly limit reached")
+            return
+        }
+		respondWithError(w, http.StatusInternalServerError, "Could not add wish")
+		return
+	}
+
+	respondWithJSON(w, http.StatusCreated, newItem)
+}
+
+func (h *UserHandler) ToggleWishItem(w http.ResponseWriter, r *http.Request) {
+    ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
+	defer cancel()
+
+    vars := mux.Vars(r)
+    itemID := vars["id"]
+
+	clerkID, ok := middleware.GetClerkID(ctx)
+	if !ok {
+		respondWithError(w, http.StatusUnauthorized, "Unauthorized")
+		return
+	}
+
+    success, err := h.userService.ToggleWishItem(ctx, clerkID, itemID)
+    if err != nil {
+		respondWithError(w, http.StatusInternalServerError, "Could not toggle item")
+		return
+	}
+
+    respondWithJSON(w, http.StatusOK, map[string]bool{"success": success})
+}
 func (h *UserHandler) DeleteAccountPage(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	fmt.Fprintf(w, `
