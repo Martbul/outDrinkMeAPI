@@ -17,6 +17,7 @@ import (
 	"outDrinkMeAPI/internal/types/store"
 	"outDrinkMeAPI/internal/types/story"
 	"outDrinkMeAPI/internal/types/user"
+	wallofshame "outDrinkMeAPI/internal/types/wall_of_shame"
 	"outDrinkMeAPI/internal/types/wish"
 	"outDrinkMeAPI/utils"
 	"strings"
@@ -3052,7 +3053,6 @@ func (s *UserService) ToggleWishItem(ctx context.Context, clerkID string, itemID
 		return false, err
 	}
     
-    // Toggle the completed status
     query := `
         UPDATE wish_list 
         SET completed = NOT completed 
@@ -3067,6 +3067,89 @@ func (s *UserService) ToggleWishItem(ctx context.Context, clerkID string, itemID
     return cmd.RowsAffected() > 0, nil
 }
 
+
+func (s *UserService) GetShameList(ctx context.Context, clerkID string) ([]wallofshame.WallOfShameItem, error) {
+	userID, _, err := s.getInternalID(ctx, clerkID)
+	if err != nil {
+		return nil, err
+	}
+
+	query := `
+		SELECT id, user_id, text, tier, created_at 
+		FROM wall_of_shame 
+		WHERE user_id = $1 
+		ORDER BY created_at DESC
+	`
+
+	rows, err := s.db.Query(ctx, query, userID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var items []wallofshame.WallOfShameItem
+	for rows.Next() {
+		var i wallofshame.WallOfShameItem
+		if err := rows.Scan(&i.ID, &i.UserID, &i.Text, &i.Tier, &i.CreatedAt); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+
+	if err = rows.Err(); err != nil {
+		return nil, err
+	}
+
+	return items, nil
+}
+
+func (s *UserService) AddShameItem(ctx context.Context, clerkID string, text string, tier string) (*wallofshame.WallOfShameItem, error) {
+	userID, _, err := s.getInternalID(ctx, clerkID)
+	if err != nil {
+		return nil, err
+	}
+
+	validTiers := map[string]bool{"S": true, "A": true, "B": true, "C": true, "D": true, "F": true}
+	if !validTiers[tier] {
+		return nil, fmt.Errorf("invalid tier: %s", tier)
+	}
+
+	query := `
+		INSERT INTO wall_of_shame (user_id, text, tier) 
+		VALUES ($1, $2, $3) 
+		RETURNING id, user_id, text, tier, created_at
+	`
+
+	var i wallofshame.WallOfShameItem
+	err = s.db.QueryRow(ctx, query, userID, text, tier).Scan(
+		&i.ID, &i.UserID, &i.Text, &i.Tier, &i.CreatedAt,
+	)
+	if err != nil {
+		return nil, err
+	}
+
+	return &i, nil
+}
+
+func (s *UserService) DeleteShameItem(ctx context.Context, clerkID string, itemID string) (bool, error) {
+	userID, _, err := s.getInternalID(ctx, clerkID)
+	if err != nil {
+		return false, err
+	}
+
+	query := `
+		DELETE FROM wall_of_shame 
+		WHERE id = $1 AND user_id = $2
+	`
+
+	cmd, err := s.db.Exec(ctx, query, itemID, userID)
+	if err != nil {
+		return false, err
+	}
+
+	rowsAffected := cmd.RowsAffected()
+	return rowsAffected > 0, nil
+}
 
 // TODO: Creae theese
 func (s *UserService) EquipItem(ctx context.Context, clerkID string, itemIdForRemoval string) (bool, error) {

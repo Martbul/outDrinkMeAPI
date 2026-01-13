@@ -22,7 +22,6 @@ func NewFuncService(db *pgxpool.Pool) *FuncService {
 	}
 }
 
-
 type FuncMember struct {
 	Username string `json:"username"`
 	ImageUrl string `json:"imageUrl"`

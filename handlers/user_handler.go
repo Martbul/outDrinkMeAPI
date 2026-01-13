@@ -12,6 +12,7 @@ import (
 	"os"
 	"outDrinkMeAPI/internal/types/canvas"
 	"outDrinkMeAPI/internal/types/user"
+	wallofshame "outDrinkMeAPI/internal/types/wall_of_shame"
 	"outDrinkMeAPI/internal/types/wish"
 	"outDrinkMeAPI/middleware"
 	"outDrinkMeAPI/services"
@@ -1318,19 +1319,19 @@ func (h *UserHandler) AddWishItem(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-    var req wish.CreateWishRequest
-    if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-        respondWithError(w, http.StatusBadRequest, "Invalid request body")
-        return
-    }
+	var req wish.CreateWishRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		respondWithError(w, http.StatusBadRequest, "Invalid request body")
+		return
+	}
 
 	newItem, err := h.userService.AddWishItem(ctx, clerkID, req.Text)
 	if err != nil {
-        // Check if error is "limit reached"
-        if err.Error() == "limit reached" {
-            respondWithError(w, http.StatusForbidden, "Monthly limit reached")
-            return
-        }
+		// Check if error is "limit reached"
+		if err.Error() == "limit reached" {
+			respondWithError(w, http.StatusForbidden, "Monthly limit reached")
+			return
+		}
 		respondWithError(w, http.StatusInternalServerError, "Could not add wish")
 		return
 	}
@@ -1339,11 +1340,11 @@ func (h *UserHandler) AddWishItem(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *UserHandler) ToggleWishItem(w http.ResponseWriter, r *http.Request) {
-    ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
+	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
 	defer cancel()
 
-    vars := mux.Vars(r)
-    itemID := vars["id"]
+	vars := mux.Vars(r)
+	itemID := vars["id"]
 
 	clerkID, ok := middleware.GetClerkID(ctx)
 	if !ok {
@@ -1351,14 +1352,81 @@ func (h *UserHandler) ToggleWishItem(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-    success, err := h.userService.ToggleWishItem(ctx, clerkID, itemID)
-    if err != nil {
+	success, err := h.userService.ToggleWishItem(ctx, clerkID, itemID)
+	if err != nil {
 		respondWithError(w, http.StatusInternalServerError, "Could not toggle item")
 		return
 	}
 
-    respondWithJSON(w, http.StatusOK, map[string]bool{"success": success})
+	respondWithJSON(w, http.StatusOK, map[string]bool{"success": success})
 }
+
+func (h *UserHandler) GetShameList(w http.ResponseWriter, r *http.Request) {
+	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
+	defer cancel()
+
+	clerkID, ok := middleware.GetClerkID(ctx)
+	if !ok {
+		respondWithError(w, http.StatusUnauthorized, "Unauthorized")
+		return
+	}
+
+	shameList, err := h.userService.GetShameList(ctx, clerkID)
+	if err != nil {
+		respondWithError(w, http.StatusInternalServerError, "Could not get shame list")
+		return
+	}
+
+	respondWithJSON(w, http.StatusOK, shameList)
+}
+
+func (h *UserHandler) AddShameItem(w http.ResponseWriter, r *http.Request) {
+	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
+	defer cancel()
+
+	clerkID, ok := middleware.GetClerkID(ctx)
+	if !ok {
+		respondWithError(w, http.StatusUnauthorized, "Unauthorized")
+		return
+	}
+
+	var req wallofshame.CreateShameRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		respondWithError(w, http.StatusBadRequest, "Invalid request body")
+		return
+	}
+
+	newItem, err := h.userService.AddShameItem(ctx, clerkID, req.Text, req.Tier)
+	if err != nil {
+		respondWithError(w, http.StatusInternalServerError, "Could not get shame list")
+		return
+	}
+
+	respondWithJSON(w, http.StatusOK,newItem)
+}
+
+func (h *UserHandler) DeleteShameItem(w http.ResponseWriter, r *http.Request) {
+	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
+	defer cancel()
+
+	clerkID, ok := middleware.GetClerkID(ctx)
+	if !ok {
+		respondWithError(w, http.StatusUnauthorized, "Unauthorized")
+		return
+	}
+
+	vars := mux.Vars(r)
+	itemID := vars["item_id"]
+
+	success, err := h.userService.DeleteShameItem(ctx, clerkID, itemID)
+	if err != nil {
+		respondWithError(w, http.StatusInternalServerError, "Could not get shame list")
+		return
+	}
+
+	respondWithJSON(w, http.StatusOK, map[string]bool{"success": success})
+}
+
 func (h *UserHandler) DeleteAccountPage(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	fmt.Fprintf(w, `

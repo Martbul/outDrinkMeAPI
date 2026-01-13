@@ -226,7 +226,16 @@ func main() {
 	protected.HandleFunc("/user/qr", userHandler.GenerateDynamicQR).Methods("GET")
 	protected.HandleFunc("/user/wish-list", userHandler.GetWishList).Methods("GET")
 	protected.HandleFunc("/user/wish-list", userHandler.AddWishItem).Methods("POST")
-	protected.HandleFunc("/user/wish-list/{id}/toggle", userHandler.ToggleWishItem).Methods("PATCH") 
+	protected.HandleFunc("/user/wish-list/{id}/toggle", userHandler.ToggleWishItem).Methods("PATCH")
+	// protected.HandleFunc("/user/not-bars", userHandler.GetNotBarPlaces).Methods("GET")
+	// protected.HandleFunc("/user/not-bars", userHandler.AddCustomPlace).Methods("POST")
+	// protected.HandleFunc("/user/not-bars/{id}/toggle", userHandler.TogglePlaceVisit).Methods("PATCH")
+	// protected.HandleFunc("/user/not-bars/{id}/rate", userHandler.RatePlace).Methods("POST")
+	// protected.HandleFunc("/user/not-bars", userHandler.UpdatePlacesOrder).Methods("PATCH")
+	protected.HandleFunc("/user/shame-list", userHandler.GetShameList).Methods("GET")
+	protected.HandleFunc("/user/shame-list", userHandler.AddShameItem).Methods("POST")
+	protected.HandleFunc("/user/shame-list", userHandler.DeleteShameItem).Methods("DELETE")
+
 
 	protected.HandleFunc("/min-version", docHandler.GetAppMinVersion).Methods("GET")
 
