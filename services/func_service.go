@@ -30,6 +30,7 @@ type FuncMember struct {
 
 type FuncMetadata struct {
 	InviteCode   string    `json:"inviteCode"`
+	ShareLink    string    `json:"shareLink"` 
 	QrToken      string    `json:"qrToken"`     
 	QrCodeBase64 string    `json:"qrCodeBase64"`
 	ExpiresAt    time.Time `json:"expiresAt"`
@@ -52,6 +53,10 @@ type FuncServiceSessionResponse struct {
 	ExpiresAt    time.Time `json:"expiresAt"`
 }
 
+func generateShareLink(code string) string {
+	return fmt.Sprintf("outdrinkme://func_screen?inviteCode=%s", code)
+}
+
 func (s *FuncService) GenerateQrCode(ctx context.Context, clerkID string) (*FuncServiceSessionResponse, error) {
 	var hostUserID uuid.UUID
 	err := s.db.QueryRow(ctx, `SELECT id FROM users WHERE clerk_id = $1`, clerkID).Scan(&hostUserID)
@@ -63,16 +68,15 @@ func (s *FuncService) GenerateQrCode(ctx context.Context, clerkID string) (*Func
 	}
 
 	qrToken := uuid.New().String()
-	expiresAt := time.Now().Add(72 * time.Hour) // 3-day lifespan
+	// Use UTC to ensure consistency across DB and Server
+	expiresAt := time.Now().UTC().Add(72 * time.Hour) 
 
-	// Start a transaction using pgxpool
 	tx, err := s.db.Begin(ctx)
 	if err != nil {
 		return nil, err
 	}
 	defer tx.Rollback(ctx)
 
-	// Create the Function entry
 	var sessionID uuid.UUID
 	err = tx.QueryRow(ctx, `
 		INSERT INTO funcs (host_user_id, qr_token, status, expires_at)
@@ -83,7 +87,6 @@ func (s *FuncService) GenerateQrCode(ctx context.Context, clerkID string) (*Func
 		return nil, fmt.Errorf("failed to insert func: %w", err)
 	}
 
-	// Join the Host to the member list immediately
 	_, err = tx.Exec(ctx, `
 		INSERT INTO func_members (func_id, user_id)
 		VALUES ($1, $2)
@@ -96,7 +99,6 @@ func (s *FuncService) GenerateQrCode(ctx context.Context, clerkID string) (*Func
 		return nil, err
 	}
 
-	// Generate QR Code
 	qrContent := fmt.Sprintf("outdrinkme://photodump/session/join/%s", qrToken)
 	pngBytes, err := qrcode.Encode(qrContent, qrcode.Medium, 256)
 	if err != nil {
@@ -111,12 +113,11 @@ func (s *FuncService) GenerateQrCode(ctx context.Context, clerkID string) (*Func
 	}, nil
 }
 
-// 2. JoinViaQrCode adds the current user to the member list of an active session.
 func (s *FuncService) JoinViaQrCode(ctx context.Context, clerkID string, qrToken string) (uuid.UUID, error) {
 	var funcID uuid.UUID
 	var userID uuid.UUID
 
-	// Check if session is valid and get user id
+	// Added NOW() check safety
 	err := s.db.QueryRow(ctx, `
 		SELECT f.id, u.id 
 		FROM funcs f, users u 
@@ -132,7 +133,6 @@ func (s *FuncService) JoinViaQrCode(ctx context.Context, clerkID string, qrToken
 		return uuid.Nil, err
 	}
 
-	// Insert into members
 	_, err = s.db.Exec(ctx, `
 		INSERT INTO func_members (func_id, user_id) 
 		VALUES ($1, $2) 
@@ -147,12 +147,13 @@ func (s *FuncService) JoinViaQrCode(ctx context.Context, clerkID string, qrToken
 }
 
 func (s *FuncService) GetSessionData(ctx context.Context, funcID string, currentClerkID string) (*FuncDataResponse, error) {
+	// IMPORTANT: Initialize slices so they become [] in JSON, not null
 	resp := &FuncDataResponse{
-		FuncMembers:  []FuncMember{},
-		FuncImageIds: []string{},
+		FuncMembers:  make([]FuncMember, 0),
+		FuncImageIds: make([]string, 0),
 	}
 
-	// 1. Get Metadata and Host Info
+	// 1. Get Metadata
 	err := s.db.QueryRow(ctx, `
 		SELECT 
 			f.qr_token, f.expires_at, f.id, 
@@ -170,16 +171,17 @@ func (s *FuncService) GetSessionData(ctx context.Context, funcID string, current
 		return nil, fmt.Errorf("failed to fetch metadata: %w", err)
 	}
 
-	// --- NEW: REGENERATE QR DATA FOR METADATA ---
+	// Populate derived fields
 	resp.FuncMetadata.QrToken = resp.FuncMetadata.InviteCode
+	resp.FuncMetadata.ShareLink = generateShareLink(resp.FuncMetadata.InviteCode)
+
 	qrContent := fmt.Sprintf("outdrinkme://photodump/session/join/%s", resp.FuncMetadata.QrToken)
 	pngBytes, err := qrcode.Encode(qrContent, qrcode.Medium, 256)
 	if err == nil {
 		resp.FuncMetadata.QrCodeBase64 = base64.StdEncoding.EncodeToString(pngBytes)
 	}
-	// --------------------------------------------
 
-	// 2. Check if the requesting user is a member
+	// 2. Check membership
 	err = s.db.QueryRow(ctx, `
 		SELECT EXISTS (
 			SELECT 1 FROM func_members fm 
@@ -190,7 +192,7 @@ func (s *FuncService) GetSessionData(ctx context.Context, funcID string, current
 		return nil, err
 	}
 
-	// 3. Get All Members
+	// 3. Get Members
 	rows, err := s.db.Query(ctx, `
 		SELECT u.username, COALESCE(u.image_url, '')
 		FROM func_members fm
@@ -207,7 +209,7 @@ func (s *FuncService) GetSessionData(ctx context.Context, funcID string, current
 		}
 	}
 
-	// 4. Get Image URLs
+	// 4. Get Images
 	imgRows, err := s.db.Query(ctx, `
 		SELECT image_url FROM funcs_images 
 		WHERE func_id = $1 
@@ -287,8 +289,6 @@ func (s *FuncService) DeleteImages(ctx context.Context, clerkID string, funcID s
 	return tx.Commit(ctx)
 }
 
-
-
 func (s *FuncService) GetUserActiveSession(ctx context.Context, clerkID string) (*FuncDataResponse, error) {
 	var funcID uuid.UUID
 
@@ -309,7 +309,6 @@ func (s *FuncService) GetUserActiveSession(ctx context.Context, clerkID string) 
 
 	return s.GetSessionData(ctx, funcID.String(), clerkID)
 }
-
 
 func (s *FuncService) LeaveFunction(ctx context.Context, clerkID string, funcID string) error {
 	_, err := s.db.Exec(ctx, `
