@@ -12,6 +12,7 @@ import (
 	"outDrinkMeAPI/internal/types/collection"
 	"outDrinkMeAPI/internal/types/leaderboard"
 	"outDrinkMeAPI/internal/types/mix"
+	notbarsplace "outDrinkMeAPI/internal/types/not_bars_place"
 	"outDrinkMeAPI/internal/types/premium"
 	"outDrinkMeAPI/internal/types/stats"
 	"outDrinkMeAPI/internal/types/store"
@@ -182,17 +183,11 @@ func (s *UserService) FriendDiscoveryDisplayProfile(ctx context.Context, clerkID
 		return nil, fmt.Errorf("failed to get user achievements: %w", err)
 	}
 
-	// ---------------------------------------------------------
-	// NEW: Fetch Inventory using the existing GetUserInventory
-	// ---------------------------------------------------------
+	
 	friendDiscoveryInventory, err := s.GetUserInventory(ctx, friendDiscoveryUserData.ClerkID)
 	if err != nil {
 		log.Printf("FriendDiscoveryDisplayProfile: Failed to get user inventory: %v", err)
-		// Option A: Return error if inventory is critical
 		return nil, fmt.Errorf("failed to get user inventory: %w", err)
-
-		// Option B: If you prefer to return the profile even if inventory fails, un-comment below and comment out the return above:
-		// friendDiscoveryInventory = make(map[string][]*store.InventoryItem)
 	}
 
 	var isFriend bool
@@ -592,7 +587,6 @@ func (s *UserService) RemoveFriend(ctx context.Context, clerkID string, friendCl
 }
 
 func (s *UserService) GetLeaderboards(ctx context.Context, clerkID string) (map[string]*leaderboard.Leaderboard, error) {
-	// 1. Get YOUR internal UUID (Essential for the rest to work)
 	var userID uuid.UUID
 	err := s.db.QueryRow(ctx, `SELECT id FROM users WHERE clerk_id = $1`, clerkID).Scan(&userID)
 	if err != nil {
@@ -601,7 +595,6 @@ func (s *UserService) GetLeaderboards(ctx context.Context, clerkID string) (map[
 
 	result := make(map[string]*leaderboard.Leaderboard)
 
-	// --- Global Leaderboard (Standard) ---
 	globalQuery := `
 		SELECT 
 			u.id, u.username, u.image_url,
@@ -624,7 +617,6 @@ func (s *UserService) GetLeaderboards(ctx context.Context, clerkID string) (map[
 	}
 	result["global"] = globalBoard
 
-	// --- Friends Leaderboard (THE FIX) ---
 
 	friendsQuery := `
 		WITH my_circle AS (
@@ -656,7 +648,6 @@ func (s *UserService) GetLeaderboards(ctx context.Context, clerkID string) (map[
 		LIMIT 50
 	`
 
-	// CRITICAL: Pass the UUID (userID), NOT the string (clerkID)
 	friendsRows, err := s.db.Query(ctx, friendsQuery, userID)
 	if err != nil {
 		return nil, fmt.Errorf("failed to fetch friends leaderboard: %w", err)
@@ -768,8 +759,8 @@ func (s *UserService) AddDrinking(
 	clerkID string,
 	drankToday bool,
 	imageUrl *string,
-	imageWidth *int, // New
-	imageHeight *int, // New
+	imageWidth *int, 
+	imageHeight *int, 
 	locationText *string,
 	lat *float64,
 	long *float64,
@@ -787,7 +778,6 @@ func (s *UserService) AddDrinking(
 
 	var postID uuid.UUID
 
-	// Updated Query to include image_width and image_height
 	query := `
         INSERT INTO daily_drinking (
             user_id, 
@@ -820,17 +810,17 @@ func (s *UserService) AddDrinking(
     `
 
 	err = s.db.QueryRow(ctx, query,
-		userID,       // $1
-		date,         // $2
-		drankToday,   // $3
-		imageUrl,     // $4
-		locationText, // $5
-		lat,          // $6
-		long,         // $7
-		alcohols,     // $8
-		clerkIDs,     // $9
-		imageWidth,   // $10
-		imageHeight,  // $11
+		userID,       
+		date,         
+		drankToday,   
+		imageUrl,    
+		locationText, 
+		lat,          
+		long,         
+		alcohols,    
+		clerkIDs,     
+		imageWidth, 
+		imageHeight, 
 	).Scan(&postID)
 
 	if err != nil {
@@ -868,7 +858,7 @@ func (s *UserService) GetMemoryWall(ctx context.Context, postIDStr string) ([]ca
 
 	for rows.Next() {
 		var i canvas.CanvasItem
-		var extraDataBytes []byte // Temp holder for JSONB
+		var extraDataBytes []byte
 
 		err := rows.Scan(
 			&i.ID, &i.DailyDrinkingID, &i.AddedByUserID, &i.ItemType, &i.Content,
@@ -878,16 +868,11 @@ func (s *UserService) GetMemoryWall(ctx context.Context, postIDStr string) ([]ca
 			return nil, fmt.Errorf("scan failed: %w", err)
 		}
 
-		// Convert JSONB bytes back to Map
 		if len(extraDataBytes) > 0 {
 			if err := json.Unmarshal(extraDataBytes, &i.ExtraData); err != nil {
 				return nil, fmt.Errorf("failed to unmarshal extra_data: %w", err)
 			}
 		}
-
-		// Fetch Author Name/Avatar if needed (Optional: usually easier to just send "Me" or store it,
-		// but here we can look it up or leave it nil if the frontend handles it)
-		// For now, we leave AuthorName nil and let frontend handle it or do a JOIN in the query above.
 
 		items = append(items, i)
 	}
@@ -920,17 +905,10 @@ func (s *UserService) AddMemoryToWall(ctx context.Context, clerkID string, postI
 		) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
 	`
 
-	// ---------------------------------------------------------
-	// PART A: HANDLE REACTIONS (Append Only)
-	// Strategy: Reactions sent here are NEW.
-	// 1. Deduct inventory for all of them.
-	// 2. Insert them.
-	// ---------------------------------------------------------
 	if len(reactions) > 0 {
 		reactionCounts := make(map[string]int)
 
 		for _, item := range reactions {
-			// 1. Count for Inventory Deduction
 			if item.ExtraData != nil {
 				if sid, ok := item.ExtraData["inventory_item_id"].(string); ok {
 					reactionCounts[sid]++
@@ -939,7 +917,6 @@ func (s *UserService) AddMemoryToWall(ctx context.Context, clerkID string, postI
 				}
 			}
 
-			// 2. Insert into DB (Force item_type = 'reaction')
 			var extraDataJSON []byte
 			if item.ExtraData != nil {
 				extraDataJSON, _ = json.Marshal(item.ExtraData)
@@ -956,7 +933,6 @@ func (s *UserService) AddMemoryToWall(ctx context.Context, clerkID string, postI
 			}
 		}
 
-		// 3. Update Inventory (Decrement only)
 		for stickerID, count := range reactionCounts {
 			if count > 0 {
 				_, err := tx.Exec(ctx, `
@@ -971,19 +947,14 @@ func (s *UserService) AddMemoryToWall(ctx context.Context, clerkID string, postI
 		}
 	}
 
-	// ---------------------------------------------------------
-	// PART B: HANDLE WALL ITEMS (Sync/Edit)
-	// Strategy: Only run this if wallItems is NOT nil.
-	// This compares 'sticker' types against DB and Syncs them.
-	// ---------------------------------------------------------
+
 	if wallItems != nil {
-		// 1. Fetch EXISTING 'sticker' items for this user (ignore reactions)
 		rows, err := tx.Query(ctx, `
 			SELECT extra_data 
 			FROM canvas_items 
 			WHERE daily_drinking_id = $1 
 			AND added_by_user_id = $2
-			AND item_type = 'sticker'`, // Only sync stickers, leave reactions alone
+			AND item_type = 'sticker'`, 
 			postID, userID,
 		)
 		if err != nil {
@@ -1006,11 +977,9 @@ func (s *UserService) AddMemoryToWall(ctx context.Context, clerkID string, postI
 		}
 		rows.Close()
 
-		// 2. Count NEW 'sticker' items from payload
 		newCounts := make(map[string]int)
 		userIDStr := userID.String()
 		for _, item := range *wallItems {
-			// Only count my own stickers
 			isMyItem := item.AddedByUserID == "" || item.AddedByUserID == userIDStr
 			if isMyItem && item.ItemType == "sticker" && item.ExtraData != nil {
 				if sid, ok := item.ExtraData["inventory_item_id"].(string); ok {
@@ -1021,7 +990,6 @@ func (s *UserService) AddMemoryToWall(ctx context.Context, clerkID string, postI
 			}
 		}
 
-		// 3. Calculate Delta & Update Inventory
 		allStickerIDs := make(map[string]bool)
 		for k := range existingCounts {
 			allStickerIDs[k] = true
@@ -1047,21 +1015,18 @@ func (s *UserService) AddMemoryToWall(ctx context.Context, clerkID string, postI
 			}
 		}
 
-		// 4. Delete OLD 'sticker' items (leave reactions alone)
 		_, err = tx.Exec(ctx, `
 			DELETE FROM canvas_items 
 			WHERE daily_drinking_id = $1 
 			AND added_by_user_id = $2 
-			AND item_type != 'reaction'`, // IMPORTANT: Don't delete reactions during a wall sync
+			AND item_type != 'reaction'`, 
 			postID, userID,
 		)
 		if err != nil {
 			return fmt.Errorf("failed to clear old stickers: %w", err)
 		}
 
-		// 5. Insert NEW wall items
 		for _, item := range *wallItems {
-			// Ensure we only insert items marked as mine
 			if item.AddedByUserID != "" && item.AddedByUserID != userIDStr {
 				continue
 			}
@@ -1437,26 +1402,21 @@ func (s *UserService) GetCalendar(ctx context.Context, clerkID string, year int,
 	log.Println("------------------------------------------------")
 	log.Println(displyUserId)
 
-	// 1. Determine which User ID to fetch
 	if displyUserId != nil && *displyUserId != "" {
-		// Case A: A specific user ID was provided via query param
 		targetUserID, err = uuid.Parse(*displyUserId)
 		if err != nil {
 			return nil, fmt.Errorf("invalid display user id format: %w", err)
 		}
 	} else {
-		// Case B: No specific user provided, look up the authenticated user via Clerk ID
 		err = s.db.QueryRow(ctx, `SELECT id FROM users WHERE clerk_id = $1`, clerkID).Scan(&targetUserID)
 		if err != nil {
 			return nil, fmt.Errorf("current user not found: %w", err)
 		}
 	}
 
-	// 2. Setup Date Range
 	startDate := time.Date(year, time.Month(month), 1, 0, 0, 0, 0, time.UTC)
 	endDate := startDate.AddDate(0, 1, -1)
 
-	// 3. Query using the determined targetUserID
 	query := `
 	SELECT date, drank_today
 	FROM daily_drinking
@@ -1472,7 +1432,6 @@ func (s *UserService) GetCalendar(ctx context.Context, clerkID string, year int,
 	}
 	defer rows.Close()
 
-	// 4. Map Results
 	dayMap := make(map[string]bool)
 	for rows.Next() {
 		var date time.Time
@@ -1483,7 +1442,6 @@ func (s *UserService) GetCalendar(ctx context.Context, clerkID string, year int,
 		dayMap[date.Format("2006-01-02")] = drank
 	}
 
-	// 5. Build Calendar Response
 	var days []*calendar.CalendarDay
 	today := time.Now().Format("2006-01-02")
 
@@ -1868,7 +1826,6 @@ func (s *UserService) executeFeedQuery(ctx context.Context, query string, userID
 			return nil, fmt.Errorf("failed to scan post: %w", err)
 		}
 
-		// 3. Unmarshal Reactions
 		if len(reactionsJSON) > 0 {
 			if err := json.Unmarshal(reactionsJSON, &post.Reactions); err != nil {
 				log.Printf("failed to unmarshal reactions for post %s: %v", post.ID, err)
@@ -1878,11 +1835,9 @@ func (s *UserService) executeFeedQuery(ctx context.Context, query string, userID
 			post.Reactions = []canvas.CanvasItem{}
 		}
 
-		// Hydrate Buddies
 		if len(mentionedBuddyIDs) > 0 {
 			post.MentionedBuddies, err = s.getUsersByIDs(ctx, mentionedBuddyIDs)
 			if err != nil {
-				// Log error but don't fail the whole feed
 				log.Printf("failed to fetch buddies for post %s: %v", post.ID, err)
 				post.MentionedBuddies = []user.User{}
 			}
@@ -2200,7 +2155,6 @@ func (s *UserService) GetMixTimeline(ctx context.Context, clerkID string) ([]mix
 			post.MentionedBuddies, err = s.getUsersByIDs(ctx, mentionedBuddyIDs)
 			if err != nil {
 				log.Printf("failed to fetch mentioned buddies for post %s: %v", post.ID, err)
-				// Continue without buddies rather than failing
 				post.MentionedBuddies = []user.User{}
 			}
 		} else {
@@ -2834,7 +2788,6 @@ func (s *UserService) RelateStory(ctx context.Context, clerkID, storyID, action 
 	}
 	defer tx.Rollback(ctx)
 
-	// Attempt to delete the specific reaction type for this user
 	cmd, err := tx.Exec(ctx, `
 		DELETE FROM relates 
 		WHERE story_id = $1 AND user_id = $2 AND relate_type = $3`,
@@ -2979,7 +2932,6 @@ func (s *UserService) GetWishList(ctx context.Context, clerkID string) ([]wish.W
 		return nil, err
 	}
 
-    // Only fetch items from the CURRENT MONTH
 	query := `
         SELECT id, text, completed 
         FROM wish_list 
@@ -3003,7 +2955,6 @@ func (s *UserService) GetWishList(ctx context.Context, clerkID string) ([]wish.W
 		items = append(items, i)
 	}
     
-    // Return empty array instead of nil for JSON
     if items == nil {
         items = []wish.WishItem{}
     }
@@ -3017,7 +2968,6 @@ func (s *UserService) AddWishItem(ctx context.Context, clerkID string, text stri
 		return nil, err
 	}
 
-    // 1. Check Limit (Max 10 per month)
     var count int
     checkQuery := `
         SELECT COUNT(*) FROM wish_list 
@@ -3031,7 +2981,6 @@ func (s *UserService) AddWishItem(ctx context.Context, clerkID string, text stri
         return nil, fmt.Errorf("limit reached")
     }
 
-    // 2. Insert
 	query := `
         INSERT INTO wish_list (user_id, text) 
         VALUES ($1, $2) 
@@ -3149,6 +3098,148 @@ func (s *UserService) DeleteShameItem(ctx context.Context, clerkID string, itemI
 
 	rowsAffected := cmd.RowsAffected()
 	return rowsAffected > 0, nil
+}
+
+
+func (s *UserService) GetNotBarPlaces(ctx context.Context, clerkID string) ([]notbarsplace.NotBarsPlace, error) {
+	userID, _, err := s.getInternalID(ctx, clerkID)
+	if err != nil {
+		return nil, err
+	}
+
+	_, err = s.db.Exec(ctx, "SELECT ensure_user_has_defaults($1)", userID)
+	if err != nil {
+		return nil, err
+	}
+
+	query := `
+		SELECT id, user_id, name, visited, rating, is_custom, sort_order, created_at
+		FROM not_bars_places
+		WHERE user_id = $1
+		ORDER BY sort_order ASC, created_at DESC
+	`
+
+	rows, err := s.db.Query(ctx, query, userID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var places []notbarsplace.NotBarsPlace
+	for rows.Next() {
+		var p notbarsplace.NotBarsPlace
+		if err := rows.Scan(
+			&p.ID, &p.UserID, &p.Name, &p.Visited,
+			&p.Rating, &p.IsCustom, &p.SortOrder, &p.CreatedAt,
+		); err != nil {
+			return nil, err
+		}
+		places = append(places, p)
+	}
+
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+
+	return places, nil
+}
+
+func (s *UserService) AddCustomPlace(ctx context.Context, clerkID string, name string) (*notbarsplace.NotBarsPlace, error) {
+	userID, _, err := s.getInternalID(ctx, clerkID)
+	if err != nil {
+		return nil, err
+	}
+
+	var maxOrder int
+	err = s.db.QueryRow(ctx, "SELECT COALESCE(MAX(sort_order), 0) FROM not_bars_places WHERE user_id = $1", userID).Scan(&maxOrder)
+	if err != nil {
+		maxOrder = 0
+	}
+
+	query := `
+		INSERT INTO not_bars_places (user_id, name, is_custom, sort_order)
+		VALUES ($1, $2, TRUE, $3)
+		RETURNING id, user_id, name, visited, rating, is_custom, sort_order, created_at
+	`
+
+	var p notbarsplace.NotBarsPlace
+	err = s.db.QueryRow(ctx, query, userID, name, maxOrder+1).Scan(
+		&p.ID, &p.UserID, &p.Name, &p.Visited,
+		&p.Rating, &p.IsCustom, &p.SortOrder, &p.CreatedAt,
+	)
+	if err != nil {
+		return nil, err
+	}
+
+	return &p, nil
+}
+
+func (s *UserService) TogglePlaceVisit(ctx context.Context, clerkID string, placeID string) (bool, error) {
+	userID, _, err := s.getInternalID(ctx, clerkID)
+	if err != nil {
+		return false, err
+	}
+
+	query := `
+		UPDATE not_bars_places
+		SET visited = NOT visited
+		WHERE id = $1 AND user_id = $2
+	`
+
+	tag, err := s.db.Exec(ctx, query, placeID, userID)
+	if err != nil {
+		return false, err
+	}
+
+	return tag.RowsAffected() > 0, nil
+}
+
+func (s *UserService) RatePlace(ctx context.Context, clerkID string, placeID string, rating int) (bool, error) {
+	userID, _, err := s.getInternalID(ctx, clerkID)
+	if err != nil {
+		return false, err
+	}
+
+	if rating < 0 || rating > 5 {
+		return false, nil 
+	}
+
+	query := `
+		UPDATE not_bars_places
+		SET rating = $1
+		WHERE id = $2 AND user_id = $3
+	`
+
+	tag, err := s.db.Exec(ctx, query, rating, placeID, userID)
+	if err != nil {
+		return false, err
+	}
+
+	return tag.RowsAffected() > 0, nil
+}
+
+func (s *UserService) UpdatePlacesOrder(ctx context.Context, clerkID string, orderedIDs []string) error {
+	userID, _, err := s.getInternalID(ctx, clerkID)
+	if err != nil {
+		return err
+	}
+
+	tx, err := s.db.Begin(ctx)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback(ctx)
+
+	query := `UPDATE not_bars_places SET sort_order = $1 WHERE id = $2 AND user_id = $3`
+
+	for i, id := range orderedIDs {
+		_, err := tx.Exec(ctx, query, i, id, userID)
+		if err != nil {
+			return err 
+		}
+	}
+
+	return tx.Commit(ctx)
 }
 
 // TODO: Creae theese

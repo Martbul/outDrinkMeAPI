@@ -11,6 +11,7 @@ import (
 	"net/http"
 	"os"
 	"outDrinkMeAPI/internal/types/canvas"
+	notbarsplace "outDrinkMeAPI/internal/types/not_bars_place"
 	"outDrinkMeAPI/internal/types/user"
 	wallofshame "outDrinkMeAPI/internal/types/wall_of_shame"
 	"outDrinkMeAPI/internal/types/wish"
@@ -168,7 +169,6 @@ func (h *UserHandler) AddFriend(w http.ResponseWriter, r *http.Request) {
 	err := h.userService.AddFriend(ctx, clerkID, req.FriendId)
 	if err != nil {
 		log.Printf("AddFriend Handler: Service error: %v", err)
-		// Handle specific error cases
 		errMsg := err.Error()
 		switch {
 		case errMsg == "cannot add yourself as a friend" || errMsg == "friendship already exists":
@@ -358,8 +358,8 @@ func (h *UserHandler) AddDrinking(w http.ResponseWriter, r *http.Request) {
 		clearkID,
 		req.DrankToday,
 		req.ImageUrl,
-		req.ImageWidth,  // New
-		req.ImageHeight, // New
+		req.ImageWidth,  
+		req.ImageHeight, 
 		req.LocationText,
 		lat,
 		long,
@@ -456,27 +456,21 @@ func (h *UserHandler) GetAlcoholismChart(w http.ResponseWriter, r *http.Request)
 	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
 	defer cancel()
 
-	// 1. Get User ID from Context
 	clerkID, ok := middleware.GetClerkID(ctx)
 	if !ok {
 		respondWithError(w, http.StatusUnauthorized, "Unauthorized")
 		return
 	}
 
-	// 2. Get the period filter from URL (e.g. ?period=1M)
 	period := r.URL.Query().Get("period")
-	// Validate input against allowed values to be safe, or default to 3M
 	switch period {
 	case "1M", "3M", "6M", "1Y", "ALL":
-		// valid
 	default:
 		period = "3M"
 	}
 
 	chartDataBytes, err := h.userService.GetAlcoholismChart(ctx, clerkID, period)
 	if err != nil {
-		// Log the actual error internally
-		// log.Println("Chart error:", err)
 		respondWithError(w, http.StatusInternalServerError, "Failed to fetch chart data")
 		return
 	}
@@ -893,7 +887,6 @@ func (h *UserHandler) GetYourMix(w http.ResponseWriter, r *http.Request) {
 	respondWithJSON(w, http.StatusOK, yourMixData)
 }
 
-// 2. GET GLOBAL MIX (Strangers Only)
 func (h *UserHandler) GetGlobalMix(w http.ResponseWriter, r *http.Request) {
 	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
 	defer cancel()
@@ -982,7 +975,6 @@ func (h *UserHandler) GetDrunkThought(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Get optional date parameter from query string
 	dateStr := r.URL.Query().Get("date")
 
 	var (
@@ -991,25 +983,21 @@ func (h *UserHandler) GetDrunkThought(w http.ResponseWriter, r *http.Request) {
 	)
 
 	if dateStr != "" {
-		// Parse user-specified date
 		date, err = time.Parse("2006-01-02", dateStr)
 		if err != nil {
 			respondWithError(w, http.StatusBadRequest, "Invalid date format. Use YYYY-MM-DD")
 			return
 		}
 	} else {
-		// Default to today's date
 		date = time.Now().Truncate(24 * time.Hour)
 	}
 
-	// Get drunk thought for given date
 	drunkThought, err := h.userService.GetDrunkThought(ctx, clerkID, date)
 	if err != nil {
 		respondWithError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
 
-	// Wrap in an object before responding
 	response := map[string]interface{}{
 		"drunk_thought": drunkThought,
 	}
@@ -1252,7 +1240,6 @@ func (h *UserHandler) GenerateDynamicQR(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	// 1. Check if user is actually Premium and Active
 	premiumStatus, err := h.userService.GetPremiumDetails(ctx, clerkID)
 	if err != nil {
 		http.Error(w, "Error checking status", http.StatusInternalServerError)
@@ -1327,7 +1314,6 @@ func (h *UserHandler) AddWishItem(w http.ResponseWriter, r *http.Request) {
 
 	newItem, err := h.userService.AddWishItem(ctx, clerkID, req.Text)
 	if err != nil {
-		// Check if error is "limit reached"
 		if err.Error() == "limit reached" {
 			respondWithError(w, http.StatusForbidden, "Monthly limit reached")
 			return
@@ -1425,6 +1411,132 @@ func (h *UserHandler) DeleteShameItem(w http.ResponseWriter, r *http.Request) {
 	}
 
 	respondWithJSON(w, http.StatusOK, map[string]bool{"success": success})
+}
+
+
+
+func (h *UserHandler) GetNotBarPlaces(w http.ResponseWriter, r *http.Request) {
+	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
+	defer cancel()
+
+	clerkID, ok := middleware.GetClerkID(ctx)
+	if !ok {
+		respondWithError(w, http.StatusUnauthorized, "Unauthorized")
+		return
+	}
+
+	places, err := h.userService.GetNotBarPlaces(ctx, clerkID)
+	if err != nil {
+		respondWithError(w, http.StatusInternalServerError, "Could not fetch places")
+		return
+	}
+
+	respondWithJSON(w, http.StatusOK, places)
+}
+
+func (h *UserHandler) AddCustomPlace(w http.ResponseWriter, r *http.Request) {
+	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
+	defer cancel()
+
+	clerkID, ok := middleware.GetClerkID(ctx)
+	if !ok {
+		respondWithError(w, http.StatusUnauthorized, "Unauthorized")
+		return
+	}
+
+	var req notbarsplace.AddPlaceRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		respondWithError(w, http.StatusBadRequest, "Invalid body")
+		return
+	}
+
+	if req.Name == "" {
+		respondWithError(w, http.StatusBadRequest, "Name is required")
+		return
+	}
+
+	newPlace, err := h.userService.AddCustomPlace(ctx, clerkID, req.Name)
+	if err != nil {
+		respondWithError(w, http.StatusInternalServerError, "Could not add place")
+		return
+	}
+
+	respondWithJSON(w, http.StatusOK, newPlace)
+}
+
+func (h *UserHandler) TogglePlaceVisit(w http.ResponseWriter, r *http.Request) {
+	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
+	defer cancel()
+
+	clerkID, ok := middleware.GetClerkID(ctx)
+	if !ok {
+		respondWithError(w, http.StatusUnauthorized, "Unauthorized")
+		return
+	}
+
+	vars := mux.Vars(r)
+	id := vars["id"]
+
+	success, err := h.userService.TogglePlaceVisit(ctx, clerkID, id)
+	if err != nil {
+		respondWithError(w, http.StatusInternalServerError, "Could not update status")
+		return
+	}
+
+	respondWithJSON(w, http.StatusOK, map[string]bool{"success": success})
+}
+
+func (h *UserHandler) RatePlace(w http.ResponseWriter, r *http.Request) {
+	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
+	defer cancel()
+
+	clerkID, ok := middleware.GetClerkID(ctx)
+	if !ok {
+		respondWithError(w, http.StatusUnauthorized, "Unauthorized")
+		return
+	}
+
+	vars := mux.Vars(r)
+	id := vars["id"]
+
+	var req notbarsplace.RatePlaceRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		respondWithError(w, http.StatusBadRequest, "Invalid body")
+		return
+	}
+
+	success, err := h.userService.RatePlace(ctx, clerkID, id, req.Rating)
+	if err != nil {
+		respondWithError(w, http.StatusInternalServerError, "Could not rate place")
+		return
+	}
+
+	respondWithJSON(w, http.StatusOK, map[string]bool{"success": success})
+}
+
+func (h *UserHandler) UpdatePlacesOrder(w http.ResponseWriter, r *http.Request) {
+	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
+	defer cancel()
+
+	clerkID, ok := middleware.GetClerkID(ctx)
+	if !ok {
+		respondWithError(w, http.StatusUnauthorized, "Unauthorized")
+		return
+	}
+
+	var orderedIDs []string
+	if err := json.NewDecoder(r.Body).Decode(&orderedIDs); err != nil {
+		respondWithError(w, http.StatusBadRequest, "Invalid body")
+		return
+	}
+
+	err := h.userService.UpdatePlacesOrder(ctx, clerkID, orderedIDs)
+	if err != nil {
+		respondWithError(w, http.StatusInternalServerError, "Could not update order")
+		return
+	}
+
+	respondWithJSON(w, http.StatusOK, map[string]bool{"success": true})
 }
 
 func (h *UserHandler) DeleteAccountPage(w http.ResponseWriter, r *http.Request) {

@@ -14,3 +14,13 @@ type NotBarsPlace struct {
 	SortOrder int       `json:"sortOrder" db:"sort_order"`
 	CreatedAt time.Time `json:"createdAt" db:"created_at"`
 }
+
+type AddPlaceRequest struct {
+	Name string `json:"name"`
+}
+
+type RatePlaceRequest struct {
+	Rating int `json:"rating"`
+}
+
+type ReorderPlacesRequest []string
