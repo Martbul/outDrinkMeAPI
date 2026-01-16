@@ -2262,7 +2262,6 @@ func (s *UserService) getUsersByIDs(ctx context.Context, clerkIDs []string) ([]u
 }
 
 func (s *UserService) GetDrunkFriendThoughts(ctx context.Context, clerkID string) ([]user.DrunkThought, error) {
-	log.Println("getting drunk friends thoughts")
 
 	var userID string
 	err := s.db.QueryRow(ctx, "SELECT id FROM users WHERE clerk_id = $1", clerkID).Scan(&userID)

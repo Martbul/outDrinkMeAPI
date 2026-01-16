@@ -1427,6 +1427,7 @@ func (h *UserHandler) GetNotBarPlaces(w http.ResponseWriter, r *http.Request) {
 
 	places, err := h.userService.GetNotBarPlaces(ctx, clerkID)
 	if err != nil {
+		log.Println(err)
 		respondWithError(w, http.StatusInternalServerError, "Could not fetch places")
 		return
 	}
