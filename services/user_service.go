@@ -753,18 +753,18 @@ func (s *UserService) GetAchievements(ctx context.Context, clerkID string) ([]*a
 
 	return achievements, nil
 }
-
 func (s *UserService) AddDrinking(
 	ctx context.Context,
 	clerkID string,
 	drankToday bool,
 	imageUrl *string,
-	imageWidth *int, 
-	imageHeight *int, 
+	imageWidth *int,
+	imageHeight *int,
 	locationText *string,
 	lat *float64,
 	long *float64,
 	alcohols []string,
+	drinkQuantity *string, 
 	clerkIDs []string,
 	date time.Time,
 ) error {
@@ -791,9 +791,10 @@ func (s *UserService) AddDrinking(
             latitude, 
             longitude, 
             alcohols, 
+            drink_quantity,
             mentioned_buddies
         )
-        VALUES ($1, $2, $3, NOW(), $4, $10, $11, $5, $6, $7, $8, $9)
+        VALUES ($1, $2, $3, NOW(), $4, $10, $11, $5, $6, $7, $8, $9, $12)
         ON CONFLICT (user_id, date) 
         DO UPDATE SET 
             drank_today = $3, 
@@ -805,22 +806,24 @@ func (s *UserService) AddDrinking(
             latitude = $6,
             longitude = $7,
             alcohols = $8,
-            mentioned_buddies = $9
+            drink_quantity = $9,
+            mentioned_buddies = $12
         RETURNING id
     `
 
 	err = s.db.QueryRow(ctx, query,
-		userID,       
-		date,         
-		drankToday,   
-		imageUrl,    
-		locationText, 
-		lat,          
-		long,         
-		alcohols,    
-		clerkIDs,     
-		imageWidth, 
-		imageHeight, 
+		userID,        
+		date,          
+		drankToday,    
+		imageUrl,      
+		locationText,  
+		lat,           
+		long,        
+		alcohols,     
+		drinkQuantity,
+		imageWidth,  
+		imageHeight,  
+		clerkIDs,      
 	).Scan(&postID)
 
 	if err != nil {

@@ -315,13 +315,14 @@ func (h *UserHandler) AddDrinking(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var req struct {
-		DrankToday       bool         `json:"drank_today"`
-		ImageUrl         *string      `json:"image_url"`
-		ImageWidth       *int         `json:"image_width"`
-		ImageHeight      *int         `json:"image_height"`
-		LocationText     *string      `json:"location_text"`
-		LocationCoords   *Coordinates `json:"location_coords"`
-		Alcohols         *[]string    `json:"alcohols"`
+		DrankToday     bool         `json:"drank_today"`
+		ImageUrl       *string      `json:"image_url"`
+		ImageWidth     *int         `json:"image_width"`
+		ImageHeight    *int         `json:"image_height"`
+		LocationText   *string      `json:"location_text"`
+		LocationCoords *Coordinates `json:"location_coords"`
+		Alcohols       *[]string    `json:"alcohols"`
+		DrinkQuantity  *string      `json:"drink_quantity"`
 		MentionedBuddies []struct {
 			ClerkID string `json:"clerkId"`
 		} `json:"mentioned_buddies"`
@@ -358,12 +359,13 @@ func (h *UserHandler) AddDrinking(w http.ResponseWriter, r *http.Request) {
 		clearkID,
 		req.DrankToday,
 		req.ImageUrl,
-		req.ImageWidth,  
-		req.ImageHeight, 
+		req.ImageWidth,
+		req.ImageHeight,
 		req.LocationText,
 		lat,
 		long,
 		alcohols,
+		req.DrinkQuantity,
 		clerkIDs,
 		date,
 	); err != nil {
@@ -1388,7 +1390,7 @@ func (h *UserHandler) AddShameItem(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	respondWithJSON(w, http.StatusOK,newItem)
+	respondWithJSON(w, http.StatusOK, newItem)
 }
 
 func (h *UserHandler) DeleteShameItem(w http.ResponseWriter, r *http.Request) {
@@ -1412,8 +1414,6 @@ func (h *UserHandler) DeleteShameItem(w http.ResponseWriter, r *http.Request) {
 
 	respondWithJSON(w, http.StatusOK, map[string]bool{"success": success})
 }
-
-
 
 func (h *UserHandler) GetNotBarPlaces(w http.ResponseWriter, r *http.Request) {
 	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
